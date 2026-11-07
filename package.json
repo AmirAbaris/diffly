@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "concurrently -k -p \"[{name}]\" -n \"next,api\" -c \"cyan,magenta\" \"pnpm dev:next\" \"pnpm dev:api\"",
     "dev:next": "next dev -p 3000",
-    "dev:api": "uvicorn api.index:app --reload --port 8000",
+    "dev:api": "([ -f .venv/bin/uvicorn ] && .venv/bin/uvicorn api.index:app --reload --port 8000) || uvicorn api.index:app --reload --port 8000",
     "build": "next build",
     "start": "next start",
     "lint:js": "eslint",
