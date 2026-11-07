@@ -1,10 +1,12 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useState } from "react"
+import useSWR from "swr"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Textarea } from "@/components/ui/textarea"
+import { apiClient } from "@/lib/axios"
 
 interface Challenge {
   id: number
@@ -28,35 +30,25 @@ interface ReviewResult {
 }
 
 export default function Page() {
-  const [challenges, setChallenges] = useState<Challenge[]>([])
-  const [selectedChallenge, setSelectedChallenge] =
-    useState<ChallengeDetail | null>(null)
+  const [selectedId, setSelectedId] = useState<number | null>(null)
   const [flaggedLine, setFlaggedLine] = useState<number | null>(null)
   const [comments, setComments] = useState("")
   const [reviewResult, setReviewResult] = useState<ReviewResult | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
-  useEffect(() => {
-    fetch("/api/challenges")
-      .then((res) => (res.ok ? res.json() : []))
-      .then((data: Challenge[]) => {
-        setChallenges(data)
-        if (data.length > 0) {
-          fetch(`/api/challenges/${data[0].id}`)
-            .then((res) => res.json())
-            .then((detail: ChallengeDetail) => setSelectedChallenge(detail))
-        }
-      })
-      .catch(() => {})
-  }, [])
+  const { data: challenges = [] } = useSWR<Challenge[]>("/api/challenges")
+
+  const activeChallengeId = selectedId ?? challenges[0]?.id
+
+  const { data: selectedChallenge } = useSWR<ChallengeDetail>(
+    activeChallengeId ? `/api/challenges/${activeChallengeId}` : null
+  )
 
   const selectChallenge = (id: number) => {
+    setSelectedId(id)
     setReviewResult(null)
     setFlaggedLine(null)
     setComments("")
-    fetch(`/api/challenges/${id}`)
-      .then((res) => res.json())
-      .then((detail: ChallengeDetail) => setSelectedChallenge(detail))
   }
 
   const handleReviewSubmit = async () => {
@@ -64,21 +56,16 @@ export default function Page() {
 
     setSubmitting(true)
     try {
-      const res = await fetch(
+      const response = await apiClient.post<ReviewResult>(
         `/api/challenges/${selectedChallenge.id}/review`,
         {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            flagged_lines: [flaggedLine],
-            comments,
-          }),
+          flagged_lines: [flaggedLine],
+          comments,
         }
       )
-      const data = await res.json()
-      setReviewResult(data)
+      setReviewResult(response.data)
     } catch {
-      // Offline fallback handling
+      // Handled in UI state
     } finally {
       setSubmitting(false)
     }
