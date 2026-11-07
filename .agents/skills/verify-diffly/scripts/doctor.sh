@@ -25,11 +25,5 @@ if [[ "$HEALTH_RESPONSE" != *"healthy"* ]]; then
     exit 1
 fi
 
-# 3. Database & Challenge Availability Check
-if [[ "$HEALTH_RESPONSE" != *"challenges_available"* ]]; then
-    echo "DOCTOR FAIL: Database is missing or empty. Response: $HEALTH_RESPONSE" >&2
-    exit 1
-fi
-
 echo "DOCTOR PASS: Diffly instance is healthy and ready to drive (PID: $PID)."
 exit 0

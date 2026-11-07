@@ -1,15 +1,13 @@
 # Diffly Feature Map
 
-This directory documents the user-facing features of **Diffly** — the developer arena for practicing code review on AI agent codes and pull requests.
+This directory documents the active features of **Diffly**.
 
 ## Index of Features
 
-| Feature                                                         | Surface                                      | Description                                                                                               | Proven In                     |
-| --------------------------------------------------------------- | -------------------------------------------- | --------------------------------------------------------------------------------------------------------- | ----------------------------- |
-| [System Health & Readiness](system-health.md)                   | REST API (`/api/health`)                     | Verifies service state, database connectivity, and seeded challenge availability                          | `scripts/drive.sh health`     |
-| [Challenge Catalog](challenge-catalog.md)                       | Web UI / API (`/api/challenges`)             | Lists and filters code review challenges across agent hallucinations, security flaws, and race conditions | `scripts/drive.sh catalog`    |
-| [Code Review Evaluation](code-review-evaluation.md)             | Web UI / API (`/api/challenges/{id}/review`) | Evaluates user-flagged lines and review explanations against defect ground truth                          | `scripts/drive.sh review`     |
-| [Strict Code Hygiene & Spacing](code-hygiene-and-formatting.md) | CI / Linter (Ruff + Prettier + ESLint)       | Enforces PEP 8 double blank line function spacing, strict TS linting, and automated CI verification       | `scripts/drive.sh formatting` |
+| Feature                                                         | Surface                                | Description                                             | Proven In                     |
+| --------------------------------------------------------------- | -------------------------------------- | ------------------------------------------------------- | ----------------------------- |
+| [System Health & Readiness](system-health.md)                   | REST API (`/api/health`)               | Verifies service liveness and responsiveness            | `scripts/drive.sh health`     |
+| [Strict Code Hygiene & Spacing](code-hygiene-and-formatting.md) | CI / Linter (Ruff + Prettier + ESLint) | Enforces PEP 8 spacing, TS padding, and CI verification | `scripts/drive.sh formatting` |
 
 ## Verification Guidance
 

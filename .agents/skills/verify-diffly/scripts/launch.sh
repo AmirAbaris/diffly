@@ -6,7 +6,6 @@ PID_DIR="$REPO_ROOT/.agents/skills/verify-diffly/.pids"
 LOG_DIR="$REPO_ROOT/.agents/skills/verify-diffly/.logs"
 mkdir -p "$PID_DIR" "$LOG_DIR"
 
-echo "==> Preparing database..."
 cd "$REPO_ROOT"
 export PYTHONPATH="$REPO_ROOT"
 
@@ -15,8 +14,6 @@ if [ -f "$REPO_ROOT/.venv/bin/activate" ]; then
     source "$REPO_ROOT/.venv/bin/activate"
 fi
 
-python3 "$REPO_ROOT/backend/seed.py"
-
 echo "==> Launching FastAPI backend server on port 8000..."
 uvicorn api.index:app --host 127.0.0.1 --port 8000 > "$LOG_DIR/backend.log" 2>&1 &
 BACKEND_PID=$!
@@ -24,7 +21,7 @@ echo "$BACKEND_PID" > "$PID_DIR/backend.pid"
 
 # Wait for server readiness
 READY=0
-for i in {1..30}; do
+for _ in {1..30}; do
     if curl -s -f "http://127.0.0.1:8000/api/health" > /dev/null 2>&1; then
         READY=1
         break
