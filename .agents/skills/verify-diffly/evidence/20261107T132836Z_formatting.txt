@@ -1,0 +1,11 @@
+=== Ruff Check ===
+All checks passed!
+=== Ruff Format Check ===
+5 files already formatted
+=== Prettier Check ===
+$ prettier --check "**/*.{ts,tsx,js,mjs,json,md}" && source .venv/bin/activate && ruff format --check api backend tests
+Checking formatting...
+All matched files use Prettier code style!
+5 files already formatted
+=== ESLint Check ===
+$ eslint

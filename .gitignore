@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Python virtual environment & cache
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.ruff_cache/
+
+# Next.js build output
+.next/
+out/
+build/
+dist/
+
+# SQLite & local databases
+*.db
+*.sqlite3
+
+# Environment & credentials
+.env
+.env.local
+.env.*.local
+
+# Verification runtime artifacts
+.agents/skills/**/.pids/
+.agents/skills/**/.logs/
+
+# IDE & OS files
+.DS_Store
+*.pem
+*.tsbuildinfo
