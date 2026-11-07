@@ -47,9 +47,17 @@ case "$FEATURE" in
         OUT="$EVIDENCE_DIR/${TIMESTAMP}_formatting.txt"
         {
             echo "=== Ruff Check ==="
-            "$REPO_ROOT/.venv/bin/ruff" check "$REPO_ROOT/api" "$REPO_ROOT/backend" "$REPO_ROOT/tests"
+            if [ -x "$REPO_ROOT/.venv/bin/ruff" ]; then
+                "$REPO_ROOT/.venv/bin/ruff" check "$REPO_ROOT/api" "$REPO_ROOT/backend" "$REPO_ROOT/tests"
+            else
+                ruff check "$REPO_ROOT/api" "$REPO_ROOT/backend" "$REPO_ROOT/tests"
+            fi
             echo "=== Ruff Format Check ==="
-            "$REPO_ROOT/.venv/bin/ruff" format --check "$REPO_ROOT/api" "$REPO_ROOT/backend" "$REPO_ROOT/tests"
+            if [ -x "$REPO_ROOT/.venv/bin/ruff" ]; then
+                "$REPO_ROOT/.venv/bin/ruff" format --check "$REPO_ROOT/api" "$REPO_ROOT/backend" "$REPO_ROOT/tests"
+            else
+                ruff format --check "$REPO_ROOT/api" "$REPO_ROOT/backend" "$REPO_ROOT/tests"
+            fi
             echo "=== Prettier Check ==="
             pnpm --prefix "$REPO_ROOT" format:check
             echo "=== ESLint Check ==="
