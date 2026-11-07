@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "type": "module",
   "private": true,
+  "engines": {
+    "node": ">=22.0.0"
+  },
   "scripts": {
     "dev": "concurrently -k -p \"[{name}]\" -n \"next,api\" -c \"cyan,magenta\" \"pnpm dev:next\" \"pnpm dev:api\"",
     "dev:next": "next dev -p 3000",
