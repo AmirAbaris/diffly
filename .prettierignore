@@ -1,0 +1,15 @@
+node_modules
+.next
+.venv
+.pytest_cache
+.ruff_cache
+dist
+coverage
+*.min.js
+.agents/skills/**/evidence/**
+.agents/skills/**/.pids/**
+.agents/skills/**/.logs/**
+.cursor/**
+.gemini/**
+.agents/rules/**
+next-env.d.ts

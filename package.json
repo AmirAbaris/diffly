@@ -1,0 +1,45 @@
+{
+  "name": "diffly",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently -k -p \"[{name}]\" -n \"next,api\" -c \"cyan,magenta\" \"pnpm dev:next\" \"pnpm dev:api\"",
+    "dev:next": "next dev -p 3000",
+    "dev:api": "source .venv/bin/activate && uvicorn api.index:app --reload --port 8000",
+    "build": "next build",
+    "start": "next start",
+    "lint:js": "eslint",
+    "lint:py": "source .venv/bin/activate && ruff check api backend tests",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,mjs,json,md}\" && source .venv/bin/activate && ruff format --check api backend tests",
+    "format": "prettier --write \"**/*.{ts,tsx,js,mjs,json,md}\" && source .venv/bin/activate && ruff format api backend tests",
+    "lint": "pnpm lint:js && pnpm lint:py && pnpm format:check",
+    "test:py": "source .venv/bin/activate && pytest tests",
+    "typecheck": "tsc --noEmit",
+    "verify": "pnpm lint && pnpm test:py && pnpm build"
+  },
+  "dependencies": {
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^1.70.0",
+    "next": "16.4.4",
+    "next-themes": "^0.4.6",
+    "radix-ui": "^1.8.1",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "tailwind-merge": "^3.7.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "concurrently": "^10.0.6",
+    "eslint": "^9",
+    "eslint-config-next": "16.4.4",
+    "prettier": "^3.9.10",
+    "prettier-plugin-tailwindcss": "^0.8.1",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  }
+}

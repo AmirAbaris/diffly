@@ -1,0 +1,1 @@
+{"submission_id":3,"score":100,"feedback":"Outstanding review! You caught the critical defects.","detected_issues":["Accurately identified: Direct use of eval() on user input allows Remote Code Execution (RCE)."]}
