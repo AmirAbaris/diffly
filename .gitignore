@@ -32,3 +32,4 @@ dist/
 # IDE & OS files
 .DS_Store
 *.pem
+*.tsbuildinfo
