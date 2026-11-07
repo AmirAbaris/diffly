@@ -52,6 +52,9 @@ jobs:
       - name: Frontend Formatting Check (Prettier)
         run: pnpm format:check
 
+      - name: Frontend Fast Lint (Oxlint)
+        run: pnpm lint:oxlint
+
       - name: Frontend Lint (ESLint)
         run: pnpm lint:js
 

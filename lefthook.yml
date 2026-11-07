@@ -1,0 +1,26 @@
+pre-commit:
+  parallel: true
+  jobs:
+    - name: oxlint
+      glob: "*.{js,jsx,ts,tsx}"
+      run: pnpm exec oxlint {staged_files}
+
+    - name: prettier
+      glob: "*.{js,jsx,ts,tsx,json,md,css,mjs}"
+      run: pnpm exec prettier --check {staged_files}
+
+    - name: eslint
+      glob: "*.{js,jsx,ts,tsx,mjs}"
+      run: pnpm exec eslint {staged_files}
+
+    - name: ruff-lint
+      glob: "*.py"
+      run: ([ -f .venv/bin/ruff ] && .venv/bin/ruff check {staged_files}) || ruff check {staged_files}
+
+    - name: ruff-format
+      glob: "*.py"
+      run: ([ -f .venv/bin/ruff ] && .venv/bin/ruff format --check {staged_files}) || ruff format --check {staged_files}
+
+    - name: typecheck
+      glob: "*.{ts,tsx}"
+      run: pnpm typecheck
