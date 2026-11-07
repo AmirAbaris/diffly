@@ -12,3 +12,10 @@ def test_health_endpoint():
     data = response.json()
     assert data["status"] == "healthy"
     assert data["service"] == "diffly-fastapi"
+
+
+def test_scalar_docs_endpoint():
+    response = client.get("/scalar")
+    assert response.status_code == 200
+    assert "text/html" in response.headers.get("content-type", "")
+    assert "scalar" in response.text.lower()
