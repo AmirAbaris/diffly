@@ -13,3 +13,4 @@ coverage
 .gemini/**
 .agents/rules/**
 next-env.d.ts
+AGENTS.md

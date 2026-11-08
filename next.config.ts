@@ -1,8 +1,12 @@
 import type { NextConfig } from "next"
 
 const nextConfig: NextConfig = {
+  agentRules: true,
   cacheComponents: true,
   partialPrefetching: true,
+  logging: {
+    browserToTerminal: true,
+  },
   async rewrites() {
     return [
       {
