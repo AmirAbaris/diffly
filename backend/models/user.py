@@ -1,0 +1,30 @@
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING
+
+from sqlmodel import Field, Relationship, SQLModel
+
+
+if TYPE_CHECKING:
+    from backend.models.submission import Submission
+
+
+def get_utc_now() -> datetime:
+    return datetime.now(UTC)
+
+
+class UserBase(SQLModel):
+    email: str = Field(unique=True, index=True)
+    username: str = Field(unique=True, index=True)
+    avatar_url: str | None = Field(default=None)
+    is_active: bool = Field(default=True)
+
+
+class User(UserBase, table=True):
+    __tablename__ = "users"
+
+    id: int | None = Field(default=None, primary_key=True)
+    hashed_password: str
+    created_at: datetime = Field(default_factory=get_utc_now)
+    updated_at: datetime = Field(default_factory=get_utc_now)
+
+    submissions: list["Submission"] = Relationship(back_populates="user")
