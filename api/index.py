@@ -5,13 +5,16 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from scalar_fastapi import get_scalar_api_reference
 
+from api.routes.challenges import router as challenges_router
 from backend.core.config import settings
 from backend.core.db import init_db
+from backend.seed.seed_data import seed_challenges_if_empty
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     init_db()
+    seed_challenges_if_empty()
     yield
 
 
@@ -21,6 +24,8 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+app.include_router(challenges_router)
 
 app.add_middleware(
     CORSMiddleware,
