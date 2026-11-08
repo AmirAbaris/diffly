@@ -1,12 +1,7 @@
 from fastapi.testclient import TestClient
 
-from api.index import app
 
-
-client = TestClient(app)
-
-
-def test_health_endpoint():
+def test_health_endpoint(client: TestClient):
     response = client.get("/api/health")
     assert response.status_code == 200
     data = response.json()
@@ -14,7 +9,7 @@ def test_health_endpoint():
     assert data["service"] == "diffly-fastapi"
 
 
-def test_scalar_docs_endpoint():
+def test_scalar_docs_endpoint(client: TestClient):
     response = client.get("/scalar")
     assert response.status_code == 200
     assert "text/html" in response.headers.get("content-type", "")

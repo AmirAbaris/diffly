@@ -1,16 +1,16 @@
-import os
 from collections.abc import Generator
 
 from sqlmodel import Session, SQLModel, create_engine
 
+from backend.core.config import settings
 
-# Support NeonDB connection URL (PostgreSQL) with SQLite fallback for offline dev/tests
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./diffly.db")
 
-connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
+connect_args = (
+    {"check_same_thread": False} if settings.DATABASE_URL.startswith("sqlite") else {}
+)
 
 engine = create_engine(
-    DATABASE_URL,
+    settings.DATABASE_URL,
     echo=False,
     connect_args=connect_args,
 )
@@ -23,5 +23,11 @@ def init_db() -> None:
 
 
 def get_session() -> Generator[Session, None, None]:
-    with Session(engine) as session:
+    session = Session(engine)
+    try:
         yield session
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
