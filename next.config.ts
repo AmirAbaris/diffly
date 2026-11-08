@@ -7,6 +7,15 @@ const nextConfig: NextConfig = {
   logging: {
     browserToTerminal: true,
   },
+  async redirects() {
+    return [
+      {
+        source: "/",
+        destination: "/challenges",
+        permanent: false,
+      },
+    ]
+  },
   async rewrites() {
     return [
       {

@@ -58,7 +58,7 @@ function DifficultyBadge({ difficulty }: { difficulty: Difficulty }) {
   return <Badge variant="secondary">Easy</Badge>
 }
 
-function CatalogSkeletonGrid() {
+export function CatalogSkeletonGrid() {
   return (
     <div
       data-testid="catalog-skeleton"
