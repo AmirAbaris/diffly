@@ -1,36 +1,58 @@
 "use client"
 
+import * as React from "react"
 import useSWR from "swr"
 import type { ChallengeFilters, ChallengeSummary } from "@/types/challenge"
 
 export function useChallenges(filters?: ChallengeFilters) {
-  const params = new URLSearchParams()
-
-  if (filters?.difficulty && filters.difficulty !== "All") {
-    params.set("difficulty", filters.difficulty)
-  }
-
-  if (filters?.category && filters.category !== "All") {
-    params.set("category", filters.category)
-  }
-
-  if (filters?.language && filters.language !== "All") {
-    params.set("language", filters.language)
-  }
-
-  const trimmedSearch = filters?.search?.trim()
-  if (trimmedSearch) {
-    params.set("search", trimmedSearch)
-  }
-
-  const query = params.toString()
-  const endpoint = query ? `/api/challenges?${query}` : "/api/challenges"
-
   const { data, error, isLoading, isValidating, mutate } =
-    useSWR<ChallengeSummary[]>(endpoint)
+    useSWR<ChallengeSummary[]>("/api/challenges")
+
+  const allChallenges = React.useMemo(() => data ?? [], [data])
+
+  const difficulty = filters?.difficulty
+  const category = filters?.category
+  const language = filters?.language
+  const search = filters?.search
+
+  const challenges = React.useMemo(() => {
+    const trimmedSearch = search?.trim().toLowerCase()
+
+    return allChallenges.filter((challenge) => {
+      if (
+        difficulty &&
+        difficulty !== "All" &&
+        challenge.difficulty !== difficulty
+      ) {
+        return false
+      }
+
+      if (category && category !== "All" && challenge.category !== category) {
+        return false
+      }
+
+      if (language && language !== "All" && challenge.language !== language) {
+        return false
+      }
+
+      if (trimmedSearch) {
+        const titleMatch = challenge.title.toLowerCase().includes(trimmedSearch)
+        const descMatch = challenge.description
+          .toLowerCase()
+          .includes(trimmedSearch)
+        const slugMatch = challenge.slug.toLowerCase().includes(trimmedSearch)
+        if (!titleMatch && !descMatch && !slugMatch) {
+          return false
+        }
+      }
+
+      return true
+    })
+  }, [allChallenges, difficulty, category, language, search])
 
   return {
-    challenges: data ?? [],
+    challenges,
+    totalCount: allChallenges.length,
     error,
     isLoading,
     isValidating,

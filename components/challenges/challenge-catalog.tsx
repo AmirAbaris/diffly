@@ -2,16 +2,10 @@
 
 import * as React from "react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
-import useSWR from "swr"
 import { CatalogGrid } from "@/components/challenges/catalog-grid"
 import { FilterBar } from "@/components/challenges/filter-bar"
 import { useChallenges } from "@/hooks/use-challenges"
-import type {
-  Category,
-  ChallengeSummary,
-  Difficulty,
-  Language,
-} from "@/types/challenge"
+import type { Category, Difficulty, Language } from "@/types/challenge"
 
 export function ChallengeCatalog() {
   const router = useRouter()
@@ -94,27 +88,12 @@ export function ChallengeCatalog() {
     [searchParams, difficulty, category, language, search, pathname, router]
   )
 
-  const hasActiveFilters =
-    difficulty !== "All" ||
-    category !== "All" ||
-    language !== "All" ||
-    search.trim() !== ""
-
-  const { challenges, isLoading } = useChallenges({
+  const { challenges, totalCount, isLoading } = useChallenges({
     difficulty,
     category,
     language,
     search,
   })
-
-  // When filters are active, resolve total challenge count from the base query cache or fetch it
-  const { data: allChallenges } = useSWR<ChallengeSummary[]>(
-    hasActiveFilters ? "/api/challenges" : null
-  )
-
-  const effectiveTotalCount = hasActiveFilters
-    ? (allChallenges?.length ?? challenges.length)
-    : challenges.length
 
   const handleResetFilters = React.useCallback(() => {
     router.replace(pathname, { scroll: false })
@@ -132,7 +111,7 @@ export function ChallengeCatalog() {
         search={search}
         onSearchChange={(val) => updateFilters({ search: val })}
         onReset={handleResetFilters}
-        totalCount={effectiveTotalCount}
+        totalCount={totalCount}
         filteredCount={challenges.length}
       />
 
