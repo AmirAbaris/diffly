@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from sqlmodel import Session, or_, select
 
 from api.deps import get_optional_current_user
@@ -11,8 +11,10 @@ from backend.models.challenge import (
     Category,
     Challenge,
     ChallengeDetail,
+    ChallengeSolutionResponse,
     ChallengeSummary,
     Difficulty,
+    HintResponse,
     Language,
 )
 from backend.models.submission import Submission
@@ -99,6 +101,25 @@ def list_challenges(
     ]
 
 
+def get_challenge_or_404(identifier: str, session: Session) -> Challenge:
+    """Find a challenge by numeric ID or slug, raising 404 if missing."""
+    if identifier.isdigit():
+        challenge_id = int(identifier)
+        statement = select(Challenge).where(
+            or_(Challenge.id == challenge_id, Challenge.slug == identifier)
+        )
+    else:
+        statement = select(Challenge).where(Challenge.slug == identifier)
+
+    challenge = session.exec(statement).first()
+    if challenge is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Challenge not found",
+        )
+    return challenge
+
+
 @router.get("/{identifier}", response_model=ChallengeDetail)
 def get_challenge(
     identifier: str,
@@ -110,17 +131,7 @@ def get_challenge(
     ] = None,
 ) -> ChallengeDetail:
     """Retrieve challenge detail by numeric ID or URL slug with completion status."""
-    if identifier.isdigit():
-        challenge_id = int(identifier)
-        statement = select(Challenge).where(
-            or_(Challenge.id == challenge_id, Challenge.slug == identifier)
-        )
-    else:
-        statement = select(Challenge).where(Challenge.slug == identifier)
-
-    challenge = session.exec(statement).first()
-    if challenge is None:
-        raise HTTPException(status_code=404, detail="Challenge not found")
+    challenge = get_challenge_or_404(identifier, session)
 
     conditions = []
     if current_user and current_user.id is not None:
@@ -141,3 +152,101 @@ def get_challenge(
     is_solved = best_score is not None and best_score >= 80
 
     return challenge.to_detail(is_solved=is_solved, best_score=best_score)
+
+
+@router.get("/{identifier}/hints", response_model=list[HintResponse])
+def get_challenge_hints(
+    identifier: str,
+    session: Annotated[Session, Depends(get_session)],
+    tier: Annotated[
+        int | None,
+        Query(
+            ge=1,
+            le=3,
+            description="Filter by progressive hint tier (1, 2, or 3)",
+        ),
+    ] = None,
+) -> list[HintResponse]:
+    """Retrieve progressive tiered hints for a challenge by numeric ID or URL slug."""
+    challenge = get_challenge_or_404(identifier, session)
+    hints = [h.to_response() for h in challenge.get_hints()]
+    hints.sort(key=lambda h: h.tier)
+
+    if tier is not None:
+        hints = [h for h in hints if h.tier == tier]
+
+    return hints
+
+
+@router.get("/{identifier}/solution", response_model=ChallengeSolutionResponse)
+def get_challenge_solution(
+    identifier: str,
+    session: Annotated[Session, Depends(get_session)],
+    reveal: Annotated[
+        bool,
+        Query(description="Explicitly reveal solution without prior submission"),
+    ] = False,
+    current_user: Annotated[User | None, Depends(get_optional_current_user)] = None,
+    header_session_id: Annotated[
+        str | None,
+        Header(alias="X-Diffly-Session-Id", description="Guest session identifier"),
+    ] = None,
+    query_session_id: Annotated[
+        str | None,
+        Query(
+            alias="session_id",
+            description="Guest session identifier via query param",
+        ),
+    ] = None,
+) -> ChallengeSolutionResponse:
+    """Retrieve canonical expert review, recommended fix diff, and expected issues.
+
+    Requires at least one submission attempt for the challenge or explicit ?reveal=true.
+    """
+    challenge = get_challenge_or_404(identifier, session)
+
+    if not reveal:
+        session_id = (
+            header_session_id.strip()
+            if header_session_id and header_session_id.strip()
+            else None
+        ) or (
+            query_session_id.strip()
+            if query_session_id and query_session_id.strip()
+            else None
+        )
+        user_id = (
+            current_user.id if current_user and current_user.id is not None else None
+        )
+
+        conditions = []
+        if user_id is not None:
+            conditions.append(Submission.user_id == user_id)
+        if session_id:
+            conditions.append(Submission.session_id == session_id)
+
+        has_submitted = False
+        if conditions and challenge.id is not None:
+            stmt = select(Submission.id).where(
+                Submission.challenge_id == challenge.id,
+                or_(*conditions),
+            )
+            has_submitted = session.exec(stmt).first() is not None
+
+        if not has_submitted:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    "Submission required to view solution. "
+                    "Submit a review attempt first or pass reveal=true."
+                ),
+            )
+
+    return ChallengeSolutionResponse(
+        id=challenge.id or 0,
+        challenge_id=challenge.id or 0,
+        slug=challenge.slug,
+        canonical_review=challenge.canonical_review,
+        recommended_fix_diff=challenge.recommended_fix_diff,
+        expected_issues=challenge.get_expected_issues(),
+    )

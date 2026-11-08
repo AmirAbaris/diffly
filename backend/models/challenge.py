@@ -86,10 +86,38 @@ class DefectCriterion(BaseModel):
         return data
 
 
+DEFAULT_TIER_LABELS: dict[int, str] = {
+    1: "Contextual clue",
+    2: "Vulnerability class",
+    3: "Line pointer",
+}
+
+
+class HintResponse(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    tier: int
+    label: str
+    text: str
+
+
+class ChallengeSolutionResponse(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    id: int
+    challenge_id: int
+    slug: str
+    canonical_review: str
+    recommended_fix_diff: str
+    expected_issues: list[DefectCriterion]
+
+
 class HintItem(BaseModel):
     tier: int = 1
     hint: str = ""
     title: str | None = None
+    label: str | None = None
+    text: str | None = None
 
     model_config = ConfigDict(extra="allow", populate_by_name=True)
 
@@ -97,17 +125,31 @@ class HintItem(BaseModel):
     @classmethod
     def normalize_fields(cls, data: Any) -> Any:
         if isinstance(data, str):
-            return {"tier": 1, "hint": data}
+            return {"tier": 1, "hint": data, "text": data}
         if isinstance(data, dict):
             d = dict(data)
-            if "hint" not in d and "content" in d:
-                d["hint"] = str(d["content"])
-            elif "hint" not in d and "description" in d:
-                d["hint"] = str(d["description"])
-            elif "hint" not in d and "text" in d:
-                d["hint"] = str(d["text"])
+            text_val = (
+                d.get("hint")
+                or d.get("content")
+                or d.get("description")
+                or d.get("text")
+                or ""
+            )
+            d["hint"] = str(text_val)
+            d["text"] = str(text_val)
+
+            label_val = d.get("label") or d.get("title")
+            if label_val:
+                d["title"] = str(label_val)
+                d["label"] = str(label_val)
             return d
         return data
+
+    def to_response(self) -> HintResponse:
+        default_label = DEFAULT_TIER_LABELS.get(self.tier, f"Tier {self.tier}")
+        label = self.label or self.title or default_label
+        text = self.text or self.hint
+        return HintResponse(tier=self.tier, label=label, text=text)
 
 
 class ChallengeBase(SQLModel):
