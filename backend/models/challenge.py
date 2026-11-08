@@ -208,3 +208,73 @@ class Challenge(ChallengeBase, table=True):
         else:
             data = json.loads(self.hints or "[]")
         return [HintItem.model_validate(item) for item in data]
+
+    def to_summary(
+        self,
+        is_solved: bool = False,
+        best_score: int | None = None,
+    ) -> "ChallengeSummary":
+        line_count = len(self.code_snippet.splitlines()) if self.code_snippet else 0
+        total_hints = len(self.get_hints())
+        return ChallengeSummary(
+            id=self.id or 0,
+            slug=self.slug,
+            title=self.title,
+            difficulty=self.difficulty,
+            category=self.category,
+            language=self.language,
+            description=self.description,
+            estimated_minutes=self.estimated_minutes,
+            line_count=line_count,
+            total_hints=total_hints,
+            is_solved=is_solved,
+            best_score=best_score,
+        )
+
+    def to_detail(
+        self,
+        is_solved: bool = False,
+        best_score: int | None = None,
+    ) -> "ChallengeDetail":
+        line_count = len(self.code_snippet.splitlines()) if self.code_snippet else 0
+        total_hints = len(self.get_hints())
+        return ChallengeDetail(
+            id=self.id or 0,
+            slug=self.slug,
+            title=self.title,
+            difficulty=self.difficulty,
+            category=self.category,
+            language=self.language,
+            description=self.description,
+            threat_model=self.threat_model,
+            defect_target=self.defect_target,
+            code_snippet=self.code_snippet,
+            estimated_minutes=self.estimated_minutes,
+            line_count=line_count,
+            total_hints=total_hints,
+            is_solved=is_solved,
+            best_score=best_score,
+        )
+
+
+class ChallengeSummary(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    slug: str
+    title: str
+    difficulty: Difficulty
+    category: Category
+    language: Language
+    description: str
+    estimated_minutes: int
+    line_count: int = 0
+    total_hints: int = 0
+    is_solved: bool = False
+    best_score: int | None = None
+
+
+class ChallengeDetail(ChallengeSummary):
+    threat_model: str = ""
+    defect_target: str = ""
+    code_snippet: str
