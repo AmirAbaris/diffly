@@ -370,3 +370,240 @@ def test_get_challenge_not_found(client: TestClient, session: Session):
     res_id = client.get("/api/challenges/999999")
     assert res_id.status_code == 404
     assert res_id.json() == {"detail": "Challenge not found"}
+
+
+def test_get_challenge_hints_all_progressive(client: TestClient, session: Session):
+    """GET /api/challenges/{identifier}/hints returns progressive hints in order."""
+    seed_challenges(session)
+
+    res = client.get("/api/challenges/agent-unsanitized-exec/hints")
+    assert res.status_code == 200
+    hints = res.json()
+    assert isinstance(hints, list)
+    assert len(hints) == 3
+
+    assert hints[0]["tier"] == 1
+    assert "Contextual" in hints[0]["label"]
+    assert len(hints[0]["text"]) > 0
+
+    assert hints[1]["tier"] == 2
+    assert "Vulnerability" in hints[1]["label"]
+    assert len(hints[1]["text"]) > 0
+
+    assert hints[2]["tier"] == 3
+    assert "Line" in hints[2]["label"]
+    assert len(hints[2]["text"]) > 0
+
+
+def test_get_challenge_hints_by_numeric_id(client: TestClient, session: Session):
+    """GET /api/challenges/{identifier}/hints supports numeric challenge ID."""
+    challenges = seed_challenges(session)
+    ch = challenges[0]
+
+    res = client.get(f"/api/challenges/{ch.id}/hints")
+    assert res.status_code == 200
+    hints = res.json()
+    assert len(hints) == 3
+    assert [h["tier"] for h in hints] == [1, 2, 3]
+
+
+def test_get_challenge_hints_filter_by_tier(client: TestClient, session: Session):
+    """GET /api/challenges/{identifier}/hints?tier={tier} filters to requested tier."""
+    seed_challenges(session)
+
+    for tier in (1, 2, 3):
+        res = client.get(f"/api/challenges/agent-unsanitized-exec/hints?tier={tier}")
+        assert res.status_code == 200
+        hints = res.json()
+        assert len(hints) == 1
+        assert hints[0]["tier"] == tier
+
+
+def test_get_challenge_hints_invalid_tier(client: TestClient, session: Session):
+    """GET /api/challenges/{identifier}/hints validates tier range (1-3)."""
+    seed_challenges(session)
+
+    res_zero = client.get("/api/challenges/agent-unsanitized-exec/hints?tier=0")
+    assert res_zero.status_code == 422
+
+    res_four = client.get("/api/challenges/agent-unsanitized-exec/hints?tier=4")
+    assert res_four.status_code == 422
+
+    res_str = client.get("/api/challenges/agent-unsanitized-exec/hints?tier=abc")
+    assert res_str.status_code == 422
+
+
+def test_get_challenge_hints_not_found(client: TestClient, session: Session):
+    """GET /api/challenges/{identifier}/hints returns 404 for invalid identifier."""
+    seed_challenges(session)
+
+    res = client.get("/api/challenges/nonexistent-challenge/hints")
+    assert res.status_code == 404
+    assert res.json() == {"detail": "Challenge not found"}
+
+    res_id = client.get("/api/challenges/999999/hints")
+    assert res_id.status_code == 404
+    assert res_id.json() == {"detail": "Challenge not found"}
+
+
+def test_get_challenge_solution_forbidden_without_submission_or_reveal(
+    client: TestClient, session: Session
+):
+    """GET solution returns 403 when unattempted and reveal=false."""
+    challenges = seed_challenges(session)
+    ch = challenges[0]
+
+    # Anonymous user without header
+    res_anon = client.get(f"/api/challenges/{ch.slug}/solution")
+    assert res_anon.status_code == 403
+    assert "submission" in res_anon.json()["detail"].lower()
+
+    # Guest user with session header but no submissions
+    res_guest = client.get(
+        f"/api/challenges/{ch.slug}/solution",
+        headers={"X-Diffly-Session-Id": "unattempted-guest"},
+    )
+    assert res_guest.status_code == 403
+
+    # Authenticated user with no submissions
+    user = User(email="nosub@diffly.dev", username="nosub", hashed_password="pw")
+    session.add(user)
+    session.commit()
+    session.refresh(user)
+
+    app.dependency_overrides[get_optional_current_user] = lambda: user
+    try:
+        res_user = client.get(f"/api/challenges/{ch.slug}/solution")
+        assert res_user.status_code == 403
+    finally:
+        app.dependency_overrides.pop(get_optional_current_user, None)
+
+
+def test_get_challenge_solution_with_reveal_param(client: TestClient, session: Session):
+    """GET solution succeeds with reveal=true without prior submission."""
+    challenges = seed_challenges(session)
+    ch = challenges[0]
+
+    res = client.get(f"/api/challenges/{ch.slug}/solution?reveal=true")
+    assert res.status_code == 200
+    data = res.json()
+
+    assert data["challenge_id"] == ch.id
+    assert data["slug"] == ch.slug
+    assert len(data["canonical_review"]) > 0
+    assert len(data["recommended_fix_diff"]) > 0
+    assert isinstance(data["expected_issues"], list)
+    assert len(data["expected_issues"]) > 0
+
+    first_issue = data["expected_issues"][0]
+    assert "id" in first_issue
+    assert "title" in first_issue
+    assert "severity" in first_issue
+    assert "explanation" in first_issue
+
+
+def test_get_challenge_solution_allowed_after_guest_submission(
+    client: TestClient, session: Session
+):
+    """Guest user can access solution after making at least one submission."""
+    challenges = seed_challenges(session)
+    ch = challenges[0]
+    session_id = "attempted-guest-session-42"
+
+    sub = Submission(
+        challenge_id=ch.id,
+        session_id=session_id,
+        score=60,
+        comments="First review attempt",
+    )
+    session.add(sub)
+    session.commit()
+
+    # Query with session header
+    res_header = client.get(
+        f"/api/challenges/{ch.slug}/solution",
+        headers={"X-Diffly-Session-Id": session_id},
+    )
+    assert res_header.status_code == 200
+    assert res_header.json()["slug"] == ch.slug
+
+    # Query with session query parameter
+    res_query = client.get(
+        f"/api/challenges/{ch.slug}/solution?session_id={session_id}"
+    )
+    assert res_query.status_code == 200
+
+    # Query with different session is forbidden
+    res_diff = client.get(
+        f"/api/challenges/{ch.slug}/solution",
+        headers={"X-Diffly-Session-Id": "different-guest"},
+    )
+    assert res_diff.status_code == 403
+
+
+def test_get_challenge_solution_allowed_after_user_submission(
+    client: TestClient, session: Session
+):
+    """Authenticated user can access solution after making at least one submission."""
+    challenges = seed_challenges(session)
+    ch = challenges[0]
+
+    user = User(email="soluser@diffly.dev", username="soluser", hashed_password="pw")
+    session.add(user)
+    session.commit()
+    session.refresh(user)
+
+    sub = Submission(
+        challenge_id=ch.id,
+        user_id=user.id,
+        score=75,
+        comments="Submitted user attempt",
+    )
+    session.add(sub)
+    session.commit()
+
+    app.dependency_overrides[get_optional_current_user] = lambda: user
+    try:
+        res = client.get(f"/api/challenges/{ch.slug}/solution")
+        assert res.status_code == 200
+        assert res.json()["slug"] == ch.slug
+    finally:
+        app.dependency_overrides.pop(get_optional_current_user, None)
+
+    # Another user without submission is forbidden
+    other_user = User(email="other@diffly.dev", username="other", hashed_password="pw")
+    session.add(other_user)
+    session.commit()
+    session.refresh(other_user)
+
+    app.dependency_overrides[get_optional_current_user] = lambda: other_user
+    try:
+        res_other = client.get(f"/api/challenges/{ch.slug}/solution")
+        assert res_other.status_code == 403
+    finally:
+        app.dependency_overrides.pop(get_optional_current_user, None)
+
+
+def test_get_challenge_solution_by_numeric_id(client: TestClient, session: Session):
+    """GET /api/challenges/{identifier}/solution supports numeric challenge ID."""
+    challenges = seed_challenges(session)
+    ch = challenges[0]
+
+    res = client.get(f"/api/challenges/{ch.id}/solution?reveal=true")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["id"] == ch.id
+    assert data["slug"] == ch.slug
+
+
+def test_get_challenge_solution_not_found(client: TestClient, session: Session):
+    """GET /api/challenges/{identifier}/solution returns 404 for invalid identifier."""
+    seed_challenges(session)
+
+    res = client.get("/api/challenges/nonexistent/solution?reveal=true")
+    assert res.status_code == 404
+    assert res.json() == {"detail": "Challenge not found"}
+
+    res_id = client.get("/api/challenges/999999/solution?reveal=true")
+    assert res_id.status_code == 404
+    assert res_id.json() == {"detail": "Challenge not found"}

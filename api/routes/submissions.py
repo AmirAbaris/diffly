@@ -4,13 +4,13 @@ from datetime import datetime
 from typing import Annotated, Any
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, Query, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlmodel import Session, or_, select
 
 from api.deps import get_optional_current_user
+from api.routes.challenges import get_challenge_or_404
 from backend.core.db import get_session
-from backend.models.challenge import Challenge
 from backend.models.submission import Submission
 from backend.models.user import User
 from backend.services.evaluation_service import evaluate_review
@@ -79,24 +79,6 @@ class SubmissionHistoryResponse(BaseModel):
     detected_issues: list[dict[str, Any]] = Field(default_factory=list)
     missed_issues: list[dict[str, Any]] = Field(default_factory=list)
     created_at: datetime
-
-
-def get_challenge_or_404(identifier: str, session: Session) -> Challenge:
-    if identifier.isdigit():
-        challenge_id = int(identifier)
-        statement = select(Challenge).where(
-            or_(Challenge.id == challenge_id, Challenge.slug == identifier)
-        )
-    else:
-        statement = select(Challenge).where(Challenge.slug == identifier)
-
-    challenge = session.exec(statement).first()
-    if challenge is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Challenge not found",
-        )
-    return challenge
 
 
 @router.post(
