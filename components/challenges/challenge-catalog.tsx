@@ -15,7 +15,6 @@ export function ChallengeCatalog() {
   const rawDifficulty = searchParams.get("difficulty")
   const rawCategory = searchParams.get("category")
   const rawLanguage = searchParams.get("language")
-  const urlSearch = searchParams.get("search") ?? ""
 
   const difficulty: Difficulty | "All" =
     rawDifficulty === "Easy" ||
@@ -37,19 +36,12 @@ export function ChallengeCatalog() {
       ? rawLanguage
       : "All"
 
-  // Local state ensures typing is synchronous and never stomped by router updates
-  const [search, setSearch] = React.useState<string>(urlSearch)
-  const lastPushedSearchRef = React.useRef<string>(urlSearch)
+  // Local state initialized once from URL for direct links and bookmarks
+  const [search, setSearch] = React.useState(
+    () => searchParams.get("search") ?? ""
+  )
 
-  // Sync external URL changes (e.g. back/forward navigation or reset) without stomping active typing
-  React.useEffect(() => {
-    if (urlSearch !== lastPushedSearchRef.current) {
-      lastPushedSearchRef.current = urlSearch
-      setSearch(urlSearch)
-    }
-  }, [urlSearch])
-
-  // Debounce search query syncing to URL
+  // Debounce search query syncing to URL for shareability
   React.useEffect(() => {
     const trimmed = search.trim()
     const currentUrl = searchParams.get("search") ?? ""
@@ -59,8 +51,6 @@ export function ChallengeCatalog() {
     }
 
     const timer = setTimeout(() => {
-      lastPushedSearchRef.current = trimmed
-
       const nextParams = new URLSearchParams(searchParams.toString())
       if (trimmed) {
         nextParams.set("search", trimmed)
@@ -132,7 +122,6 @@ export function ChallengeCatalog() {
 
   const handleResetFilters = React.useCallback(() => {
     setSearch("")
-    lastPushedSearchRef.current = ""
     router.replace(pathname, { scroll: false })
   }, [router, pathname])
 
