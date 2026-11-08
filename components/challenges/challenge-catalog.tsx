@@ -15,7 +15,7 @@ export function ChallengeCatalog() {
   const rawDifficulty = searchParams.get("difficulty")
   const rawCategory = searchParams.get("category")
   const rawLanguage = searchParams.get("language")
-  const rawSearch = searchParams.get("search")
+  const urlSearch = searchParams.get("search") ?? ""
 
   const difficulty: Difficulty | "All" =
     rawDifficulty === "Easy" ||
@@ -37,14 +37,50 @@ export function ChallengeCatalog() {
       ? rawLanguage
       : "All"
 
-  const search = rawSearch ?? ""
+  // Local state ensures typing is synchronous and never stomped by router updates
+  const [search, setSearch] = React.useState<string>(urlSearch)
+  const lastPushedSearchRef = React.useRef<string>(urlSearch)
+
+  // Sync external URL changes (e.g. back/forward navigation or reset) without stomping active typing
+  React.useEffect(() => {
+    if (urlSearch !== lastPushedSearchRef.current) {
+      lastPushedSearchRef.current = urlSearch
+      setSearch(urlSearch)
+    }
+  }, [urlSearch])
+
+  // Debounce search query syncing to URL
+  React.useEffect(() => {
+    const trimmed = search.trim()
+    const currentUrl = searchParams.get("search") ?? ""
+
+    if (trimmed === currentUrl) {
+      return
+    }
+
+    const timer = setTimeout(() => {
+      lastPushedSearchRef.current = trimmed
+
+      const nextParams = new URLSearchParams(searchParams.toString())
+      if (trimmed) {
+        nextParams.set("search", trimmed)
+      } else {
+        nextParams.delete("search")
+      }
+
+      const queryString = nextParams.toString()
+      const targetUrl = queryString ? `${pathname}?${queryString}` : pathname
+      router.replace(targetUrl, { scroll: false })
+    }, 250)
+
+    return () => clearTimeout(timer)
+  }, [search, searchParams, pathname, router])
 
   const updateFilters = React.useCallback(
     (updates: {
       difficulty?: Difficulty | "All"
       category?: Category | "All"
       language?: Language | "All"
-      search?: string
     }) => {
       const nextParams = new URLSearchParams(searchParams.toString())
 
@@ -54,7 +90,6 @@ export function ChallengeCatalog() {
         updates.category !== undefined ? updates.category : category
       const nextLanguage =
         updates.language !== undefined ? updates.language : language
-      const nextSearch = updates.search !== undefined ? updates.search : search
 
       if (nextDifficulty && nextDifficulty !== "All") {
         nextParams.set("difficulty", nextDifficulty)
@@ -74,7 +109,7 @@ export function ChallengeCatalog() {
         nextParams.delete("language")
       }
 
-      const trimmedSearch = nextSearch.trim()
+      const trimmedSearch = search.trim()
       if (trimmedSearch) {
         nextParams.set("search", trimmedSearch)
       } else {
@@ -96,6 +131,8 @@ export function ChallengeCatalog() {
   })
 
   const handleResetFilters = React.useCallback(() => {
+    setSearch("")
+    lastPushedSearchRef.current = ""
     router.replace(pathname, { scroll: false })
   }, [router, pathname])
 
@@ -109,7 +146,7 @@ export function ChallengeCatalog() {
         language={language}
         onLanguageChange={(val) => updateFilters({ language: val })}
         search={search}
-        onSearchChange={(val) => updateFilters({ search: val })}
+        onSearchChange={setSearch}
         onReset={handleResetFilters}
         totalCount={totalCount}
         filteredCount={challenges.length}

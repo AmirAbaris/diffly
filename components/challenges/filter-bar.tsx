@@ -62,29 +62,7 @@ export function FilterBar({
   totalCount,
   filteredCount,
 }: FilterBarProps) {
-  const [prevSearch, setPrevSearch] = React.useState(search)
-  const [searchInput, setSearchInput] = React.useState(search)
-
-  if (search !== prevSearch) {
-    setPrevSearch(search)
-    setSearchInput(search)
-  }
-
-  // Debounce search input by 250ms
-  React.useEffect(() => {
-    if (searchInput === search) {
-      return
-    }
-
-    const timer = setTimeout(() => {
-      onSearchChange(searchInput)
-    }, 250)
-
-    return () => clearTimeout(timer)
-  }, [searchInput, search, onSearchChange])
-
   const handleClearSearch = () => {
-    setSearchInput("")
     onSearchChange("")
   }
 
@@ -103,12 +81,12 @@ export function FilterBar({
           </InputGroupAddon>
           <InputGroupInput
             type="text"
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
+            value={search}
+            onChange={(e) => onSearchChange(e.target.value)}
             placeholder="Search challenges by title or keyword..."
             aria-label="Search challenges"
           />
-          {searchInput && (
+          {search && (
             <InputGroupAddon align="inline-end">
               <InputGroupButton
                 size="icon-xs"
