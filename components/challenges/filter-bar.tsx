@@ -3,15 +3,22 @@
 import * as React from "react"
 import { Search, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+} from "@/components/ui/input-group"
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { cn } from "@/lib/utils"
+import { Separator } from "@/components/ui/separator"
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import type { Category, Difficulty, Language } from "@/types/challenge"
 
 export interface FilterBarProps {
@@ -88,35 +95,32 @@ export function FilterBar({
     search.trim() !== ""
 
   return (
-    <div className="space-y-4">
-      {/* Search & Select dropdowns */}
+    <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-        {/* Search input with shadcn Input */}
-        <div className="relative flex-1">
-          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
-          <Input
+        <InputGroup className="flex-1">
+          <InputGroupAddon align="inline-start">
+            <Search />
+          </InputGroupAddon>
+          <InputGroupInput
             type="text"
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
-            placeholder="Search challenges by keyword..."
-            className="pr-8 pl-9"
+            placeholder="Search challenges by title or keyword..."
             aria-label="Search challenges"
           />
           {searchInput && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-xs"
-              onClick={handleClearSearch}
-              className="text-muted-foreground hover:text-foreground absolute top-1/2 right-2 -translate-y-1/2"
-              aria-label="Clear search input"
-            >
-              <X className="size-3" />
-            </Button>
+            <InputGroupAddon align="inline-end">
+              <InputGroupButton
+                size="icon-xs"
+                onClick={handleClearSearch}
+                aria-label="Clear search input"
+              >
+                <X />
+              </InputGroupButton>
+            </InputGroupAddon>
           )}
-        </div>
+        </InputGroup>
 
-        {/* Category Select with shadcn Select */}
         <Select
           value={category}
           onValueChange={(val) => onCategoryChange(val as Category | "All")}
@@ -127,16 +131,17 @@ export function FilterBar({
           >
             <SelectValue placeholder="Category" />
           </SelectTrigger>
-          <SelectContent>
-            {CATEGORIES.map((cat) => (
-              <SelectItem key={cat.value} value={cat.value}>
-                {cat.label}
-              </SelectItem>
-            ))}
+          <SelectContent position="popper">
+            <SelectGroup>
+              {CATEGORIES.map((cat) => (
+                <SelectItem key={cat.value} value={cat.value}>
+                  {cat.label}
+                </SelectItem>
+              ))}
+            </SelectGroup>
           </SelectContent>
         </Select>
 
-        {/* Language Select with shadcn Select */}
         <Select
           value={language}
           onValueChange={(val) => onLanguageChange(val as Language | "All")}
@@ -147,90 +152,43 @@ export function FilterBar({
           >
             <SelectValue placeholder="Language" />
           </SelectTrigger>
-          <SelectContent>
-            {LANGUAGES.map((lang) => (
-              <SelectItem key={lang.value} value={lang.value}>
-                {lang.label}
-              </SelectItem>
-            ))}
+          <SelectContent position="popper">
+            <SelectGroup>
+              {LANGUAGES.map((lang) => (
+                <SelectItem key={lang.value} value={lang.value}>
+                  {lang.label}
+                </SelectItem>
+              ))}
+            </SelectGroup>
           </SelectContent>
         </Select>
       </div>
 
-      {/* Difficulty chips & active filter status */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-3">
-        {/* Difficulty chips using standard shadcn buttons */}
-        <div
-          className="flex flex-wrap items-center gap-1.5"
-          role="radiogroup"
-          aria-label="Difficulty filter"
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <ToggleGroup
+          type="single"
+          variant="outline"
+          size="sm"
+          spacing={2}
+          value={difficulty}
+          onValueChange={(val) => {
+            if (val) {
+              onDifficultyChange(val as Difficulty | "All")
+            }
+          }}
+          aria-label="Filter by difficulty"
         >
-          <span className="text-muted-foreground mr-1 text-xs">
-            Difficulty:
-          </span>
+          <ToggleGroupItem value="All">All</ToggleGroupItem>
+          <ToggleGroupItem value="Easy">Easy</ToggleGroupItem>
+          <ToggleGroupItem value="Medium">Medium</ToggleGroupItem>
+          <ToggleGroupItem value="Hard">Hard</ToggleGroupItem>
+        </ToggleGroup>
 
-          <Button
-            variant={difficulty === "All" ? "default" : "outline"}
-            size="xs"
-            role="radio"
-            aria-checked={difficulty === "All"}
-            onClick={() => onDifficultyChange("All")}
-          >
-            All
-          </Button>
-
-          <Button
-            variant={difficulty === "Easy" ? "secondary" : "outline"}
-            size="xs"
-            role="radio"
-            aria-checked={difficulty === "Easy"}
-            onClick={() => onDifficultyChange("Easy")}
-            className={cn(
-              difficulty === "Easy" &&
-                "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
-            )}
-          >
-            <span className="size-1.5 rounded-full bg-emerald-500" />
-            Easy
-          </Button>
-
-          <Button
-            variant={difficulty === "Medium" ? "secondary" : "outline"}
-            size="xs"
-            role="radio"
-            aria-checked={difficulty === "Medium"}
-            onClick={() => onDifficultyChange("Medium")}
-            className={cn(
-              difficulty === "Medium" &&
-                "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400"
-            )}
-          >
-            <span className="size-1.5 rounded-full bg-amber-500" />
-            Medium
-          </Button>
-
-          <Button
-            variant={difficulty === "Hard" ? "secondary" : "outline"}
-            size="xs"
-            role="radio"
-            aria-checked={difficulty === "Hard"}
-            onClick={() => onDifficultyChange("Hard")}
-            className={cn(
-              difficulty === "Hard" &&
-                "border-destructive/40 bg-destructive/10 text-destructive"
-            )}
-          >
-            <span className="size-1.5 rounded-full bg-rose-500" />
-            Hard
-          </Button>
-        </div>
-
-        {/* Counter & Reset */}
         <div className="flex items-center gap-2">
           {typeof filteredCount === "number" && (
-            <span className="text-muted-foreground text-xs">
+            <span className="text-xs text-muted-foreground">
               Showing{" "}
-              <span className="text-foreground font-medium">
+              <span className="font-medium text-foreground">
                 {filteredCount}
               </span>
               {typeof totalCount === "number" &&
@@ -242,17 +200,14 @@ export function FilterBar({
           )}
 
           {hasActiveFilters && (
-            <Button
-              variant="ghost"
-              size="xs"
-              onClick={onReset}
-              className="text-muted-foreground hover:text-foreground text-xs"
-            >
+            <Button variant="ghost" size="xs" onClick={onReset}>
               Reset filters
             </Button>
           )}
         </div>
       </div>
+
+      <Separator />
     </div>
   )
 }
