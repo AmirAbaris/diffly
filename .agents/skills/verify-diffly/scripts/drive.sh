@@ -34,6 +34,10 @@ case "$FEATURE" in
             fi
             echo "=== Prettier Check ==="
             pnpm --prefix "$REPO_ROOT" format:check
+            echo "=== Oxlint Check ==="
+            pnpm --prefix "$REPO_ROOT" lint:oxlint
+            echo "=== React Doctor Check ==="
+            pnpm --prefix "$REPO_ROOT" lint:doctor
             echo "=== ESLint Check ==="
             pnpm --prefix "$REPO_ROOT" lint:js
         } > "$OUT" 2>&1

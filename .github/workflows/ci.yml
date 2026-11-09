@@ -55,6 +55,9 @@ jobs:
       - name: Frontend Fast Lint (Oxlint)
         run: pnpm lint:oxlint
 
+      - name: Frontend React Best Practices (React Doctor)
+        run: pnpm lint:doctor
+
       - name: Frontend Lint (ESLint)
         run: pnpm lint:js
 
