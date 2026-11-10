@@ -54,13 +54,11 @@ export function RadialScoreMeter({ score }: { score: number }) {
         />
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-        <span className="font-mono text-2xl font-extrabold tracking-tight text-foreground sm:text-3xl">
+        <span className="font-mono text-2xl font-bold tracking-tight text-foreground tabular-nums sm:text-3xl">
           {clamped}
           <span className="text-xs font-normal text-muted-foreground">%</span>
         </span>
-        <span className="text-[9px] font-bold tracking-widest text-muted-foreground uppercase">
-          Score
-        </span>
+        <span className="text-xs font-medium text-muted-foreground">Score</span>
       </div>
     </div>
   )

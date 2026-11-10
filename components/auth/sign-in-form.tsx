@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { LogIn, Loader2 } from "lucide-react"
+import { Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useAuth } from "@/hooks/use-auth"
@@ -33,7 +33,7 @@ export function SignInForm({ onSuccess, onError }: SignInFormProps) {
       })
       toast({
         title: "Signed in successfully",
-        description: `Welcome back, @${user.username}! Guest progress migrated.`,
+        description: `Welcome back, @${user.username}. Guest progress migrated.`,
         variant: "success",
       })
       onSuccess()
@@ -49,8 +49,8 @@ export function SignInForm({ onSuccess, onError }: SignInFormProps) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-3.5">
-      <div className="space-y-1">
+    <form onSubmit={handleSubmit} className="flex flex-col gap-3.5">
+      <div className="flex flex-col gap-1.5">
         <label
           htmlFor="login-identifier"
           className="text-xs font-medium text-foreground"
@@ -59,17 +59,19 @@ export function SignInForm({ onSuccess, onError }: SignInFormProps) {
         </label>
         <Input
           id="login-identifier"
+          name="identifier"
           type="text"
-          placeholder="e.g. alex or alex@diffly.dev"
+          placeholder="alex or alex@diffly.dev…"
           value={identifier}
           onChange={(e) => setIdentifier(e.target.value)}
           disabled={isLoading}
           autoComplete="username"
+          spellCheck={false}
           required
         />
       </div>
 
-      <div className="space-y-1">
+      <div className="flex flex-col gap-1.5">
         <label
           htmlFor="login-password"
           className="text-xs font-medium text-foreground"
@@ -78,6 +80,7 @@ export function SignInForm({ onSuccess, onError }: SignInFormProps) {
         </label>
         <Input
           id="login-password"
+          name="password"
           type="password"
           placeholder="••••••••"
           value={password}
@@ -87,23 +90,19 @@ export function SignInForm({ onSuccess, onError }: SignInFormProps) {
         />
       </div>
 
-      <div className="rounded-lg border border-primary/20 bg-primary/5 p-2.5 text-[11px] text-muted-foreground">
-        🚀 <span className="font-medium text-foreground">Guest Migration:</span>{" "}
-        Any challenges completed in this browser will automatically transfer to
-        your account.
-      </div>
+      <p className="rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+        Challenges completed in this browser transfer automatically to your
+        account.
+      </p>
 
       <Button type="submit" className="w-full gap-2" disabled={isLoading}>
         {isLoading ? (
           <>
-            <Loader2 className="size-4 animate-spin" />
-            <span>Signing in...</span>
+            <Loader2 aria-hidden="true" className="size-4 animate-spin" />
+            <span>Signing in…</span>
           </>
         ) : (
-          <>
-            <LogIn className="size-4" />
-            <span>Sign In</span>
-          </>
+          <span>Sign In</span>
         )}
       </Button>
     </form>

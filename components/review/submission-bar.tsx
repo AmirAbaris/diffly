@@ -1,14 +1,8 @@
 "use client"
 
 import * as React from "react"
-import {
-  CheckCircle2,
-  Flag,
-  History,
-  Loader2,
-  RotateCcw,
-  Send,
-} from "lucide-react"
+import { Loader2 } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
   Tooltip,
@@ -46,7 +40,7 @@ function getSubmissionTooltip(
   hasComment: boolean
 ): string {
   if (isSubmitting) {
-    return "Submitting your review..."
+    return "Submitting your review…"
   }
   if (!hasLines && !hasComment) {
     return "Flag at least one line and write a review comment to submit"
@@ -90,18 +84,15 @@ function SubmitButton({
               size="sm"
               disabled={isSubmitDisabled}
               onClick={onSubmit}
-              className="h-8 gap-1.5 px-3.5 text-xs font-semibold sm:h-9 sm:px-4 sm:text-xs"
+              className="h-8 gap-1.5 px-3.5 text-xs font-medium sm:h-9 sm:px-4"
             >
               {isSubmitting ? (
                 <>
                   <Loader2 className="size-3.5 animate-spin" />
-                  <span>Submitting...</span>
+                  <span>Submitting…</span>
                 </>
               ) : (
-                <>
-                  <Send className="size-3.5" />
-                  <span>Submit Review</span>
-                </>
+                <span>Submit Review</span>
               )}
             </Button>
           </span>
@@ -248,17 +239,15 @@ export function SubmissionBar({
     >
       <div className="flex items-center gap-3">
         <div className="flex items-center gap-2 text-xs text-muted-foreground sm:text-sm">
-          <Flag className="size-3.5 text-amber-500" />
-          <span className="font-mono font-medium text-foreground">
+          <span className="font-mono text-xs font-medium text-foreground tabular-nums">
             {summaryCount}
           </span>
         </div>
 
         {hasLines && hasComment && (
-          <span className="hidden items-center gap-1 text-[11px] font-medium text-emerald-600 sm:inline-flex dark:text-emerald-400">
-            <CheckCircle2 className="size-3" />
-            <span>Ready to submit</span>
-          </span>
+          <Badge variant="success" size="sm" className="hidden sm:inline-flex">
+            Ready to submit
+          </Badge>
         )}
       </div>
 
@@ -269,9 +258,8 @@ export function SubmissionBar({
           size="sm"
           onClick={handleResetDraft}
           disabled={lineCount === 0 && charCount === 0 && !isSubmitting}
-          className="h-8 gap-1.5 px-2.5 text-xs text-muted-foreground hover:text-foreground sm:h-9 sm:px-3 sm:text-xs"
+          className="h-8 px-2.5 text-xs text-muted-foreground hover:text-foreground sm:h-9 sm:px-3"
         >
-          <RotateCcw className="size-3" />
           <span>Reset Draft</span>
         </Button>
 
@@ -284,12 +272,11 @@ export function SubmissionBar({
           data-testid="submission-bar-history-button"
           aria-label="View past attempts"
         >
-          <History className="size-3.5" />
-          <span className="hidden sm:inline">History</span>
+          <span>History</span>
           {attemptCount !== undefined && attemptCount > 0 && (
-            <span className="rounded-full bg-secondary px-1.5 py-0.5 text-[10px] font-bold">
+            <Badge variant="secondary" size="sm" className="tabular-nums">
               {attemptCount}
-            </span>
+            </Badge>
           )}
         </Button>
 
@@ -306,7 +293,7 @@ export function SubmissionBar({
             variant="outline"
             size="sm"
             onClick={handleViewResults}
-            className="h-8 gap-1.5 px-3 text-xs font-semibold sm:h-9"
+            className="h-8 px-3 text-xs font-medium sm:h-9"
             data-testid="reopen-comparison-button"
           >
             <span>Compare Solution</span>

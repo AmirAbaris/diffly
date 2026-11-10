@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { ChevronDown, ChevronUp, MessageSquare } from "lucide-react"
+import { ChevronDown, ChevronUp } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ReviewCommentEditor } from "@/components/review/review-comment-editor"
@@ -34,12 +34,11 @@ export function ArenaCommentDrawer({
     >
       <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
         <div className="flex items-center gap-2">
-          <MessageSquare className="size-4 text-primary" />
           <h3 className="text-xs font-semibold text-foreground">
             Review Findings & Comments
           </h3>
           {flaggedLines.length > 0 && (
-            <Badge variant="secondary" className="text-[10px]">
+            <Badge variant="secondary" size="sm" className="tabular-nums">
               {flaggedLines.length}{" "}
               {flaggedLines.length === 1 ? "line" : "lines"} targeted
             </Badge>
@@ -51,7 +50,7 @@ export function ArenaCommentDrawer({
             variant="ghost"
             size="sm"
             onClick={() => setIsCollapsed((prev) => !prev)}
-            className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
+            className="size-6 p-0 text-muted-foreground hover:text-foreground"
             aria-label={
               isCollapsed ? "Expand review drawer" : "Collapse review drawer"
             }

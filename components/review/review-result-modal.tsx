@@ -2,7 +2,6 @@
 
 import * as React from "react"
 import { useRouter } from "next/navigation"
-import { Sparkles } from "lucide-react"
 import { ComparisonView } from "@/components/review/comparison-view"
 import { DetectedDefectsSection } from "@/components/review/result-modal/detected-defects"
 import { MissedDefectsSection } from "@/components/review/result-modal/missed-defects"
@@ -117,19 +116,16 @@ export function ReviewResultModal({
       <DialogContent
         data-testid="review-result-modal"
         className={cn(
-          "max-h-[92vh] w-full overflow-x-hidden overflow-y-auto rounded-3xl border border-border/80 bg-background/95 p-6 shadow-2xl backdrop-blur-xl transition-all sm:p-7",
+          "max-h-[92vh] w-full overflow-x-hidden overflow-y-auto overscroll-contain rounded-xl border border-border bg-background p-6 shadow-xl sm:p-7",
           showCanonicalSolution
             ? "sm:max-w-4xl lg:max-w-5xl"
             : "sm:max-w-3xl lg:max-w-4xl"
         )}
       >
         <DialogHeader className="gap-1 pb-1 text-left">
-          <div className="flex items-center gap-2">
-            <Sparkles className="size-4 text-primary" />
-            <DialogTitle className="text-lg font-bold tracking-tight sm:text-xl">
-              Evaluation Results
-            </DialogTitle>
-          </div>
+          <DialogTitle className="text-lg font-semibold tracking-tight sm:text-xl">
+            Evaluation Results
+          </DialogTitle>
           <DialogDescription className="max-w-xl truncate text-xs text-muted-foreground">
             {challengeTitle
               ? `Assessment for ${challengeTitle}`

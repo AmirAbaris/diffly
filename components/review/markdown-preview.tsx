@@ -40,7 +40,7 @@ function renderTokens(tokens: InlineToken[]) {
         return (
           <code
             key={token.id}
-            className="rounded border border-border/60 bg-muted px-1.5 py-0.5 font-mono text-[11px] [overflow-wrap:anywhere] break-all text-foreground"
+            className="rounded border border-border/60 bg-muted px-1.5 py-0.5 font-mono text-xs [overflow-wrap:anywhere] break-all text-foreground"
           >
             {token.text}
           </code>
@@ -72,7 +72,7 @@ function CodeBlockRenderer({
 
   return (
     <div className="my-2 overflow-hidden rounded-md border border-border bg-muted/40 font-mono text-xs">
-      <div className="flex items-center justify-between border-b border-border bg-muted/60 px-3 py-1 text-[10px] text-muted-foreground uppercase">
+      <div className="flex items-center justify-between border-b border-border bg-muted/60 px-3 py-1 text-xs text-muted-foreground uppercase">
         <span>{normalizedLang}</span>
       </div>
       <div className="overflow-x-auto p-3">

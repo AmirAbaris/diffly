@@ -1,11 +1,5 @@
 import * as React from "react"
-import {
-  ArrowRight,
-  ChevronDown,
-  ChevronUp,
-  FileCode,
-  RotateCcw,
-} from "lucide-react"
+import { ArrowRight, ChevronDown, ChevronUp } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { DialogFooter } from "@/components/ui/dialog"
 
@@ -28,10 +22,9 @@ export function ModalFooterActions({
         type="button"
         variant="outline"
         onClick={onTryAgain}
-        className="h-9 gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+        className="h-9 text-xs text-muted-foreground hover:text-foreground"
         data-testid="try-again-button"
       >
-        <RotateCcw className="size-3.5" />
         <span>Try Again</span>
       </Button>
 
@@ -43,23 +36,22 @@ export function ModalFooterActions({
           className="h-9 gap-1.5 text-xs"
           data-testid="view-canonical-solution-button"
         >
-          <FileCode className="size-3.5" />
           <span>
             {showCanonicalSolution
               ? "Hide Staff Comparison"
               : "Compare with Staff Review"}
           </span>
           {showCanonicalSolution ? (
-            <ChevronUp className="size-3" />
+            <ChevronUp className="size-3.5" />
           ) : (
-            <ChevronDown className="size-3" />
+            <ChevronDown className="size-3.5" />
           )}
         </Button>
 
         <Button
           type="button"
           onClick={onNextChallenge}
-          className="h-9 gap-1.5 text-xs font-semibold"
+          className="h-9 gap-1.5 text-xs font-medium"
           data-testid="next-challenge-button"
         >
           <span>Next Challenge</span>

@@ -1,5 +1,5 @@
 import * as React from "react"
-import { Check, CheckCircle2 } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
 import type { DetectedIssue } from "@/types/challenge"
 import { FormattedInlineText, SeverityBadge } from "./score-helpers"
 
@@ -11,20 +11,14 @@ export function DetectedDefectsSection({
   const hasIssues = issues.length > 0
 
   return (
-    <div
-      data-testid="detected-defects-section"
-      className="flex flex-col gap-3 rounded-2xl border border-border/80 bg-card/60 p-4"
-    >
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <CheckCircle2 className="size-4 text-emerald-600 dark:text-emerald-400" />
-          <h4 className="text-xs font-semibold tracking-wide text-foreground">
-            Detected Defects
-          </h4>
-        </div>
-        <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 font-mono text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
+    <div data-testid="detected-defects-section" className="flex flex-col gap-3">
+      <div className="flex items-center justify-between gap-2">
+        <h4 className="text-xs font-semibold tracking-tight text-foreground">
+          Detected Defects
+        </h4>
+        <Badge variant="success" size="sm" className="font-mono tabular-nums">
           {issues.length} {issues.length === 1 ? "issue" : "issues"}
-        </span>
+        </Badge>
       </div>
 
       {!hasIssues ? (
@@ -50,48 +44,51 @@ export function DetectedDefectsSection({
               <div
                 key={issueKey}
                 data-testid={`detected-issue-${issue.id || issue.title || "defect"}`}
-                className="flex flex-col gap-2 rounded-xl border border-emerald-500/20 bg-background/80 p-3.5 shadow-xs"
+                className="flex flex-col gap-2 rounded-xl border border-border bg-card p-3.5"
               >
                 <div className="flex items-start justify-between gap-2">
-                  <div className="flex min-w-0 items-start gap-2">
-                    <Check className="mt-0.5 size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
-                    <span className="text-xs leading-snug font-semibold break-words text-foreground">
-                      {issue.title || issue.id}
-                    </span>
-                  </div>
+                  <span className="text-xs leading-snug font-semibold break-words text-foreground">
+                    {issue.title || issue.id}
+                  </span>
                   <SeverityBadge severity={issue.severity || "medium"} />
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
                   {matchedLinesStr && (
-                    <span className="rounded bg-muted/70 px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
+                    <Badge
+                      variant="secondary"
+                      size="sm"
+                      className="font-mono tabular-nums"
+                    >
                       Line
                       {issue.matched_lines && issue.matched_lines.length > 1
                         ? "s"
                         : ""}
                       : {matchedLinesStr}
-                    </span>
+                    </Badge>
                   )}
                   {issue.matched_keywords &&
                     issue.matched_keywords.length > 0 && (
                       <div className="flex flex-wrap items-center gap-1">
-                        <span className="text-[10px] text-muted-foreground">
+                        <span className="text-xs text-muted-foreground">
                           Matched:
                         </span>
                         {issue.matched_keywords.map((kw) => (
-                          <span
+                          <Badge
                             key={kw}
-                            className="py-0.2 rounded border border-border/70 bg-muted/50 px-1 font-mono text-[10px] text-foreground"
+                            variant="outline"
+                            size="sm"
+                            className="font-mono"
                           >
                             {kw}
-                          </span>
+                          </Badge>
                         ))}
                       </div>
                     )}
                 </div>
 
                 {issue.explanation && (
-                  <p className="border-t border-border/50 pt-2 text-xs leading-relaxed text-muted-foreground">
+                  <p className="border-t border-border/60 pt-2 text-xs leading-relaxed text-muted-foreground">
                     <FormattedInlineText text={issue.explanation} />
                   </p>
                 )}

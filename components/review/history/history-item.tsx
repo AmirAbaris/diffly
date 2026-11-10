@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { CheckCircle2, ChevronDown, ChevronUp, Clock } from "lucide-react"
+import { ChevronDown, ChevronUp } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -42,34 +42,25 @@ export function HistoryItem({ item, isExpanded, onToggle }: HistoryItemProps) {
         data-testid={`history-item-trigger-${item.id}`}
       >
         <div className="flex flex-wrap items-center gap-2">
-          <span className="font-mono text-xs font-bold text-foreground">
+          <span className="font-mono text-xs font-semibold text-foreground tabular-nums">
             Attempt #{item.attempt_number}
           </span>
 
           <Badge
             variant={scoreStyle.badgeVariant}
-            className={cn("px-2 py-0.5 text-xs", scoreStyle.className)}
+            size="sm"
+            className={cn("tabular-nums", scoreStyle.className)}
           >
             {item.score}%
           </Badge>
 
-          <Badge
-            variant="secondary"
-            className="gap-1 px-1.5 py-0.5 text-[11px] font-normal text-muted-foreground"
-          >
-            <CheckCircle2 className="size-3 text-emerald-500" />
-            <span>
-              {detectedCount} {detectedCount === 1 ? "issue" : "issues"}{" "}
-              detected
-            </span>
+          <Badge variant="secondary" size="sm" className="tabular-nums">
+            {detectedCount} {detectedCount === 1 ? "issue" : "issues"} detected
           </Badge>
         </div>
 
-        <div className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
-          <span className="hidden items-center gap-1 sm:inline-flex">
-            <Clock className="size-3" />
-            <span>{formattedDate}</span>
-          </span>
+        <div className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground tabular-nums">
+          <span className="hidden sm:inline">{formattedDate}</span>
           {isExpanded ? (
             <ChevronUp className="size-4 text-foreground" />
           ) : (
