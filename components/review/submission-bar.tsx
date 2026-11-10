@@ -115,7 +115,7 @@ export function SubmissionBar({
 
       toast({
         title: "Review submitted successfully",
-        description: `Score: ${response.data.score}% • ${response.data.feedback || "Evaluation complete."}`,
+        description: `Score: ${response.data.score}% • Review breakdown loaded.`,
         variant: "success",
       })
 
