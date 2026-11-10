@@ -18,7 +18,7 @@ function ToastViewport({
   return (
     <ToastPrimitive.Viewport
       className={cn(
-        "fixed right-0 bottom-0 z-[100] flex max-h-screen w-full flex-col-reverse gap-2 p-4 sm:top-auto sm:right-0 sm:bottom-0 sm:max-w-[380px] sm:flex-col",
+        "pointer-events-none fixed right-0 bottom-16 z-[100] flex max-h-screen w-full flex-col-reverse gap-2 p-4 sm:top-auto sm:right-4 sm:bottom-16 sm:max-w-[380px] sm:flex-col",
         className
       )}
       {...props}
@@ -35,15 +35,15 @@ function Toast({ className, variant = "default", ...props }: ToastProps) {
     <ToastPrimitive.Root
       data-slot="toast"
       className={cn(
-        "group pointer-events-auto relative flex w-full items-center justify-between space-x-3 overflow-hidden rounded-lg border p-3.5 pr-8 shadow-lg transition-all",
+        "group pointer-events-auto relative flex w-full items-start justify-between space-x-3 overflow-hidden rounded-xl border p-4 pr-9 shadow-xl backdrop-blur-md transition-all duration-200",
         "data-[swipe=cancel]:translate-x-0 data-[swipe=end]:translate-x-[var(--radix-toast-swipe-end-x)] data-[swipe=move]:translate-x-[var(--radix-toast-swipe-move-x)] data-[swipe=move]:transition-none",
         "data-[state=closed]:animate-out data-[state=closed]:fade-out-80 data-[state=closed]:slide-out-to-right-full data-[state=open]:animate-in data-[state=open]:slide-in-from-bottom-full data-[swipe=end]:animate-out sm:data-[state=open]:slide-in-from-bottom-full",
         variant === "default" &&
-          "border-border bg-card text-foreground shadow-sm",
+          "border-border bg-card/95 text-foreground shadow-lg",
         variant === "destructive" &&
-          "border-destructive/40 bg-destructive/10 text-destructive dark:border-destructive/50",
+          "border-destructive/40 bg-zinc-950/95 text-destructive shadow-lg dark:border-destructive/50",
         variant === "success" &&
-          "border-emerald-500/30 bg-emerald-500/10 text-emerald-900 dark:border-emerald-500/40 dark:text-emerald-300",
+          "border-emerald-500/40 bg-zinc-950/95 text-foreground shadow-lg dark:border-emerald-500/40",
         className
       )}
       {...props}
@@ -103,7 +103,10 @@ function ToastDescription({
 }: React.ComponentProps<typeof ToastPrimitive.Description>) {
   return (
     <ToastPrimitive.Description
-      className={cn("text-xs text-muted-foreground", className)}
+      className={cn(
+        "line-clamp-3 text-xs leading-relaxed break-words text-muted-foreground",
+        className
+      )}
       {...props}
     />
   )
