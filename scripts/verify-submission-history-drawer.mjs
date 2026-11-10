@@ -102,7 +102,7 @@ process.stdout.write(
 )
 
 // 4. Verify Guest Session ID Generation and Header Injection
-const GUEST_SESSION_STORAGE_KEY = "diffly_guest_session_id"
+const GUEST_SESSION_STORAGE_KEY = "diffly_session_id"
 const mockStorage = new Map()
 const fakeLocalStorage = {
   getItem: (key) => mockStorage.get(key) || null,
