@@ -7,6 +7,11 @@ const nextConfig: NextConfig = {
   logging: {
     browserToTerminal: true,
   },
+  experimental: {
+    instantInsights: {
+      validationLevel: "manual-warning",
+    },
+  },
   async redirects() {
     return [
       {
