@@ -35,7 +35,6 @@ interface HighlightedLine {
   tokenItems: Array<{
     id: string
     token: RenderProps["tokens"][number][number]
-    tokenIndex: number
   }>
 }
 
@@ -158,7 +157,6 @@ export function CodeViewer({
                 tokenItems: lineTokens.map((token, j) => ({
                   id: `diffly-tok-${lineNumber}-${j}`,
                   token,
-                  tokenIndex: j,
                 })),
               }
             })
@@ -170,8 +168,8 @@ export function CodeViewer({
                     const isFlagged = flaggedSet.has(line.lineNumber)
                     const lineProps = getLineProps({
                       line: line.lineTokens,
-                      key: line.id,
                     })
+                    delete (lineProps as { key?: unknown }).key
 
                     return (
                       <tr
@@ -238,15 +236,14 @@ export function CodeViewer({
                             line.tokenItems[0].token.content === "") ? (
                             <span>&#8203;</span>
                           ) : (
-                            line.tokenItems.map((item) => (
-                              <span
-                                key={item.id}
-                                {...getTokenProps({
-                                  token: item.token,
-                                  key: item.tokenIndex,
-                                })}
-                              />
-                            ))
+                            line.tokenItems.map((item) => {
+                              const tokenProps = getTokenProps({
+                                token: item.token,
+                              })
+                              delete (tokenProps as { key?: unknown }).key
+
+                              return <span key={item.id} {...tokenProps} />
+                            })
                           )}
                         </td>
                       </tr>

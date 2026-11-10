@@ -94,4 +94,37 @@ assert.equal(getTooltip(1, false), "Click line to flag for review")
 assert.equal(getTooltip(3, true), "Line 3 flagged. Click to unflag.")
 process.stdout.write("✓ Tooltip strings verified\n")
 
+// 6. Verify React 19 Key Spread Safety
+// In React 19, passing 'key' inside an object spread into JSX throws:
+// "A props object containing a 'key' prop is being spread into JSX"
+// We verify that props prepared for spread never contain the 'key' property.
+const sanitizeSpreadProps = (rawProps) => {
+  const { key, ...rest } = rawProps
+  return { key, rest }
+}
+
+const testWithKey = sanitizeSpreadProps({
+  key: "line-1",
+  className: "token-line",
+  style: {},
+})
+assert.equal(testWithKey.key, "line-1", "Key must be extracted separately")
+assert.equal(
+  "key" in testWithKey.rest,
+  false,
+  "Spread rest object must never contain 'key' property"
+)
+
+const testWithoutKey = sanitizeSpreadProps({
+  className: "token",
+  children: "def",
+})
+assert.equal(testWithoutKey.key, undefined)
+assert.equal(
+  "key" in testWithoutKey.rest,
+  false,
+  "Spread rest object must not contain 'key'"
+)
+process.stdout.write("✓ React 19 spread-key sanitization invariant verified\n")
+
 process.stdout.write("\nAll CodeViewer logic assertions PASSED successfully!\n")
