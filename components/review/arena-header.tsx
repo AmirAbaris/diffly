@@ -6,6 +6,8 @@ import { ArrowLeft, CheckCircle2, CircleDashed, History } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
+import { NavStats } from "@/components/layout/nav-stats"
+import { UserNav } from "@/components/layout/user-nav"
 import type { ChallengeDetail, Difficulty } from "@/types/challenge"
 
 export interface ArenaHeaderProps {
@@ -120,6 +122,12 @@ export function ArenaHeader({
             In Review
           </Badge>
         )}
+
+        <div className="hidden h-4 w-px bg-border sm:block" />
+        <div className="hidden items-center lg:flex">
+          <NavStats />
+        </div>
+        <UserNav />
       </div>
     </header>
   )
