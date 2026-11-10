@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { ArrowLeft, CheckCircle2, CircleDashed } from "lucide-react"
+import { ArrowLeft, CheckCircle2, CircleDashed, History } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -11,6 +11,8 @@ import type { ChallengeDetail, Difficulty } from "@/types/challenge"
 export interface ArenaHeaderProps {
   challenge?: ChallengeDetail | null
   isLoading?: boolean
+  onOpenHistory?: () => void
+  attemptCount?: number
 }
 
 function DifficultyBadge({ difficulty }: { difficulty: Difficulty }) {
@@ -23,7 +25,12 @@ function DifficultyBadge({ difficulty }: { difficulty: Difficulty }) {
   return <Badge variant="secondary">Easy</Badge>
 }
 
-export function ArenaHeader({ challenge, isLoading }: ArenaHeaderProps) {
+export function ArenaHeader({
+  challenge,
+  isLoading,
+  onOpenHistory,
+  attemptCount = 0,
+}: ArenaHeaderProps) {
   return (
     <header className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-card/60 px-4 backdrop-blur-sm sm:px-6">
       <div className="flex min-w-0 items-center gap-3">
@@ -63,6 +70,29 @@ export function ArenaHeader({ challenge, isLoading }: ArenaHeaderProps) {
       </div>
 
       <div className="flex items-center gap-2">
+        {onOpenHistory && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={onOpenHistory}
+            className="h-7 gap-1.5 px-2.5 text-xs text-muted-foreground hover:text-foreground sm:h-8"
+            data-testid="history-drawer-trigger"
+            aria-label="View past attempts"
+          >
+            <History className="size-3.5" />
+            <span className="hidden sm:inline">Attempts</span>
+            {attemptCount > 0 && (
+              <Badge
+                variant="secondary"
+                className="h-4 px-1 text-[10px] font-bold"
+              >
+                {attemptCount}
+              </Badge>
+            )}
+          </Button>
+        )}
+
         {isLoading || !challenge ? (
           <Skeleton className="h-6 w-20" />
         ) : challenge.is_solved ? (

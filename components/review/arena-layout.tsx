@@ -8,10 +8,12 @@ import { ChallengeContextPanel } from "@/components/review/challenge-context-pan
 import { ArenaHeader } from "@/components/review/arena-header"
 import { ReviewResultModal } from "@/components/review/review-result-modal"
 import { SubmissionBar } from "@/components/review/submission-bar"
+import { SubmissionHistoryDrawer } from "@/components/review/submission-history-drawer"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useChallenge } from "@/hooks/use-challenge"
 import { useChallenges } from "@/hooks/use-challenges"
 import { useReviewDraft } from "@/hooks/use-review-draft"
+import { useSubmissionHistory } from "@/hooks/use-submission-history"
 import { toast } from "@/hooks/use-toast"
 import { apiClient } from "@/lib/axios"
 import { cn } from "@/lib/utils"
@@ -22,7 +24,13 @@ export interface ArenaLayoutProps {
 }
 
 export function ArenaLayout({ slug }: ArenaLayoutProps) {
-  const { challenge, isLoading, error } = useChallenge(slug)
+  const {
+    challenge,
+    isLoading,
+    error,
+    mutate: mutateChallenge,
+  } = useChallenge(slug)
+  const { submissions, mutate: mutateHistory } = useSubmissionHistory(slug)
 
   const {
     flaggedLines,
@@ -38,6 +46,7 @@ export function ArenaLayout({ slug }: ArenaLayoutProps) {
   const [submissionResult, setSubmissionResult] =
     React.useState<ReviewSubmissionResponse | null>(null)
   const [isResultModalOpen, setIsResultModalOpen] = React.useState(false)
+  const [isHistoryOpen, setIsHistoryOpen] = React.useState(false)
   const [submittedReview, setSubmittedReview] = React.useState<{
     flaggedLines: number[]
     comments: string
@@ -69,8 +78,10 @@ export function ArenaLayout({ slug }: ArenaLayoutProps) {
       }))
       setSubmissionResult(data)
       setIsResultModalOpen(true)
+      mutateHistory()
+      mutateChallenge()
     },
-    [flaggedLines, comments]
+    [flaggedLines, comments, mutateHistory, mutateChallenge]
   )
 
   const handleSubmitReview = React.useCallback(async () => {
@@ -138,7 +149,12 @@ export function ArenaLayout({ slug }: ArenaLayoutProps) {
       className="flex h-screen w-full flex-col overflow-hidden bg-background text-foreground"
     >
       {/* Top Navigation Bar */}
-      <ArenaHeader challenge={challenge} isLoading={isLoading} />
+      <ArenaHeader
+        challenge={challenge}
+        isLoading={isLoading}
+        onOpenHistory={() => setIsHistoryOpen(true)}
+        attemptCount={submissions.length}
+      />
 
       {/* Mobile / Tablet Tab Switcher (Visible only below 1024px) */}
       <div className="flex shrink-0 border-b border-border bg-muted/30 px-4 py-2 lg:hidden">
@@ -217,6 +233,8 @@ export function ArenaLayout({ slug }: ArenaLayoutProps) {
         onSubmitReview={handleSubmitReview}
         onSubmitSuccess={handleReviewSuccess}
         onViewResults={() => setIsResultModalOpen(true)}
+        onOpenHistory={() => setIsHistoryOpen(true)}
+        attemptCount={submissions.length}
         hasSubmitted={!!submissionResult}
         isSubmitting={isSubmitting}
       />
@@ -236,6 +254,13 @@ export function ArenaLayout({ slug }: ArenaLayoutProps) {
         userComments={submittedReview?.comments ?? submissionResult?.comments}
         codeSnippet={challenge?.code_snippet}
         language={challenge?.language}
+      />
+
+      {/* Submission History Drawer */}
+      <SubmissionHistoryDrawer
+        open={isHistoryOpen}
+        onOpenChange={setIsHistoryOpen}
+        challengeSlug={slug}
       />
     </div>
   )
