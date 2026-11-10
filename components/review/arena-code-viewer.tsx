@@ -13,6 +13,12 @@ export interface ArenaCodeViewerProps {
   onToggleLine: (line: number) => void
 }
 
+interface CodeLine {
+  id: string
+  lineNumber: number
+  lineContent: string
+}
+
 export function ArenaCodeViewer({
   code,
   language = "python",
@@ -21,9 +27,19 @@ export function ArenaCodeViewer({
 }: ArenaCodeViewerProps) {
   const [copied, setCopied] = React.useState(false)
 
-  const lines = React.useMemo(() => {
-    return code ? code.split("\n") : []
+  const codeLines = React.useMemo<CodeLine[]>(() => {
+    if (!code) return []
+    return code.split("\n").map((lineContent, index) => {
+      const lineNumber = index + 1
+      return {
+        id: `line-${lineNumber}`,
+        lineNumber,
+        lineContent,
+      }
+    })
   }, [code])
+
+  const flaggedSet = React.useMemo(() => new Set(flaggedLines), [flaggedLines])
 
   const handleCopy = React.useCallback(async () => {
     try {
@@ -51,7 +67,7 @@ export function ArenaCodeViewer({
             {language}
           </Badge>
           <span className="text-[11px] text-muted-foreground">
-            {lines.length} lines
+            {codeLines.length} lines
           </span>
         </div>
 
@@ -92,13 +108,12 @@ export function ArenaCodeViewer({
       <div className="overflow-x-auto p-1">
         <table className="w-full border-collapse">
           <tbody>
-            {lines.map((lineContent, index) => {
-              const lineNumber = index + 1
-              const isFlagged = flaggedLines.includes(lineNumber)
+            {codeLines.map((line) => {
+              const isFlagged = flaggedSet.has(line.lineNumber)
 
               return (
                 <tr
-                  key={lineNumber}
+                  key={line.id}
                   className={cn(
                     "group transition-colors",
                     isFlagged
@@ -110,11 +125,11 @@ export function ArenaCodeViewer({
                   <td className="w-12 px-2 py-0.5 text-right align-top select-none">
                     <button
                       type="button"
-                      onClick={() => onToggleLine(lineNumber)}
+                      onClick={() => onToggleLine(line.lineNumber)}
                       title={
                         isFlagged
-                          ? `Line ${lineNumber} flagged. Click to unflag.`
-                          : `Click to flag line ${lineNumber} for review`
+                          ? `Line ${line.lineNumber} flagged. Click to unflag.`
+                          : `Click to flag line ${line.lineNumber} for review`
                       }
                       className={cn(
                         "inline-flex h-5 w-8 items-center justify-center rounded font-mono text-[11px] transition-colors",
@@ -123,11 +138,11 @@ export function ArenaCodeViewer({
                           : "text-muted-foreground/60 hover:bg-muted hover:text-foreground"
                       )}
                     >
-                      {lineNumber}
+                      {line.lineNumber}
                     </button>
                   </td>
 
-                  {/* Flag indicator indicator column */}
+                  {/* Flag indicator column */}
                   <td className="w-4 px-0.5 py-0.5 align-top select-none">
                     {isFlagged ? (
                       <Flag className="mt-1 size-3 fill-amber-500 text-amber-500" />
@@ -138,7 +153,7 @@ export function ArenaCodeViewer({
 
                   {/* Code Line Content */}
                   <td className="px-2 py-0.5 align-top font-mono text-[12px] leading-5 whitespace-pre text-foreground">
-                    {lineContent || " "}
+                    {line.lineContent || " "}
                   </td>
                 </tr>
               )
