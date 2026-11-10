@@ -38,6 +38,10 @@ export function ArenaLayout({ slug }: ArenaLayoutProps) {
   const [submissionResult, setSubmissionResult] =
     React.useState<ReviewSubmissionResponse | null>(null)
   const [isResultModalOpen, setIsResultModalOpen] = React.useState(false)
+  const [submittedReview, setSubmittedReview] = React.useState<{
+    flaggedLines: number[]
+    comments: string
+  } | null>(null)
 
   const { challenges } = useChallenges()
   const nextChallengeSlug = React.useMemo(() => {
@@ -53,10 +57,20 @@ export function ArenaLayout({ slug }: ArenaLayoutProps) {
 
   const handleReviewSuccess = React.useCallback(
     (data: ReviewSubmissionResponse) => {
+      setSubmittedReview((prev) => ({
+        flaggedLines:
+          data.flagged_lines && data.flagged_lines.length > 0
+            ? data.flagged_lines
+            : (prev?.flaggedLines ?? flaggedLines),
+        comments:
+          data.comments && data.comments.length > 0
+            ? data.comments
+            : (prev?.comments ?? comments.trim()),
+      }))
       setSubmissionResult(data)
       setIsResultModalOpen(true)
     },
-    []
+    [flaggedLines, comments]
   )
 
   const handleSubmitReview = React.useCallback(async () => {
@@ -202,6 +216,8 @@ export function ArenaLayout({ slug }: ArenaLayoutProps) {
         onResetDraft={resetDraft}
         onSubmitReview={handleSubmitReview}
         onSubmitSuccess={handleReviewSuccess}
+        onViewResults={() => setIsResultModalOpen(true)}
+        hasSubmitted={!!submissionResult}
         isSubmitting={isSubmitting}
       />
 
@@ -214,6 +230,12 @@ export function ArenaLayout({ slug }: ArenaLayoutProps) {
         challengeTitle={challenge?.title}
         nextChallengeSlug={nextChallengeSlug}
         onTryAgain={() => setIsResultModalOpen(false)}
+        userFlaggedLines={
+          submittedReview?.flaggedLines ?? submissionResult?.flagged_lines
+        }
+        userComments={submittedReview?.comments ?? submissionResult?.comments}
+        codeSnippet={challenge?.code_snippet}
+        language={challenge?.language}
       />
     </div>
   )

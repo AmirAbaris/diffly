@@ -10,12 +10,10 @@ import {
   ChevronDown,
   ChevronUp,
   FileCode,
-  Loader2,
   RotateCcw,
   ShieldAlert,
   Sparkles,
 } from "lucide-react"
-import { MarkdownPreview } from "@/components/review/markdown-preview"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -26,7 +24,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { apiClient } from "@/lib/axios"
 import { cn } from "@/lib/utils"
 import type {
   ChallengeSolutionResponse,
@@ -34,6 +31,7 @@ import type {
   MissedIssue,
   ReviewSubmissionResponse,
 } from "@/types/challenge"
+import { ComparisonView } from "@/components/review/comparison-view"
 
 export interface ReviewResultModalProps {
   open: boolean
@@ -46,6 +44,10 @@ export interface ReviewResultModalProps {
   onViewCanonicalSolution?: () => void
   onNextChallenge?: () => void
   canonicalSolution?: ChallengeSolutionResponse | null
+  userFlaggedLines?: number[]
+  userComments?: string
+  codeSnippet?: string
+  language?: string
 }
 
 interface ScoreTierStyle {
@@ -458,64 +460,136 @@ function MissedDefectsSection({ issues }: { issues: MissedIssue[] }) {
   )
 }
 
-function CanonicalSolutionPanel({
-  solution,
-  isLoading,
-}: {
-  solution: ChallengeSolutionResponse | null
-  isLoading: boolean
-}) {
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center gap-2 rounded-2xl border border-border bg-muted/30 p-8 text-xs text-muted-foreground">
-        <Loader2 className="size-4 animate-spin text-primary" />
-        <span>Loading canonical solution...</span>
-      </div>
-    )
-  }
+interface ScoreHeroProps {
+  score: number
+  submissionId: number
+  tierStyle: ScoreTierStyle
+  summary: string
+  detectedCount: number
+  missedCount: number
+  penalty: string | null
+}
 
-  if (!solution) {
-    return (
-      <div className="rounded-2xl border border-dashed border-border bg-muted/20 p-4 text-center text-xs text-muted-foreground">
-        Canonical solution could not be retrieved at this time.
-      </div>
-    )
-  }
-
+function ScoreHeroSection({
+  score,
+  submissionId,
+  tierStyle,
+  summary,
+  detectedCount,
+  missedCount,
+  penalty,
+}: ScoreHeroProps) {
   return (
     <div
-      data-testid="canonical-solution-panel"
-      className="flex flex-col gap-4 rounded-2xl border border-border/80 bg-card p-4 shadow-xs sm:p-5"
+      data-testid="score-hero-container"
+      className="flex flex-col items-center gap-5 rounded-2xl border border-border/70 bg-card/70 p-4 backdrop-blur-xs sm:flex-row sm:items-center sm:gap-6 sm:p-5"
     >
-      <div className="flex items-center gap-2 border-b border-border pb-3">
-        <FileCode className="size-4 text-primary" />
-        <h4 className="text-sm font-semibold text-foreground">
-          Canonical Solution & Recommended Fix
-        </h4>
+      <RadialScoreMeter score={score} />
+
+      <div className="flex min-w-0 flex-1 flex-col items-center gap-2.5 text-center sm:items-start sm:text-left">
+        <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-start">
+          <Badge
+            variant="outline"
+            className={cn(
+              "gap-1.5 px-2.5 py-0.5 text-xs font-semibold",
+              tierStyle.badgeClassName
+            )}
+          >
+            <span
+              className={cn("size-1.5 rounded-full", tierStyle.dotClassName)}
+            />
+            <span>{tierStyle.label}</span>
+          </Badge>
+          <span className="font-mono text-xs text-muted-foreground">
+            Submission #{submissionId}
+          </span>
+        </div>
+
+        <p className="text-xs leading-relaxed font-medium text-foreground/90">
+          {summary}
+        </p>
+
+        <div className="flex flex-wrap items-center justify-center gap-2 pt-0.5 sm:justify-start">
+          <span className="inline-flex items-center gap-1 rounded-md bg-muted/60 px-2 py-0.5 font-mono text-[11px] text-muted-foreground">
+            <Check className="size-3 text-emerald-500" />
+            <span>{detectedCount} detected</span>
+          </span>
+
+          <span className="inline-flex items-center gap-1 rounded-md bg-muted/60 px-2 py-0.5 font-mono text-[11px] text-muted-foreground">
+            <AlertTriangle className="size-3 text-amber-500" />
+            <span>{missedCount} missed</span>
+          </span>
+
+          {penalty && (
+            <span className="inline-flex items-center gap-1 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 font-mono text-[11px] text-amber-700 dark:text-amber-300">
+              <ShieldAlert className="size-3" />
+              <span>{penalty}</span>
+            </span>
+          )}
+        </div>
       </div>
-
-      {solution.canonical_review && (
-        <div className="flex flex-col gap-1.5">
-          <span className="text-xs font-semibold text-muted-foreground">
-            Canonical Review Critique
-          </span>
-          <div className="rounded-xl border border-border bg-muted/20 p-3.5 text-xs leading-relaxed text-foreground">
-            <MarkdownPreview content={solution.canonical_review} />
-          </div>
-        </div>
-      )}
-
-      {solution.recommended_fix_diff && (
-        <div className="flex flex-col gap-1.5">
-          <span className="text-xs font-semibold text-muted-foreground">
-            Recommended Fix Diff
-          </span>
-          <pre className="overflow-x-auto rounded-xl border border-border bg-zinc-950 p-3.5 font-mono text-[11px] leading-relaxed text-zinc-100">
-            <code>{solution.recommended_fix_diff}</code>
-          </pre>
-        </div>
-      )}
     </div>
+  )
+}
+
+interface ModalFooterActionsProps {
+  showCanonicalSolution: boolean
+  onTryAgain: () => void
+  onToggleCanonical: () => void
+  onNextChallenge: () => void
+}
+
+function ModalFooterActions({
+  showCanonicalSolution,
+  onTryAgain,
+  onToggleCanonical,
+  onNextChallenge,
+}: ModalFooterActionsProps) {
+  return (
+    <DialogFooter className="flex flex-col-reverse gap-2.5 pt-2 sm:flex-row sm:items-center sm:justify-between">
+      <Button
+        type="button"
+        variant="outline"
+        onClick={onTryAgain}
+        className="h-9 gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+        data-testid="try-again-button"
+      >
+        <RotateCcw className="size-3.5" />
+        <span>Try Again</span>
+      </Button>
+
+      <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center">
+        <Button
+          type="button"
+          variant="outline"
+          onClick={onToggleCanonical}
+          className="h-9 gap-1.5 text-xs"
+          data-testid="view-canonical-solution-button"
+        >
+          <FileCode className="size-3.5" />
+          <span>
+            {showCanonicalSolution
+              ? "Hide Staff Comparison"
+              : "Compare with Staff Review"}
+          </span>
+          {showCanonicalSolution ? (
+            <ChevronUp className="size-3" />
+          ) : (
+            <ChevronDown className="size-3" />
+          )}
+        </Button>
+
+        <Button
+          type="button"
+          onClick={onNextChallenge}
+          className="h-9 gap-1.5 text-xs font-semibold"
+          data-testid="next-challenge-button"
+        >
+          <span>Next Challenge</span>
+          <ArrowRight className="size-3.5" />
+        </Button>
+      </div>
+    </DialogFooter>
   )
 }
 
@@ -530,15 +604,14 @@ export function ReviewResultModal({
   onViewCanonicalSolution,
   onNextChallenge,
   canonicalSolution: propSolution,
+  userFlaggedLines,
+  userComments,
+  codeSnippet,
+  language,
 }: ReviewResultModalProps) {
   const router = useRouter()
   const [showCanonicalSolution, setShowCanonicalSolution] =
     React.useState(false)
-  const [fetchedSolution, setFetchedSolution] =
-    React.useState<ChallengeSolutionResponse | null>(null)
-  const [isSolutionLoading, setIsSolutionLoading] = React.useState(false)
-
-  const solutionData = propSolution ?? fetchedSolution
 
   const score = result?.score ?? 0
   const tierStyle = getScoreTierStyle(score)
@@ -565,32 +638,10 @@ export function ReviewResultModal({
     onTryAgain?.()
   }, [onOpenChange, onTryAgain])
 
-  const handleToggleCanonicalSolution = React.useCallback(async () => {
+  const handleToggleCanonicalSolution = React.useCallback(() => {
     onViewCanonicalSolution?.()
-
-    const willShow = !showCanonicalSolution
-    setShowCanonicalSolution(willShow)
-
-    if (willShow && !solutionData && !isSolutionLoading) {
-      setIsSolutionLoading(true)
-      try {
-        const response = await apiClient.get<ChallengeSolutionResponse>(
-          `/api/challenges/${challengeSlug}/solution?reveal=true`
-        )
-        setFetchedSolution(response.data)
-      } catch {
-        // Handled gracefully in canonical solution panel
-      } finally {
-        setIsSolutionLoading(false)
-      }
-    }
-  }, [
-    showCanonicalSolution,
-    solutionData,
-    isSolutionLoading,
-    challengeSlug,
-    onViewCanonicalSolution,
-  ])
+    setShowCanonicalSolution((prev) => !prev)
+  }, [onViewCanonicalSolution])
 
   const handleNextChallenge = React.useCallback(() => {
     setShowCanonicalSolution(false)
@@ -612,7 +663,12 @@ export function ReviewResultModal({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent
         data-testid="review-result-modal"
-        className="max-h-[92vh] w-full overflow-x-hidden overflow-y-auto rounded-3xl border border-border/80 bg-background/95 p-6 shadow-2xl backdrop-blur-xl sm:max-w-3xl sm:p-7 lg:max-w-4xl"
+        className={cn(
+          "max-h-[92vh] w-full overflow-x-hidden overflow-y-auto rounded-3xl border border-border/80 bg-background/95 p-6 shadow-2xl backdrop-blur-xl transition-all sm:p-7",
+          showCanonicalSolution
+            ? "sm:max-w-4xl lg:max-w-5xl"
+            : "sm:max-w-3xl lg:max-w-4xl"
+        )}
       >
         <DialogHeader className="gap-1 pb-1 text-left">
           <div className="flex items-center gap-2">
@@ -629,59 +685,15 @@ export function ReviewResultModal({
         </DialogHeader>
 
         {/* Hero Section: Gauge & Executive Summary */}
-        <div
-          data-testid="score-hero-container"
-          className="flex flex-col items-center gap-5 rounded-2xl border border-border/70 bg-card/70 p-4 backdrop-blur-xs sm:flex-row sm:items-center sm:gap-6 sm:p-5"
-        >
-          <RadialScoreMeter score={score} />
-
-          <div className="flex min-w-0 flex-1 flex-col items-center gap-2.5 text-center sm:items-start sm:text-left">
-            <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-start">
-              <Badge
-                variant="outline"
-                className={cn(
-                  "gap-1.5 px-2.5 py-0.5 text-xs font-semibold",
-                  tierStyle.badgeClassName
-                )}
-              >
-                <span
-                  className={cn(
-                    "size-1.5 rounded-full",
-                    tierStyle.dotClassName
-                  )}
-                />
-                <span>{tierStyle.label}</span>
-              </Badge>
-              <span className="font-mono text-xs text-muted-foreground">
-                Submission #{result.submission_id || result.id}
-              </span>
-            </div>
-
-            <p className="text-xs leading-relaxed font-medium text-foreground/90">
-              {summary}
-            </p>
-
-            {/* Quick Metrics Bar */}
-            <div className="flex flex-wrap items-center justify-center gap-2 pt-0.5 sm:justify-start">
-              <span className="inline-flex items-center gap-1 rounded-md bg-muted/60 px-2 py-0.5 font-mono text-[11px] text-muted-foreground">
-                <Check className="size-3 text-emerald-500" />
-                <span>{detectedIssues.length} detected</span>
-              </span>
-
-              <span className="inline-flex items-center gap-1 rounded-md bg-muted/60 px-2 py-0.5 font-mono text-[11px] text-muted-foreground">
-                <AlertTriangle className="size-3 text-amber-500" />
-                <span>{missedIssues.length} missed</span>
-              </span>
-
-              {penalty && (
-                <span className="inline-flex items-center gap-1 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 font-mono text-[11px] text-amber-700 dark:text-amber-300">
-                  <ShieldAlert className="size-3" />
-                  <span>{penalty}</span>
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
+        <ScoreHeroSection
+          score={score}
+          submissionId={result.submission_id || result.id}
+          tierStyle={tierStyle}
+          summary={summary}
+          detectedCount={detectedIssues.length}
+          missedCount={missedIssues.length}
+          penalty={penalty}
+        />
 
         {/* Defect Breakdown: Detected vs Missed in 2 Balanced Columns */}
         <div className="grid grid-cols-1 items-start gap-4 md:grid-cols-2">
@@ -689,59 +701,27 @@ export function ReviewResultModal({
           <MissedDefectsSection issues={missedIssues} />
         </div>
 
-        {/* Expandable Canonical Solution Drawer */}
+        {/* Expandable Side-by-Side Review Comparison & Canonical Solution Drawer */}
         {showCanonicalSolution && (
-          <CanonicalSolutionPanel
-            solution={solutionData}
-            isLoading={isSolutionLoading}
-          />
+          <div data-testid="canonical-solution-panel" className="w-full">
+            <ComparisonView
+              challengeSlug={challengeSlug}
+              userFlaggedLines={userFlaggedLines ?? result.flagged_lines ?? []}
+              userComments={userComments ?? result.comments ?? ""}
+              canonicalSolution={propSolution}
+              codeSnippet={codeSnippet}
+              language={language}
+            />
+          </div>
         )}
 
         {/* Action Buttons */}
-        <DialogFooter className="flex flex-col-reverse gap-2.5 pt-2 sm:flex-row sm:items-center sm:justify-between">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={handleTryAgain}
-            className="h-9 gap-1.5 text-xs text-muted-foreground hover:text-foreground"
-            data-testid="try-again-button"
-          >
-            <RotateCcw className="size-3.5" />
-            <span>Try Again</span>
-          </Button>
-
-          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handleToggleCanonicalSolution}
-              className="h-9 gap-1.5 text-xs"
-              data-testid="view-canonical-solution-button"
-            >
-              <FileCode className="size-3.5" />
-              <span>
-                {showCanonicalSolution
-                  ? "Hide Canonical Solution"
-                  : "View Canonical Solution"}
-              </span>
-              {showCanonicalSolution ? (
-                <ChevronUp className="size-3" />
-              ) : (
-                <ChevronDown className="size-3" />
-              )}
-            </Button>
-
-            <Button
-              type="button"
-              onClick={handleNextChallenge}
-              className="h-9 gap-1.5 text-xs font-semibold"
-              data-testid="next-challenge-button"
-            >
-              <span>Next Challenge</span>
-              <ArrowRight className="size-3.5" />
-            </Button>
-          </div>
-        </DialogFooter>
+        <ModalFooterActions
+          showCanonicalSolution={showCanonicalSolution}
+          onTryAgain={handleTryAgain}
+          onToggleCanonical={handleToggleCanonicalSolution}
+          onNextChallenge={handleNextChallenge}
+        />
       </DialogContent>
     </Dialog>
   )

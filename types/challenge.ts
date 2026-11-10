@@ -81,6 +81,8 @@ export interface ReviewSubmissionResponse {
   detected_issues: DetectedIssue[]
   missed_issues: MissedIssue[]
   created_at: string
+  flagged_lines?: number[]
+  comments?: string
 }
 
 export interface ChallengeSolutionResponse {

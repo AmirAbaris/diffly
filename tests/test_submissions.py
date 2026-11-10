@@ -38,6 +38,8 @@ def test_submit_review_guest_via_body_session_id(client: TestClient, session: Se
     assert isinstance(data["detected_issues"], list)
     assert isinstance(data["missed_issues"], list)
     assert "created_at" in data
+    assert data["flagged_lines"] == [6]
+    assert data["comments"] == payload["comments"]
 
     # Verify database persistence
     saved = session.get(Submission, data["submission_id"])

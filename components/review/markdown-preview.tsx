@@ -252,7 +252,7 @@ function renderTokens(tokens: InlineToken[]) {
         return (
           <code
             key={token.id}
-            className="rounded border border-border/60 bg-muted px-1.5 py-0.5 font-mono text-[11px] text-foreground"
+            className="rounded border border-border/60 bg-muted px-1.5 py-0.5 font-mono text-[11px] [overflow-wrap:anywhere] break-all text-foreground"
           >
             {token.text}
           </code>
@@ -349,7 +349,7 @@ export function MarkdownPreview({ content, className }: MarkdownPreviewProps) {
     <div
       data-testid="markdown-preview"
       className={cn(
-        "flex flex-col gap-2.5 rounded-md border border-border bg-background p-3 text-xs leading-relaxed text-foreground",
+        "flex min-w-0 flex-col gap-2.5 rounded-md border border-border bg-background p-3 text-xs leading-relaxed text-foreground",
         className
       )}
     >
@@ -441,7 +441,7 @@ export function MarkdownPreview({ content, className }: MarkdownPreviewProps) {
             return (
               <p
                 key={block.id}
-                className="text-xs leading-relaxed text-foreground"
+                className="min-w-0 text-xs leading-relaxed break-words text-foreground"
               >
                 {renderTokens(block.tokens)}
               </p>
