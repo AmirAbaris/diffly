@@ -38,3 +38,25 @@ export interface ChallengeFilters {
   language?: Language | "All"
   search?: string
 }
+
+export interface ReviewDraft {
+  flaggedLines: number[]
+  comments: string
+  updatedAt?: string
+}
+
+export interface ReviewSubmissionRequest {
+  flagged_lines: number[]
+  comments: string
+  session_id?: string | null
+}
+
+export interface ReviewSubmissionResponse {
+  submission_id: number
+  id: number
+  score: number
+  feedback: string
+  detected_issues: Array<Record<string, unknown>>
+  missed_issues: Array<Record<string, unknown>>
+  created_at: string
+}
