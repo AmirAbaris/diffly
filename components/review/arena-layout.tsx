@@ -14,6 +14,7 @@ import { useChallenge } from "@/hooks/use-challenge"
 import { useChallenges } from "@/hooks/use-challenges"
 import { useReviewDraft } from "@/hooks/use-review-draft"
 import { useSubmissionHistory } from "@/hooks/use-submission-history"
+import { mutateUserStats } from "@/hooks/use-user-stats"
 import { toast } from "@/hooks/use-toast"
 import { apiClient } from "@/lib/axios"
 import { cn } from "@/lib/utils"
@@ -80,6 +81,7 @@ export function ArenaLayout({ slug }: ArenaLayoutProps) {
       setIsResultModalOpen(true)
       mutateHistory()
       mutateChallenge()
+      mutateUserStats()
     },
     [flaggedLines, comments, mutateHistory, mutateChallenge]
   )
