@@ -32,7 +32,7 @@ export function FormattedInline({ text }: { text: string }) {
           return (
             <code
               key={key}
-              className="rounded border border-border/70 bg-muted/70 px-1.5 py-0.5 font-mono text-[11px] text-foreground"
+              className="rounded border border-border/70 bg-muted/70 px-1.5 py-0.5 font-mono text-xs text-foreground"
             >
               {raw.slice(1, -1)}
             </code>

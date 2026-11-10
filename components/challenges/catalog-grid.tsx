@@ -2,19 +2,11 @@
 
 import * as React from "react"
 import Link from "next/link"
-import {
-  ArrowRight,
-  CheckCircle2,
-  Clock,
-  FileCode,
-  Inbox,
-  Lightbulb,
-} from "lucide-react"
+import { ArrowRight, Inbox } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
   Card,
-  CardContent,
   CardDescription,
   CardFooter,
   CardHeader,
@@ -52,10 +44,17 @@ function DifficultyBadge({ difficulty }: { difficulty: Difficulty }) {
   }
 
   if (difficulty === "Medium") {
-    return <Badge variant="default">Medium</Badge>
+    return <Badge variant="warning">Medium</Badge>
   }
 
-  return <Badge variant="secondary">Easy</Badge>
+  return <Badge variant="success">Easy</Badge>
+}
+
+function formatLanguageLabel(language: string): string {
+  const norm = language.toLowerCase().trim()
+  if (norm === "python") return "Python"
+  if (norm === "typescript") return "TypeScript"
+  return language
 }
 
 export function CatalogSkeletonGrid() {
@@ -65,20 +64,19 @@ export function CatalogSkeletonGrid() {
       className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3"
     >
       {SKELETON_ITEMS.map((key) => (
-        <Card key={key}>
+        <Card key={key} className="justify-between">
           <CardHeader>
             <div className="flex items-center justify-between">
-              <Skeleton className="h-5 w-16" />
+              <Skeleton className="h-5 w-24" />
               <Skeleton className="h-5 w-14" />
             </div>
-            <Skeleton className="h-5 w-4/5" />
+            <Skeleton className="mt-1 h-5 w-4/5" />
             <Skeleton className="h-4 w-full" />
-          </CardHeader>
-          <CardContent>
             <Skeleton className="h-4 w-2/3" />
-          </CardContent>
-          <CardFooter>
-            <Skeleton className="h-9 w-full" />
+          </CardHeader>
+          <CardFooter className="justify-between border-t border-border/60 pt-4">
+            <Skeleton className="h-4 w-32" />
+            <Skeleton className="h-8 w-20" />
           </CardFooter>
         </Card>
       ))}
@@ -91,7 +89,7 @@ function EmptyStateCard({ onResetFilters }: { onResetFilters?: () => void }) {
     <Empty data-testid="catalog-empty-state" className="border">
       <EmptyHeader>
         <EmptyMedia variant="icon">
-          <Inbox />
+          <Inbox aria-hidden="true" />
         </EmptyMedia>
         <EmptyTitle>No matching challenges found</EmptyTitle>
         <EmptyDescription>
@@ -129,67 +127,60 @@ export function CatalogGrid({
       className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3"
     >
       {challenges.map((challenge) => (
-        <Card key={challenge.id} className="justify-between">
-          <CardHeader>
+        <Card
+          key={challenge.id}
+          className="justify-between transition-colors hover:border-foreground/25"
+        >
+          <CardHeader className="gap-2.5">
             <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-1.5">
+              <div className="flex flex-wrap items-center gap-1.5">
                 <DifficultyBadge difficulty={challenge.difficulty} />
                 <Badge variant="outline">{challenge.category}</Badge>
               </div>
 
-              <div className="flex items-center gap-1.5">
+              <div className="flex shrink-0 items-center gap-1.5">
                 {challenge.is_solved && (
-                  <Badge variant="secondary">
-                    <CheckCircle2 data-icon="inline-start" />
+                  <Badge variant="success" className="tabular-nums">
                     {challenge.best_score !== null
-                      ? `${challenge.best_score}%`
+                      ? `Solved · ${challenge.best_score}%`
                       : "Solved"}
                   </Badge>
                 )}
-                <Badge variant="outline" className="uppercase">
-                  {challenge.language}
+                <Badge variant="secondary" className="font-mono">
+                  {formatLanguageLabel(challenge.language)}
                 </Badge>
               </div>
             </div>
 
-            <CardTitle className="line-clamp-1">
-              <Link
-                href={`/challenges/${challenge.slug}`}
-                className="hover:underline"
-              >
-                {challenge.title}
-              </Link>
-            </CardTitle>
+            <div className="flex flex-col gap-1">
+              <CardTitle className="line-clamp-1 text-base font-semibold tracking-tight">
+                <Link
+                  href={`/challenges/${challenge.slug}`}
+                  className="hover:underline"
+                >
+                  {challenge.title}
+                </Link>
+              </CardTitle>
 
-            <CardDescription className="line-clamp-2">
-              {challenge.description}
-            </CardDescription>
+              <CardDescription className="line-clamp-2 text-xs leading-relaxed">
+                {challenge.description}
+              </CardDescription>
+            </div>
           </CardHeader>
 
-          <CardContent>
-            <div className="flex items-center justify-between text-xs text-muted-foreground">
-              <span className="flex items-center gap-1">
-                <Clock className="size-3.5" />
-                {challenge.estimated_minutes} min
-              </span>
-
-              <span className="flex items-center gap-1">
-                <FileCode className="size-3.5" />
-                {challenge.line_count} lines
-              </span>
-
-              <span className="flex items-center gap-1">
-                <Lightbulb className="size-3.5" />
-                {challenge.total_hints} hints
-              </span>
+          <CardFooter className="flex items-center justify-between gap-3 border-t border-border/60 pt-4">
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground tabular-nums">
+              <span>{challenge.estimated_minutes}m</span>
+              <span aria-hidden="true">·</span>
+              <span>{challenge.line_count} lines</span>
+              <span aria-hidden="true">·</span>
+              <span>{challenge.total_hints} hints</span>
             </div>
-          </CardContent>
 
-          <CardFooter>
-            <Button asChild size="sm" className="w-full">
+            <Button asChild variant="outline" size="sm" className="h-8 text-xs">
               <Link href={`/challenges/${challenge.slug}`}>
-                Review Challenge
-                <ArrowRight data-icon="inline-end" />
+                <span>Review</span>
+                <ArrowRight aria-hidden="true" data-icon="inline-end" />
               </Link>
             </Button>
           </CardFooter>

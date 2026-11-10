@@ -1,7 +1,6 @@
 "use client"
 
 import * as React from "react"
-import { BookOpen, Code2 } from "lucide-react"
 import { ArenaCodeViewer } from "@/components/review/arena-code-viewer"
 import { ArenaCommentDrawer } from "@/components/review/arena-comment-drawer"
 import { ChallengeContextPanel } from "@/components/review/challenge-context-panel"
@@ -9,6 +8,7 @@ import { ArenaHeader } from "@/components/review/arena-header"
 import { ReviewResultModal } from "@/components/review/review-result-modal"
 import { SubmissionBar } from "@/components/review/submission-bar"
 import { SubmissionHistoryDrawer } from "@/components/review/submission-history-drawer"
+import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useChallenge } from "@/hooks/use-challenge"
 import { useChallenges } from "@/hooks/use-challenges"
@@ -115,7 +115,7 @@ export function ArenaLayout({ slug }: ArenaLayoutProps) {
 
       toast({
         title: "Review submitted successfully",
-        description: `Score: ${response.data.score}% • Review breakdown loaded.`,
+        description: `Score: ${response.data.score}% · Review breakdown loaded.`,
         variant: "success",
       })
 
@@ -148,8 +148,8 @@ export function ArenaLayout({ slug }: ArenaLayoutProps) {
 
   if (error) {
     return (
-      <div className="flex h-screen flex-col items-center justify-center gap-4 bg-background p-6 text-center">
-        <h1 className="text-xl font-bold text-destructive">
+      <div className="flex h-dvh flex-col items-center justify-center gap-4 bg-background p-6 text-center">
+        <h1 className="text-xl font-semibold text-destructive">
           Challenge Not Found
         </h1>
         <p className="text-sm text-muted-foreground">
@@ -162,7 +162,7 @@ export function ArenaLayout({ slug }: ArenaLayoutProps) {
   return (
     <div
       data-testid="arena-layout"
-      className="flex h-screen w-full flex-col overflow-hidden bg-background text-foreground"
+      className="flex h-dvh w-full flex-col overflow-hidden bg-background text-foreground"
     >
       {/* Top Navigation Bar */}
       <ArenaHeader
@@ -173,24 +173,22 @@ export function ArenaLayout({ slug }: ArenaLayoutProps) {
       />
 
       {/* Mobile / Tablet Tab Switcher (Visible only below 1024px) */}
-      <div className="flex shrink-0 border-b border-border bg-muted/30 px-4 py-2 lg:hidden">
+      <div className="flex shrink-0 border-b border-border bg-muted/20 px-4 py-2 lg:hidden">
         <Tabs
           value={mobileTab}
           onValueChange={(val) => setMobileTab(val as "brief" | "code")}
           className="w-full"
         >
           <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="brief" className="gap-1.5 text-xs">
-              <BookOpen className="size-3.5" />
-              <span>Context & Rules</span>
+            <TabsTrigger value="brief" className="text-xs">
+              Context &amp; Rules
             </TabsTrigger>
             <TabsTrigger value="code" className="gap-1.5 text-xs">
-              <Code2 className="size-3.5" />
-              <span>Code & Review</span>
+              <span>Code &amp; Review</span>
               {flaggedLines.length > 0 && (
-                <span className="py-0.2 ml-1 rounded-full bg-amber-500/20 px-1.5 text-[10px] font-bold text-amber-700 dark:text-amber-400">
+                <Badge variant="warning" size="sm" className="tabular-nums">
                   {flaggedLines.length}
-                </span>
+                </Badge>
               )}
             </TabsTrigger>
           </TabsList>

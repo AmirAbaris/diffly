@@ -32,7 +32,7 @@ async function ArenaContent({ params }: { params: Promise<{ slug: string }> }) {
 
 export function ArenaFallback() {
   return (
-    <div className="flex h-screen w-full flex-col overflow-hidden bg-background">
+    <div className="flex h-dvh w-full flex-col overflow-hidden bg-background">
       <div className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-card/60 px-4 sm:px-6">
         <div className="flex items-center gap-3">
           <Skeleton className="h-7 w-20" />

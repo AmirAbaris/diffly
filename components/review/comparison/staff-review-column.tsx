@@ -1,5 +1,5 @@
 import * as React from "react"
-import { ArrowRight, Award, ShieldAlert } from "lucide-react"
+import { ArrowRight } from "lucide-react"
 import { MarkdownPreview } from "@/components/review/markdown-preview"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -35,26 +35,18 @@ export function StaffReviewColumn({
     <section
       data-testid="staff-review-column"
       aria-label="Staff Reviewer Critique"
-      className="flex min-w-0 flex-col gap-4 rounded-2xl border border-emerald-500/30 bg-emerald-500/[0.03] p-4.5 sm:p-5 dark:bg-emerald-950/[0.12]"
+      className="flex min-w-0 flex-col gap-4"
     >
-      <div className="flex items-center justify-between border-b border-emerald-500/20 pb-3">
-        <div className="flex items-center gap-2">
-          <div className="flex size-7 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
-            <Award className="size-4" />
-          </div>
-          <div>
-            <h4 className="text-sm font-bold text-foreground">
-              Staff Reviewer Critique
-            </h4>
-            <span className="text-[11px] text-muted-foreground">
-              Senior Staff Engineer
-            </span>
-          </div>
+      <div className="flex items-center justify-between border-b border-border pb-3">
+        <div className="flex flex-col gap-0.5">
+          <h4 className="text-sm font-semibold text-foreground">
+            Staff Reviewer Critique
+          </h4>
+          <span className="text-xs text-muted-foreground">
+            Senior Staff Engineer
+          </span>
         </div>
-        <Badge
-          variant="outline"
-          className="border-emerald-500/30 bg-emerald-500/10 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300"
-        >
+        <Badge variant="success" size="sm">
           Canonical Solution
         </Badge>
       </div>
@@ -65,7 +57,7 @@ export function StaffReviewColumn({
         </span>
         <div
           data-testid="staff-canonical-review"
-          className="min-w-0 rounded-xl border border-border/80 bg-background/90 p-3.5 text-xs leading-relaxed text-foreground"
+          className="min-w-0 rounded-xl border border-border bg-background p-3.5 text-xs leading-relaxed text-foreground"
         >
           {solution?.canonical_review ? (
             <MarkdownPreview
@@ -73,7 +65,7 @@ export function StaffReviewColumn({
               className="border-0 bg-transparent p-0 shadow-none"
             />
           ) : (
-            <span className="text-muted-foreground italic">
+            <span className="text-muted-foreground">
               No canonical review critique available for this challenge.
             </span>
           )}
@@ -83,11 +75,10 @@ export function StaffReviewColumn({
       {issues.length > 0 && (
         <div className="flex flex-col gap-2">
           <div className="flex items-center justify-between">
-            <span className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
-              <ShieldAlert className="size-3.5 text-emerald-600 dark:text-emerald-400" />
-              <span>Defect Classification & Root Causes</span>
+            <span className="text-xs font-semibold text-foreground">
+              Defect Classification & Root Causes
             </span>
-            <span className="text-[11px] text-muted-foreground">
+            <span className="text-xs text-muted-foreground tabular-nums">
               {issues.length} {issues.length === 1 ? "defect" : "defects"}
             </span>
           </div>
@@ -97,7 +88,7 @@ export function StaffReviewColumn({
               <div
                 key={issue.id}
                 data-testid={`defect-item-${issue.id}`}
-                className="flex flex-col gap-1.5 rounded-xl border border-border/70 bg-background/80 p-3 text-xs"
+                className="flex flex-col gap-1.5 rounded-xl border border-border bg-background p-3 text-xs"
               >
                 <div className="flex flex-wrap items-center justify-between gap-1.5">
                   <span className="font-semibold text-foreground">
@@ -105,14 +96,15 @@ export function StaffReviewColumn({
                   </span>
                   <div className="flex items-center gap-1.5">
                     {issue.lines && issue.lines.length > 0 && (
-                      <span className="font-mono text-[10px] text-muted-foreground">
+                      <span className="font-mono text-xs text-muted-foreground tabular-nums">
                         Lines: {issue.lines.join(", ")}
                       </span>
                     )}
                     <Badge
                       variant="outline"
+                      size="sm"
                       className={cn(
-                        "text-[10px] font-semibold uppercase",
+                        "capitalize",
                         getSeverityBadgeStyle(issue.severity)
                       )}
                     >
@@ -122,7 +114,7 @@ export function StaffReviewColumn({
                 </div>
 
                 {issue.explanation && (
-                  <p className="text-[11px] leading-relaxed text-muted-foreground">
+                  <p className="text-xs leading-relaxed text-muted-foreground">
                     {issue.explanation}
                   </p>
                 )}
@@ -130,12 +122,14 @@ export function StaffReviewColumn({
                 {issue.keywords && issue.keywords.length > 0 && (
                   <div className="mt-0.5 flex flex-wrap gap-1">
                     {issue.keywords.map((kw) => (
-                      <span
+                      <Badge
                         key={kw}
-                        className="py-0.2 rounded bg-muted/60 px-1.5 font-mono text-[10px] text-muted-foreground"
+                        variant="secondary"
+                        size="sm"
+                        className="font-mono"
                       >
                         {kw}
-                      </span>
+                      </Badge>
                     ))}
                   </div>
                 )}
@@ -156,7 +150,7 @@ export function StaffReviewColumn({
               variant="ghost"
               size="sm"
               onClick={onOpenDiff}
-              className="h-6 gap-1 text-[11px] font-medium text-emerald-600 hover:text-emerald-700 dark:text-emerald-400"
+              className="h-6 gap-1 text-xs font-medium text-emerald-600 hover:text-emerald-700 dark:text-emerald-400"
               data-testid="switch-to-diff-btn"
             >
               <span>Full Diff View</span>
@@ -164,8 +158,8 @@ export function StaffReviewColumn({
             </Button>
           </div>
 
-          <pre className="max-h-[140px] overflow-x-auto rounded-xl border border-border bg-zinc-950 p-3 font-mono text-[11px] leading-relaxed text-zinc-100">
-            <code>{solution.recommended_fix_diff.slice(0, 300)}...</code>
+          <pre className="max-h-[140px] overflow-x-auto rounded-xl border border-border bg-zinc-950 p-3 font-mono text-xs leading-relaxed text-zinc-100">
+            <code>{solution.recommended_fix_diff.slice(0, 300)}…</code>
           </pre>
         </div>
       )}

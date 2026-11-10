@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Bot, ChevronDown, ChevronUp } from "lucide-react"
+import { ChevronDown, ChevronUp } from "lucide-react"
 import { DefectTargetSection } from "@/components/review/context-panel/defect-target"
 import { EnvironmentSpecsSection } from "@/components/review/context-panel/environment-specs"
 import {
@@ -108,20 +108,20 @@ export function ChallengeContextPanel({
         className={cn("flex flex-col gap-6 p-4 sm:p-6", className)}
       >
         <div className="flex flex-col gap-2">
-          <Skeleton className="h-6 w-44" />
-          <Skeleton className="h-28 w-full rounded-xl" />
+          <Skeleton className="h-5 w-36" />
+          <Skeleton className="h-24 w-full rounded-lg" />
         </div>
         <div className="flex flex-col gap-2">
-          <Skeleton className="h-6 w-36" />
-          <Skeleton className="h-24 w-full rounded-xl" />
+          <Skeleton className="h-5 w-40" />
+          <Skeleton className="h-20 w-full rounded-lg" />
         </div>
         <div className="flex flex-col gap-2">
-          <Skeleton className="h-6 w-32" />
-          <Skeleton className="h-20 w-full rounded-xl" />
+          <Skeleton className="h-5 w-32" />
+          <Skeleton className="h-16 w-full rounded-lg" />
         </div>
         <div className="flex flex-col gap-2">
-          <Skeleton className="h-6 w-48" />
-          <Skeleton className="h-36 w-full rounded-xl" />
+          <Skeleton className="h-5 w-44" />
+          <Skeleton className="h-32 w-full rounded-lg" />
         </div>
       </div>
     )
@@ -133,13 +133,10 @@ export function ChallengeContextPanel({
       className={cn("flex flex-col gap-6 p-4 sm:p-6", className)}
     >
       {/* Mobile Collapsible Header Banner (visible on screens below lg) */}
-      <div className="flex items-center justify-between rounded-xl border border-border/80 bg-muted/40 p-3 lg:hidden">
-        <div className="flex items-center gap-2">
-          <Bot className="size-4 text-primary" />
-          <span className="text-xs font-semibold text-foreground">
-            {challenge.title}
-          </span>
-        </div>
+      <div className="flex items-center justify-between rounded-lg border border-border bg-muted/20 px-3 py-2 lg:hidden">
+        <span className="truncate text-xs font-semibold text-foreground">
+          {challenge.title}
+        </span>
         <Button
           variant="ghost"
           size="xs"
@@ -154,16 +151,16 @@ export function ChallengeContextPanel({
         >
           <span>{isMobileCollapsed ? "Expand Brief" : "Collapse Brief"}</span>
           {isMobileCollapsed ? (
-            <ChevronDown className="size-3.5" />
+            <ChevronDown aria-hidden="true" className="size-3.5" />
           ) : (
-            <ChevronUp className="size-3.5" />
+            <ChevronUp aria-hidden="true" className="size-3.5" />
           )}
         </Button>
       </div>
 
       <div
         className={cn(
-          "flex flex-col gap-6 transition-all duration-200",
+          "flex flex-col gap-6",
           isMobileCollapsed ? "hidden lg:flex" : "flex"
         )}
       >

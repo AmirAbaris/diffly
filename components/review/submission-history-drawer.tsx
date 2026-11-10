@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { History, RotateCcw, TrendingUp } from "lucide-react"
+import { RotateCcw } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -85,9 +85,8 @@ function HistoryContent({
     return (
       <div
         data-testid="history-drawer-empty"
-        className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border/80 bg-muted/20 p-8 text-center"
+        className="flex flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed border-border bg-muted/20 p-8 text-center"
       >
-        <History className="size-8 text-muted-foreground/50" />
         <h4 className="text-sm font-semibold text-foreground">
           No attempts recorded yet
         </h4>
@@ -132,12 +131,11 @@ function HistoryDrawerHeader({
   return (
     <DialogHeader className="gap-1 pr-10 text-left">
       <div className="flex flex-wrap items-center gap-2">
-        <History className="size-4 text-primary" />
-        <DialogTitle className="text-base font-bold sm:text-lg">
+        <DialogTitle className="text-base font-semibold sm:text-lg">
           Submission History
         </DialogTitle>
         {submissions.length > 0 && (
-          <Badge variant="secondary" className="text-xs font-semibold">
+          <Badge variant="secondary" size="sm" className="tabular-nums">
             {submissions.length}{" "}
             {submissions.length === 1 ? "attempt" : "attempts"}
           </Badge>
@@ -145,12 +143,9 @@ function HistoryDrawerHeader({
         {bestScore !== null && bestScoreStyle && (
           <Badge
             variant={bestScoreStyle.badgeVariant}
-            className={cn(
-              "gap-1 text-xs font-semibold",
-              bestScoreStyle.className
-            )}
+            size="sm"
+            className={cn("tabular-nums", bestScoreStyle.className)}
           >
-            <TrendingUp className="size-3" />
             Best: {bestScore}%
           </Badge>
         )}
@@ -180,18 +175,17 @@ export function SubmissionHistoryDrawer({
       <div
         data-testid="submission-history-drawer"
         className={cn(
-          "flex flex-col gap-3 rounded-lg border border-border bg-card p-4 shadow-sm",
+          "flex flex-col gap-3 rounded-xl border border-border bg-card p-4 shadow-xs",
           className
         )}
       >
-        <div className="flex items-center justify-between border-b border-border/80 pb-3">
+        <div className="flex items-center justify-between border-b border-border pb-3">
           <div className="flex items-center gap-2">
-            <History className="size-4 text-primary" />
             <h3 className="text-sm font-semibold text-foreground">
               Submission History
             </h3>
             {submissions.length > 0 && (
-              <Badge variant="secondary" className="text-[11px]">
+              <Badge variant="secondary" size="sm" className="tabular-nums">
                 {submissions.length}
               </Badge>
             )}
@@ -213,7 +207,7 @@ export function SubmissionHistoryDrawer({
       <DialogContent
         data-testid="submission-history-drawer"
         className={cn(
-          "max-h-[85vh] w-full overflow-hidden rounded-2xl border border-border/80 bg-background/95 p-5 shadow-2xl backdrop-blur-xl sm:max-w-xl sm:p-6",
+          "max-h-[85vh] w-full overflow-hidden overscroll-contain rounded-xl border border-border bg-background p-5 shadow-xl sm:max-w-xl sm:p-6",
           className
         )}
       >

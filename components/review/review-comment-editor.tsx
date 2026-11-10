@@ -1,15 +1,7 @@
 "use client"
 
 import * as React from "react"
-import {
-  CheckCircle2,
-  Eye,
-  Flag,
-  PenLine,
-  Send,
-  Sparkles,
-  X,
-} from "lucide-react"
+import { X } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
@@ -52,17 +44,15 @@ function FlaggedLinesStrip({
       className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border/70 bg-muted/30 px-3 py-2 text-xs"
     >
       <div className="flex flex-wrap items-center gap-1.5">
-        <span className="flex items-center gap-1 font-medium text-foreground">
-          <Flag className="size-3.5 text-amber-500" />
-          <span>Flagged lines:</span>
-        </span>
+        <span className="font-medium text-foreground">Flagged lines:</span>
 
         {sortedLines.length > 0 ? (
           sortedLines.map((line) => (
             <Badge
               key={line}
-              variant="outline"
-              className="gap-1 border-amber-500/40 bg-amber-500/10 py-0.5 pr-1 font-mono text-[11px] text-amber-700 dark:text-amber-400"
+              variant="warning"
+              size="sm"
+              className="gap-1 pr-1 font-mono tabular-nums"
             >
               <span>L{line}</span>
               {!readOnly && (
@@ -70,7 +60,7 @@ function FlaggedLinesStrip({
                   type="button"
                   onClick={() => onToggleLine(line)}
                   disabled={disabled}
-                  className="rounded-full p-0.5 text-amber-700 transition-colors hover:bg-amber-500/20 hover:text-amber-900 dark:text-amber-400 dark:hover:text-amber-200"
+                  className="rounded-sm p-0.5 text-amber-700 transition-colors hover:bg-amber-500/20 hover:text-amber-900 dark:text-amber-400 dark:hover:text-amber-200"
                   aria-label={`Unflag line ${line}`}
                 >
                   <X className="size-3" />
@@ -79,7 +69,7 @@ function FlaggedLinesStrip({
             </Badge>
           ))
         ) : (
-          <span className="text-muted-foreground italic">
+          <span className="text-muted-foreground">
             None selected. Click line numbers in code viewer to flag defects.
           </span>
         )}
@@ -92,7 +82,7 @@ function FlaggedLinesStrip({
           size="sm"
           onClick={onClearFlaggedLines}
           disabled={disabled}
-          className="h-6 px-2 text-[11px] text-muted-foreground transition-colors hover:text-destructive"
+          className="h-6 px-2 text-xs text-muted-foreground transition-colors hover:text-destructive"
         >
           Clear all
         </Button>
@@ -121,14 +111,13 @@ function EditorToolbar({
           type="button"
           onClick={() => onChangeTab("write")}
           className={cn(
-            "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
+            "inline-flex items-center rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
             activeTab === "write"
               ? "bg-primary text-primary-foreground shadow-sm"
               : "text-muted-foreground hover:bg-muted hover:text-foreground"
           )}
           aria-pressed={activeTab === "write"}
         >
-          <PenLine className="size-3.5" />
           <span>Write</span>
         </button>
 
@@ -136,30 +125,25 @@ function EditorToolbar({
           type="button"
           onClick={() => onChangeTab("preview")}
           className={cn(
-            "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
+            "inline-flex items-center rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
             activeTab === "preview"
               ? "bg-primary text-primary-foreground shadow-sm"
               : "text-muted-foreground hover:bg-muted hover:text-foreground"
           )}
           aria-pressed={activeTab === "preview"}
         >
-          <Eye className="size-3.5" />
           <span>Preview</span>
         </button>
       </div>
 
-      <div className="flex items-center gap-2 text-[11px]">
+      <div className="flex items-center gap-2 text-xs tabular-nums">
         {isMinLengthMet ? (
-          <span className="inline-flex items-center gap-1 font-medium text-emerald-600 dark:text-emerald-400">
-            <CheckCircle2 className="size-3.5" />
-            <span>Min length met</span>
+          <span className="font-medium text-emerald-600 dark:text-emerald-400">
+            Min length met
           </span>
         ) : (
-          <span className="inline-flex items-center gap-1 text-muted-foreground">
-            <Sparkles className="size-3 text-amber-500" />
-            <span>
-              {remainingChars} more char{remainingChars === 1 ? "" : "s"} needed
-            </span>
+          <span className="text-muted-foreground">
+            {remainingChars} more char{remainingChars === 1 ? "" : "s"} needed
           </span>
         )}
       </div>
@@ -188,7 +172,7 @@ function EditorFooter({
 }: EditorFooterProps) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-xs">
-      <div className="flex items-center gap-2 text-muted-foreground">
+      <div className="flex items-center gap-2 text-muted-foreground tabular-nums">
         <span data-testid="counter-stats">
           {wordCount} {wordCount === 1 ? "word" : "words"} ({charCount}{" "}
           {charCount === 1 ? "char" : "chars"})
@@ -215,10 +199,9 @@ function EditorFooter({
           size="sm"
           onClick={onSubmitReview}
           disabled={!canSubmit}
-          className="h-8 gap-1.5 px-3 text-xs"
+          className="h-8 px-3 text-xs"
         >
-          <Send className="size-3.5" />
-          <span>{isSubmitting ? "Submitting..." : "Submit Review"}</span>
+          <span>{isSubmitting ? "Submitting…" : "Submit Review"}</span>
         </Button>
       )}
     </div>
@@ -232,7 +215,7 @@ export function ReviewCommentEditor({
   comment,
   onChangeComment,
   minCharacters = 30,
-  placeholder = "Explain what vulnerability or antipattern is present, what risk it poses, and how to fix it...",
+  placeholder = "Explain what vulnerability or antipattern is present, what risk it poses, and how to fix it…",
   disabled = false,
   readOnly = false,
   onSubmitReview,

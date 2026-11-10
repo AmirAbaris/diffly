@@ -97,11 +97,11 @@ export function CodeViewer({
           <span className="font-semibold text-foreground">
             {resolvedFileName}
           </span>
-          <Badge variant="outline" className="text-[10px] uppercase">
+          <Badge variant="outline" size="sm" className="uppercase">
             {normalizedLanguage}
           </Badge>
           {code && (
-            <span className="text-[11px] text-muted-foreground">
+            <span className="text-xs text-muted-foreground tabular-nums">
               {code.split("\n").length} lines
             </span>
           )}
@@ -109,11 +109,7 @@ export function CodeViewer({
 
         <div className="flex items-center gap-2">
           {flaggedLines.length > 0 && (
-            <Badge
-              variant="outline"
-              className="gap-1 border-amber-500/30 bg-amber-500/10 text-[11px] text-amber-600 dark:text-amber-400"
-            >
-              <Flag className="size-3 fill-amber-500 text-amber-500" />
+            <Badge variant="warning" size="sm" className="tabular-nums">
               {flaggedLines.length} flagged
             </Badge>
           )}
@@ -197,7 +193,7 @@ export function CodeViewer({
                                 : "Click line to flag for review"
                             }
                             className={cn(
-                              "inline-flex h-5 w-8 items-center justify-center rounded font-mono text-[11px] transition-colors",
+                              "inline-flex h-5 w-8 items-center justify-center rounded font-mono text-xs tabular-nums transition-colors",
                               readOnly && "cursor-default",
                               isFlagged
                                 ? "bg-amber-500 font-bold text-amber-950"
@@ -209,14 +205,13 @@ export function CodeViewer({
                         </td>
 
                         {/* Marker badge indicator cell */}
-                        <td className="w-12 px-1 py-0.5 text-center align-top select-none">
+                        <td className="w-10 px-1 py-0.5 text-center align-top select-none">
                           {isFlagged ? (
                             <span
                               title="Flagged for review"
-                              className="inline-flex items-center gap-0.5 rounded border border-amber-500/40 bg-amber-500/20 px-1 py-0.5 text-[9px] font-bold text-amber-700 dark:text-amber-400"
+                              className="inline-flex items-center justify-center rounded border border-amber-500/40 bg-amber-500/20 px-1 py-0.5 text-amber-700 dark:text-amber-400"
                             >
-                              <Flag className="size-2.5 fill-amber-500 text-amber-500" />
-                              <span>FLAG</span>
+                              <Flag className="size-3 fill-amber-500 text-amber-500" />
                             </span>
                           ) : (
                             <span className="block w-3" />
@@ -226,7 +221,7 @@ export function CodeViewer({
                         {/* Syntax Highlighted Code Cell */}
                         <td
                           className={cn(
-                            "px-2 py-0.5 align-top font-mono text-[12px] leading-5 whitespace-pre text-foreground",
+                            "px-2 py-0.5 align-top font-mono text-xs leading-5 whitespace-pre text-foreground",
                             lineProps.className
                           )}
                           style={lineProps.style}

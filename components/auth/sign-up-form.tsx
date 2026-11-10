@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { UserPlus, Loader2 } from "lucide-react"
+import { Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useAuth } from "@/hooks/use-auth"
@@ -44,7 +44,7 @@ export function SignUpForm({ onSuccess, onError }: SignUpFormProps) {
       })
       toast({
         title: "Account created",
-        description: `Welcome to Diffly, @${user.username}! Your progress is linked.`,
+        description: `Welcome to Diffly, @${user.username}. Your progress is linked.`,
         variant: "success",
       })
       onSuccess()
@@ -60,8 +60,8 @@ export function SignUpForm({ onSuccess, onError }: SignUpFormProps) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-3">
-      <div className="space-y-1">
+    <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+      <div className="flex flex-col gap-1.5">
         <label
           htmlFor="register-username"
           className="text-xs font-medium text-foreground"
@@ -70,17 +70,19 @@ export function SignUpForm({ onSuccess, onError }: SignUpFormProps) {
         </label>
         <Input
           id="register-username"
+          name="username"
           type="text"
-          placeholder="e.g. dev_reviewer"
+          placeholder="dev_reviewer…"
           value={username}
           onChange={(e) => setUsername(e.target.value)}
           disabled={isLoading}
           autoComplete="username"
+          spellCheck={false}
           required
         />
       </div>
 
-      <div className="space-y-1">
+      <div className="flex flex-col gap-1.5">
         <label
           htmlFor="register-email"
           className="text-xs font-medium text-foreground"
@@ -89,18 +91,20 @@ export function SignUpForm({ onSuccess, onError }: SignUpFormProps) {
         </label>
         <Input
           id="register-email"
+          name="email"
           type="email"
-          placeholder="e.g. dev@diffly.dev"
+          placeholder="dev@diffly.dev…"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           disabled={isLoading}
           autoComplete="email"
+          spellCheck={false}
           required
         />
       </div>
 
-      <div className="grid grid-cols-2 gap-2">
-        <div className="space-y-1">
+      <div className="grid grid-cols-2 gap-2.5">
+        <div className="flex flex-col gap-1.5">
           <label
             htmlFor="register-password"
             className="text-xs font-medium text-foreground"
@@ -109,6 +113,7 @@ export function SignUpForm({ onSuccess, onError }: SignUpFormProps) {
           </label>
           <Input
             id="register-password"
+            name="password"
             type="password"
             placeholder="••••••••"
             value={password}
@@ -118,7 +123,7 @@ export function SignUpForm({ onSuccess, onError }: SignUpFormProps) {
           />
         </div>
 
-        <div className="space-y-1">
+        <div className="flex flex-col gap-1.5">
           <label
             htmlFor="register-confirm"
             className="text-xs font-medium text-foreground"
@@ -127,6 +132,7 @@ export function SignUpForm({ onSuccess, onError }: SignUpFormProps) {
           </label>
           <Input
             id="register-confirm"
+            name="confirmPassword"
             type="password"
             placeholder="••••••••"
             value={confirmPassword}
@@ -137,22 +143,19 @@ export function SignUpForm({ onSuccess, onError }: SignUpFormProps) {
         </div>
       </div>
 
-      <div className="rounded-lg border border-primary/20 bg-primary/5 p-2.5 text-[11px] text-muted-foreground">
-        ⚡ All past attempts and streak records will be associated with your new
+      <p className="rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+        Past attempts and streak records in this browser link to your new
         profile.
-      </div>
+      </p>
 
       <Button type="submit" className="w-full gap-2" disabled={isLoading}>
         {isLoading ? (
           <>
-            <Loader2 className="size-4 animate-spin" />
-            <span>Creating Account...</span>
+            <Loader2 aria-hidden="true" className="size-4 animate-spin" />
+            <span>Creating Account…</span>
           </>
         ) : (
-          <>
-            <UserPlus className="size-4" />
-            <span>Create Account</span>
-          </>
+          <span>Create Account</span>
         )}
       </Button>
     </form>

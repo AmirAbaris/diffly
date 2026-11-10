@@ -74,16 +74,19 @@ export function FilterBar({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+      <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center">
         <InputGroup className="flex-1">
           <InputGroupAddon align="inline-start">
-            <Search />
+            <Search aria-hidden="true" />
           </InputGroupAddon>
           <InputGroupInput
-            type="text"
+            type="search"
+            name="search"
+            autoComplete="off"
+            spellCheck={false}
             value={search}
             onChange={(e) => onSearchChange(e.target.value)}
-            placeholder="Search challenges by title or keyword..."
+            placeholder="Search challenges by title or keyword…"
             aria-label="Search challenges"
           />
           {search && (
@@ -93,7 +96,7 @@ export function FilterBar({
                 onClick={handleClearSearch}
                 aria-label="Clear search input"
               >
-                <X />
+                <X aria-hidden="true" />
               </InputGroupButton>
             </InputGroupAddon>
           )}
@@ -104,7 +107,7 @@ export function FilterBar({
           onValueChange={(val) => onCategoryChange(val as Category | "All")}
         >
           <SelectTrigger
-            className="w-full sm:w-48"
+            className="w-full sm:w-44"
             aria-label="Filter by category"
           >
             <SelectValue placeholder="Category" />
@@ -147,7 +150,7 @@ export function FilterBar({
           type="single"
           variant="outline"
           size="sm"
-          spacing={2}
+          spacing={1}
           value={difficulty}
           onValueChange={(val) => {
             if (val) {
@@ -164,7 +167,7 @@ export function FilterBar({
 
         <div className="flex items-center gap-2">
           {typeof filteredCount === "number" && (
-            <span className="text-xs text-muted-foreground">
+            <span className="text-xs text-muted-foreground tabular-nums">
               Showing{" "}
               <span className="font-medium text-foreground">
                 {filteredCount}

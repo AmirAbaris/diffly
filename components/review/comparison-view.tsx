@@ -1,7 +1,6 @@
 "use client"
 
 import * as React from "react"
-import { Columns2, GitCompare, Sparkles } from "lucide-react"
 import useSWR from "swr"
 import { ComparisonBody } from "@/components/review/comparison/comparison-body"
 import { Badge } from "@/components/ui/badge"
@@ -77,21 +76,17 @@ export function ComparisonView({
     <div
       data-testid="comparison-view"
       className={cn(
-        "flex w-full flex-col gap-5 rounded-2xl border border-border/80 bg-card p-4 text-foreground shadow-sm sm:p-6",
+        "flex w-full flex-col gap-5 rounded-xl border border-border bg-card p-4 text-foreground sm:p-6",
         className
       )}
     >
       <div className="flex flex-col gap-3 border-b border-border pb-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-2">
-            <Sparkles className="size-4 text-primary" />
-            <h3 className="text-base font-bold tracking-tight text-foreground sm:text-lg">
+            <h3 className="text-base font-semibold tracking-tight text-foreground">
               Side-by-Side Review Comparison
             </h3>
-            <Badge
-              variant="outline"
-              className="border-primary/30 bg-primary/10 text-[10px] font-semibold text-primary"
-            >
+            <Badge variant="secondary" size="sm">
               Staff Benchmark
             </Badge>
           </div>
@@ -110,17 +105,15 @@ export function ComparisonView({
             <TabsTrigger
               value="comparison"
               data-testid="toggle-comment-view"
-              className="gap-1.5 text-xs"
+              className="text-xs"
             >
-              <Columns2 className="size-3.5" />
               <span>Critique Comparison</span>
             </TabsTrigger>
             <TabsTrigger
               value="diff"
               data-testid="toggle-diff-view"
-              className="gap-1.5 text-xs"
+              className="text-xs"
             >
-              <GitCompare className="size-3.5" />
               <span>Fix Diff</span>
             </TabsTrigger>
           </TabsList>

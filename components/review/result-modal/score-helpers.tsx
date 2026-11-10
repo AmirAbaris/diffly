@@ -85,7 +85,7 @@ export function FormattedInlineText({ text }: { text: string }) {
           return (
             <code
               key={segment}
-              className="rounded border border-border/60 bg-muted/70 px-1 py-0.5 font-mono text-[11px] text-foreground"
+              className="rounded border border-border/60 bg-muted/70 px-1 py-0.5 font-mono text-xs text-foreground"
             >
               {segment.slice(1, -1)}
             </code>
@@ -110,10 +110,7 @@ export function SeverityBadge({ severity }: { severity: string }) {
   const norm = severity.toLowerCase()
   if (norm === "critical" || norm === "high") {
     return (
-      <Badge
-        variant="destructive"
-        className="px-1.5 py-0 text-[10px] font-bold tracking-wider uppercase"
-      >
+      <Badge variant="destructive" size="sm" className="capitalize">
         {severity}
       </Badge>
     )
@@ -121,20 +118,14 @@ export function SeverityBadge({ severity }: { severity: string }) {
 
   if (norm === "medium") {
     return (
-      <Badge
-        variant="outline"
-        className="border-amber-500/40 bg-amber-500/10 px-1.5 py-0 text-[10px] font-bold tracking-wider text-amber-700 uppercase dark:text-amber-300"
-      >
+      <Badge variant="warning" size="sm" className="capitalize">
         {severity}
       </Badge>
     )
   }
 
   return (
-    <Badge
-      variant="secondary"
-      className="px-1.5 py-0 text-[10px] font-bold tracking-wider text-muted-foreground uppercase"
-    >
+    <Badge variant="secondary" size="sm" className="capitalize">
       {severity}
     </Badge>
   )

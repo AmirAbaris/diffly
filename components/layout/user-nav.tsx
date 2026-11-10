@@ -6,7 +6,6 @@ import {
   BarChart3,
   Settings,
   LogOut,
-  LogIn,
   ChevronDown,
 } from "lucide-react"
 import {
@@ -59,7 +58,7 @@ export function UserNav({ className, onOpenStats }: UserNavProps) {
         data-testid="user-nav-loading"
         className={cn("flex items-center", className)}
       >
-        <Skeleton className="size-8 rounded-full" />
+        <Skeleton className="h-8 w-16 rounded-md" />
       </div>
     )
   }
@@ -77,10 +76,9 @@ export function UserNav({ className, onOpenStats }: UserNavProps) {
             size="sm"
             onClick={() => openAuthModal("signin")}
             data-testid="sign-in-button"
-            className="h-8 gap-1.5 px-3 text-xs font-medium"
+            className="h-8 px-3 text-xs font-medium"
           >
-            <LogIn className="size-3.5" />
-            <span>Sign In</span>
+            Sign In
           </Button>
         </div>
 
@@ -103,13 +101,13 @@ export function UserNav({ className, onOpenStats }: UserNavProps) {
               type="button"
               data-testid="user-nav-trigger"
               aria-label={`Open account menu for @${user.username}`}
-              className="flex items-center gap-1.5 rounded-full p-0.5 text-xs transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none"
+              className="inline-flex h-8 items-center gap-2 rounded-md border border-border bg-muted/20 py-1 pr-2.5 pl-1.5 text-xs transition-colors hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
             >
-              <Avatar className="size-7 border border-border sm:size-8">
+              <Avatar className="size-5 border border-border">
                 {user.avatar_url && (
                   <AvatarImage src={user.avatar_url} alt={user.username} />
                 )}
-                <AvatarFallback className="bg-primary/10 text-[11px] font-bold text-primary">
+                <AvatarFallback className="bg-muted text-xs font-semibold text-foreground">
                   {initials}
                 </AvatarFallback>
               </Avatar>
@@ -118,21 +116,24 @@ export function UserNav({ className, onOpenStats }: UserNavProps) {
                 @{user.username}
               </span>
 
-              <ChevronDown className="hidden size-3 text-muted-foreground sm:inline-block" />
+              <ChevronDown
+                aria-hidden="true"
+                className="hidden size-3.5 text-muted-foreground sm:inline-block"
+              />
             </button>
           </DropdownMenuTrigger>
 
           <DropdownMenuContent
             align="end"
             sideOffset={8}
-            className="w-56 p-1.5 shadow-lg"
+            className="w-56 p-1.5"
           >
             <DropdownMenuLabel className="p-2 font-normal">
-              <div className="flex flex-col space-y-1">
+              <div className="flex flex-col gap-1">
                 <p className="text-xs leading-none font-semibold text-foreground">
                   @{user.username}
                 </p>
-                <p className="truncate text-[11px] leading-none text-muted-foreground">
+                <p className="truncate text-xs leading-none text-muted-foreground">
                   {user.email}
                 </p>
               </div>

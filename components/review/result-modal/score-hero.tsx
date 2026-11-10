@@ -1,5 +1,4 @@
 import * as React from "react"
-import { AlertTriangle, Check, ShieldAlert } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
 import { RadialScoreMeter } from "./radial-score-meter"
@@ -27,7 +26,7 @@ export function ScoreHeroSection({
   return (
     <div
       data-testid="score-hero-container"
-      className="flex flex-col items-center gap-5 rounded-2xl border border-border/70 bg-card/70 p-4 backdrop-blur-xs sm:flex-row sm:items-center sm:gap-6 sm:p-5"
+      className="flex flex-col items-center gap-5 rounded-xl border border-border bg-card p-4 sm:flex-row sm:items-center sm:gap-6 sm:p-5"
     >
       <RadialScoreMeter score={score} />
 
@@ -36,7 +35,7 @@ export function ScoreHeroSection({
           <Badge
             variant="outline"
             className={cn(
-              "gap-1.5 px-2.5 py-0.5 text-xs font-semibold",
+              "gap-1.5 px-2.5 py-0.5 text-xs font-medium",
               tierStyle.badgeClassName
             )}
           >
@@ -45,31 +44,38 @@ export function ScoreHeroSection({
             />
             <span>{tierStyle.label}</span>
           </Badge>
-          <span className="font-mono text-xs text-muted-foreground">
+          <span className="font-mono text-xs text-muted-foreground tabular-nums">
             Submission #{submissionId}
           </span>
         </div>
 
-        <p className="text-xs leading-relaxed font-medium text-foreground/90">
-          {summary}
-        </p>
+        <p className="text-xs leading-relaxed text-foreground/90">{summary}</p>
 
         <div className="flex flex-wrap items-center justify-center gap-2 pt-0.5 sm:justify-start">
-          <span className="inline-flex items-center gap-1 rounded-md bg-muted/60 px-2 py-0.5 font-mono text-[11px] text-muted-foreground">
-            <Check className="size-3 text-emerald-500" />
-            <span>{detectedCount} detected</span>
-          </span>
+          <Badge
+            variant="secondary"
+            size="sm"
+            className="font-mono tabular-nums"
+          >
+            {detectedCount} detected
+          </Badge>
 
-          <span className="inline-flex items-center gap-1 rounded-md bg-muted/60 px-2 py-0.5 font-mono text-[11px] text-muted-foreground">
-            <AlertTriangle className="size-3 text-amber-500" />
-            <span>{missedCount} missed</span>
-          </span>
+          <Badge
+            variant="secondary"
+            size="sm"
+            className="font-mono tabular-nums"
+          >
+            {missedCount} missed
+          </Badge>
 
           {penalty && (
-            <span className="inline-flex items-center gap-1 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 font-mono text-[11px] text-amber-700 dark:text-amber-300">
-              <ShieldAlert className="size-3" />
-              <span>{penalty}</span>
-            </span>
+            <Badge
+              variant="warning"
+              size="sm"
+              className="font-mono tabular-nums"
+            >
+              {penalty}
+            </Badge>
           )}
         </div>
       </div>

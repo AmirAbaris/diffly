@@ -31,11 +31,11 @@ export function ComparisonBody({
     return (
       <div
         data-testid="comparison-loading-state"
-        className="flex min-h-[200px] flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-border bg-muted/20 p-8 text-center"
+        className="flex min-h-[200px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border bg-muted/20 p-8 text-center"
       >
-        <RefreshCw className="size-5 animate-spin text-primary" />
+        <RefreshCw className="size-5 animate-spin text-muted-foreground" />
         <p className="text-xs font-medium text-muted-foreground">
-          Loading canonical review and expert fix...
+          Loading canonical review and expert fix…
         </p>
       </div>
     )
@@ -45,14 +45,14 @@ export function ComparisonBody({
     return (
       <div
         data-testid="comparison-error-state"
-        className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-destructive/30 bg-destructive/5 p-6 text-center"
+        className="flex flex-col items-center justify-center gap-3 rounded-xl border border-destructive/30 bg-destructive/5 p-6 text-center"
       >
-        <AlertCircle className="size-6 text-destructive" />
+        <AlertCircle className="size-5 text-destructive" />
         <div className="flex flex-col gap-1">
           <span className="text-xs font-semibold text-destructive">
             Could not load canonical solution
           </span>
-          <p className="text-[11px] text-muted-foreground">{errorMessage}</p>
+          <p className="text-xs text-muted-foreground">{errorMessage}</p>
         </div>
         <Button
           type="button"
