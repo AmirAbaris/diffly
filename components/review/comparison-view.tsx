@@ -246,7 +246,7 @@ function UserReviewColumn({ flaggedLines, comments }: UserReviewColumnProps) {
     <section
       data-testid="user-review-column"
       aria-label="Your Review"
-      className="flex flex-col gap-4 rounded-2xl border border-sky-500/20 bg-sky-500/[0.03] p-4.5 sm:p-5 dark:bg-sky-950/[0.12]"
+      className="flex min-w-0 flex-col gap-4 rounded-2xl border border-sky-500/20 bg-sky-500/[0.03] p-4.5 sm:p-5 dark:bg-sky-950/[0.12]"
     >
       <div className="flex items-center justify-between border-b border-sky-500/20 pb-3">
         <div className="flex items-center gap-2">
@@ -301,16 +301,18 @@ function UserReviewColumn({ flaggedLines, comments }: UserReviewColumnProps) {
         )}
       </div>
 
-      <div className="flex flex-1 flex-col gap-2">
+      <div className="flex flex-col gap-2">
         <span className="text-xs font-semibold text-foreground">
           Your Written Comments
         </span>
         <div
           data-testid="user-review-comments"
-          className="min-h-[140px] flex-1 rounded-xl border border-border/80 bg-background/90 p-3.5 text-xs leading-relaxed text-foreground"
+          className="min-h-[80px] rounded-xl border border-border/80 bg-background/90 p-3.5 text-xs leading-relaxed text-foreground"
         >
           {comments.trim() ? (
-            <div className="font-sans whitespace-pre-wrap">{comments}</div>
+            <div className="font-sans [overflow-wrap:anywhere] break-words whitespace-pre-wrap">
+              {comments}
+            </div>
           ) : (
             <span className="text-muted-foreground italic">
               No written critique comments provided.
@@ -319,7 +321,7 @@ function UserReviewColumn({ flaggedLines, comments }: UserReviewColumnProps) {
         </div>
       </div>
 
-      <div className="rounded-xl border border-sky-500/20 bg-sky-500/5 p-3 text-[11px] leading-relaxed text-muted-foreground">
+      <div className="mt-auto rounded-xl border border-sky-500/20 bg-sky-500/5 p-3 text-[11px] leading-relaxed text-muted-foreground">
         <strong className="text-sky-700 dark:text-sky-300">
           Review Phrasing Note:
         </strong>{" "}
@@ -343,7 +345,7 @@ function StaffReviewColumn({ solution, onOpenDiff }: StaffReviewColumnProps) {
     <section
       data-testid="staff-review-column"
       aria-label="Staff Reviewer Critique"
-      className="flex flex-col gap-4 rounded-2xl border border-emerald-500/30 bg-emerald-500/[0.03] p-4.5 sm:p-5 dark:bg-emerald-950/[0.12]"
+      className="flex min-w-0 flex-col gap-4 rounded-2xl border border-emerald-500/30 bg-emerald-500/[0.03] p-4.5 sm:p-5 dark:bg-emerald-950/[0.12]"
     >
       <div className="flex items-center justify-between border-b border-emerald-500/20 pb-3">
         <div className="flex items-center gap-2">
@@ -367,16 +369,19 @@ function StaffReviewColumn({ solution, onOpenDiff }: StaffReviewColumnProps) {
         </Badge>
       </div>
 
-      <div className="flex flex-col gap-2">
+      <div className="flex min-w-0 flex-col gap-2">
         <span className="text-xs font-semibold text-foreground">
           Canonical Review Comment
         </span>
         <div
           data-testid="staff-canonical-review"
-          className="rounded-xl border border-border/80 bg-background/90 p-3.5 text-xs leading-relaxed text-foreground"
+          className="min-w-0 rounded-xl border border-border/80 bg-background/90 p-3.5 text-xs leading-relaxed text-foreground"
         >
           {solution?.canonical_review ? (
-            <MarkdownPreview content={solution.canonical_review} />
+            <MarkdownPreview
+              content={solution.canonical_review}
+              className="border-0 bg-transparent p-0 shadow-none"
+            />
           ) : (
             <span className="text-muted-foreground italic">
               No canonical review critique available for this challenge.
