@@ -26,6 +26,12 @@ export interface ChallengeDetail extends ChallengeSummary {
   code_snippet: string
 }
 
+export interface ChallengeHint {
+  tier: number
+  label: string
+  text: string
+}
+
 export interface ChallengeFilters {
   difficulty?: Difficulty | "All"
   category?: Category | "All"
