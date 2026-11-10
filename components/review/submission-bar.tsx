@@ -30,6 +30,80 @@ export interface SubmissionBarProps {
   className?: string
 }
 
+function getSubmissionTooltip(
+  isSubmitting: boolean,
+  hasLines: boolean,
+  hasComment: boolean
+): string {
+  if (isSubmitting) {
+    return "Submitting your review..."
+  }
+  if (!hasLines && !hasComment) {
+    return "Flag at least one line and write a review comment to submit"
+  }
+  if (!hasLines) {
+    return "Flag at least one line in the code viewer to submit"
+  }
+  if (!hasComment) {
+    return "Write a review comment explaining the defect to submit"
+  }
+  return "Submit your review for automated scoring"
+}
+
+function formatDraftSummary(lineCount: number, charCount: number): string {
+  const lineSummary =
+    lineCount === 1 ? "1 line flagged" : `${lineCount} lines flagged`
+  const charSummary = `${charCount} ${charCount === 1 ? "char" : "chars"} written`
+  return `${lineSummary} • ${charSummary}`
+}
+
+interface SubmitButtonProps {
+  isSubmitting: boolean
+  isSubmitDisabled: boolean
+  tooltipMessage: string
+  onSubmit: () => void
+}
+
+function SubmitButton({
+  isSubmitting,
+  isSubmitDisabled,
+  tooltipMessage,
+  onSubmit,
+}: SubmitButtonProps) {
+  return (
+    <TooltipProvider delayDuration={150}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="inline-flex">
+            <Button
+              type="button"
+              size="sm"
+              disabled={isSubmitDisabled}
+              onClick={onSubmit}
+              className="h-8 gap-1.5 px-3.5 text-xs font-semibold sm:h-9 sm:px-4 sm:text-xs"
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="size-3.5 animate-spin" />
+                  <span>Submitting...</span>
+                </>
+              ) : (
+                <>
+                  <Send className="size-3.5" />
+                  <span>Submit Review</span>
+                </>
+              )}
+            </Button>
+          </span>
+        </TooltipTrigger>
+        <TooltipContent side="top" align="end">
+          {tooltipMessage}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  )
+}
+
 export function SubmissionBar({
   challengeSlug,
   challengeId,
@@ -44,7 +118,6 @@ export function SubmissionBar({
   isSubmitting: propIsSubmitting,
   className,
 }: SubmissionBarProps) {
-  // If draft state is not provided via props, manage it via the hook
   const draft = useReviewDraft(
     propFlaggedLines === undefined || propComments === undefined
       ? challengeSlug
@@ -59,31 +132,16 @@ export function SubmissionBar({
 
   const lineCount = flaggedLines.length
   const charCount = comments.length
-
-  const lineSummary =
-    lineCount === 1 ? "1 line flagged" : `${lineCount} lines flagged`
-  const charSummary = `${charCount} ${charCount === 1 ? "char" : "chars"} written`
-  const summaryCount = `${lineSummary} • ${charSummary}`
+  const summaryCount = formatDraftSummary(lineCount, charCount)
 
   const hasLines = lineCount > 0
   const hasComment = comments.trim().length > 0
   const isSubmitDisabled = !hasLines || !hasComment || isSubmitting
-
-  const tooltipMessage = React.useMemo(() => {
-    if (isSubmitting) {
-      return "Submitting your review..."
-    }
-    if (!hasLines && !hasComment) {
-      return "Flag at least one line and write a review comment to submit"
-    }
-    if (!hasLines) {
-      return "Flag at least one line in the code viewer to submit"
-    }
-    if (!hasComment) {
-      return "Write a review comment explaining the defect to submit"
-    }
-    return "Submit your review for automated scoring"
-  }, [hasLines, hasComment, isSubmitting])
+  const tooltipMessage = getSubmissionTooltip(
+    isSubmitting,
+    hasLines,
+    hasComment
+  )
 
   const handleResetDraft = React.useCallback(() => {
     if (propOnResetDraft) {
@@ -125,7 +183,6 @@ export function SubmissionBar({
 
       onSubmitSuccess?.(response.data)
 
-      // Clear draft upon successful evaluation submission
       if (propOnResetDraft) {
         propOnResetDraft()
       } else {
@@ -168,7 +225,6 @@ export function SubmissionBar({
         className
       )}
     >
-      {/* Left: Summary Count & Live Feedback */}
       <div className="flex items-center gap-3">
         <div className="flex items-center gap-2 text-xs text-muted-foreground sm:text-sm">
           <Flag className="size-3.5 text-amber-500" />
@@ -185,7 +241,6 @@ export function SubmissionBar({
         )}
       </div>
 
-      {/* Right: Reset Draft and Submit Actions */}
       <div className="flex items-center gap-2">
         <Button
           type="button"
@@ -199,36 +254,12 @@ export function SubmissionBar({
           <span>Reset Draft</span>
         </Button>
 
-        <TooltipProvider delayDuration={150}>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className="inline-flex">
-                <Button
-                  type="button"
-                  size="sm"
-                  disabled={isSubmitDisabled}
-                  onClick={handleSubmit}
-                  className="h-8 gap-1.5 px-3.5 text-xs font-semibold sm:h-9 sm:px-4 sm:text-xs"
-                >
-                  {isSubmitting ? (
-                    <>
-                      <Loader2 className="size-3.5 animate-spin" />
-                      <span>Submitting...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Send className="size-3.5" />
-                      <span>Submit Review</span>
-                    </>
-                  )}
-                </Button>
-              </span>
-            </TooltipTrigger>
-            <TooltipContent side="top" align="end">
-              {tooltipMessage}
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+        <SubmitButton
+          isSubmitting={isSubmitting}
+          isSubmitDisabled={isSubmitDisabled}
+          tooltipMessage={tooltipMessage}
+          onSubmit={handleSubmit}
+        />
 
         {hasSubmitted && onViewResults && (
           <Button

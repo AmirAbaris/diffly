@@ -460,6 +460,139 @@ function MissedDefectsSection({ issues }: { issues: MissedIssue[] }) {
   )
 }
 
+interface ScoreHeroProps {
+  score: number
+  submissionId: number
+  tierStyle: ScoreTierStyle
+  summary: string
+  detectedCount: number
+  missedCount: number
+  penalty: string | null
+}
+
+function ScoreHeroSection({
+  score,
+  submissionId,
+  tierStyle,
+  summary,
+  detectedCount,
+  missedCount,
+  penalty,
+}: ScoreHeroProps) {
+  return (
+    <div
+      data-testid="score-hero-container"
+      className="flex flex-col items-center gap-5 rounded-2xl border border-border/70 bg-card/70 p-4 backdrop-blur-xs sm:flex-row sm:items-center sm:gap-6 sm:p-5"
+    >
+      <RadialScoreMeter score={score} />
+
+      <div className="flex min-w-0 flex-1 flex-col items-center gap-2.5 text-center sm:items-start sm:text-left">
+        <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-start">
+          <Badge
+            variant="outline"
+            className={cn(
+              "gap-1.5 px-2.5 py-0.5 text-xs font-semibold",
+              tierStyle.badgeClassName
+            )}
+          >
+            <span
+              className={cn("size-1.5 rounded-full", tierStyle.dotClassName)}
+            />
+            <span>{tierStyle.label}</span>
+          </Badge>
+          <span className="font-mono text-xs text-muted-foreground">
+            Submission #{submissionId}
+          </span>
+        </div>
+
+        <p className="text-xs leading-relaxed font-medium text-foreground/90">
+          {summary}
+        </p>
+
+        <div className="flex flex-wrap items-center justify-center gap-2 pt-0.5 sm:justify-start">
+          <span className="inline-flex items-center gap-1 rounded-md bg-muted/60 px-2 py-0.5 font-mono text-[11px] text-muted-foreground">
+            <Check className="size-3 text-emerald-500" />
+            <span>{detectedCount} detected</span>
+          </span>
+
+          <span className="inline-flex items-center gap-1 rounded-md bg-muted/60 px-2 py-0.5 font-mono text-[11px] text-muted-foreground">
+            <AlertTriangle className="size-3 text-amber-500" />
+            <span>{missedCount} missed</span>
+          </span>
+
+          {penalty && (
+            <span className="inline-flex items-center gap-1 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 font-mono text-[11px] text-amber-700 dark:text-amber-300">
+              <ShieldAlert className="size-3" />
+              <span>{penalty}</span>
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+interface ModalFooterActionsProps {
+  showCanonicalSolution: boolean
+  onTryAgain: () => void
+  onToggleCanonical: () => void
+  onNextChallenge: () => void
+}
+
+function ModalFooterActions({
+  showCanonicalSolution,
+  onTryAgain,
+  onToggleCanonical,
+  onNextChallenge,
+}: ModalFooterActionsProps) {
+  return (
+    <DialogFooter className="flex flex-col-reverse gap-2.5 pt-2 sm:flex-row sm:items-center sm:justify-between">
+      <Button
+        type="button"
+        variant="outline"
+        onClick={onTryAgain}
+        className="h-9 gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+        data-testid="try-again-button"
+      >
+        <RotateCcw className="size-3.5" />
+        <span>Try Again</span>
+      </Button>
+
+      <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center">
+        <Button
+          type="button"
+          variant="outline"
+          onClick={onToggleCanonical}
+          className="h-9 gap-1.5 text-xs"
+          data-testid="view-canonical-solution-button"
+        >
+          <FileCode className="size-3.5" />
+          <span>
+            {showCanonicalSolution
+              ? "Hide Staff Comparison"
+              : "Compare with Staff Review"}
+          </span>
+          {showCanonicalSolution ? (
+            <ChevronUp className="size-3" />
+          ) : (
+            <ChevronDown className="size-3" />
+          )}
+        </Button>
+
+        <Button
+          type="button"
+          onClick={onNextChallenge}
+          className="h-9 gap-1.5 text-xs font-semibold"
+          data-testid="next-challenge-button"
+        >
+          <span>Next Challenge</span>
+          <ArrowRight className="size-3.5" />
+        </Button>
+      </div>
+    </DialogFooter>
+  )
+}
+
 export function ReviewResultModal({
   open,
   onOpenChange,
@@ -552,59 +685,15 @@ export function ReviewResultModal({
         </DialogHeader>
 
         {/* Hero Section: Gauge & Executive Summary */}
-        <div
-          data-testid="score-hero-container"
-          className="flex flex-col items-center gap-5 rounded-2xl border border-border/70 bg-card/70 p-4 backdrop-blur-xs sm:flex-row sm:items-center sm:gap-6 sm:p-5"
-        >
-          <RadialScoreMeter score={score} />
-
-          <div className="flex min-w-0 flex-1 flex-col items-center gap-2.5 text-center sm:items-start sm:text-left">
-            <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-start">
-              <Badge
-                variant="outline"
-                className={cn(
-                  "gap-1.5 px-2.5 py-0.5 text-xs font-semibold",
-                  tierStyle.badgeClassName
-                )}
-              >
-                <span
-                  className={cn(
-                    "size-1.5 rounded-full",
-                    tierStyle.dotClassName
-                  )}
-                />
-                <span>{tierStyle.label}</span>
-              </Badge>
-              <span className="font-mono text-xs text-muted-foreground">
-                Submission #{result.submission_id || result.id}
-              </span>
-            </div>
-
-            <p className="text-xs leading-relaxed font-medium text-foreground/90">
-              {summary}
-            </p>
-
-            {/* Quick Metrics Bar */}
-            <div className="flex flex-wrap items-center justify-center gap-2 pt-0.5 sm:justify-start">
-              <span className="inline-flex items-center gap-1 rounded-md bg-muted/60 px-2 py-0.5 font-mono text-[11px] text-muted-foreground">
-                <Check className="size-3 text-emerald-500" />
-                <span>{detectedIssues.length} detected</span>
-              </span>
-
-              <span className="inline-flex items-center gap-1 rounded-md bg-muted/60 px-2 py-0.5 font-mono text-[11px] text-muted-foreground">
-                <AlertTriangle className="size-3 text-amber-500" />
-                <span>{missedIssues.length} missed</span>
-              </span>
-
-              {penalty && (
-                <span className="inline-flex items-center gap-1 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 font-mono text-[11px] text-amber-700 dark:text-amber-300">
-                  <ShieldAlert className="size-3" />
-                  <span>{penalty}</span>
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
+        <ScoreHeroSection
+          score={score}
+          submissionId={result.submission_id || result.id}
+          tierStyle={tierStyle}
+          summary={summary}
+          detectedCount={detectedIssues.length}
+          missedCount={missedIssues.length}
+          penalty={penalty}
+        />
 
         {/* Defect Breakdown: Detected vs Missed in 2 Balanced Columns */}
         <div className="grid grid-cols-1 items-start gap-4 md:grid-cols-2">
@@ -627,50 +716,12 @@ export function ReviewResultModal({
         )}
 
         {/* Action Buttons */}
-        <DialogFooter className="flex flex-col-reverse gap-2.5 pt-2 sm:flex-row sm:items-center sm:justify-between">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={handleTryAgain}
-            className="h-9 gap-1.5 text-xs text-muted-foreground hover:text-foreground"
-            data-testid="try-again-button"
-          >
-            <RotateCcw className="size-3.5" />
-            <span>Try Again</span>
-          </Button>
-
-          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handleToggleCanonicalSolution}
-              className="h-9 gap-1.5 text-xs"
-              data-testid="view-canonical-solution-button"
-            >
-              <FileCode className="size-3.5" />
-              <span>
-                {showCanonicalSolution
-                  ? "Hide Staff Comparison"
-                  : "Compare with Staff Review"}
-              </span>
-              {showCanonicalSolution ? (
-                <ChevronUp className="size-3" />
-              ) : (
-                <ChevronDown className="size-3" />
-              )}
-            </Button>
-
-            <Button
-              type="button"
-              onClick={handleNextChallenge}
-              className="h-9 gap-1.5 text-xs font-semibold"
-              data-testid="next-challenge-button"
-            >
-              <span>Next Challenge</span>
-              <ArrowRight className="size-3.5" />
-            </Button>
-          </div>
-        </DialogFooter>
+        <ModalFooterActions
+          showCanonicalSolution={showCanonicalSolution}
+          onTryAgain={handleTryAgain}
+          onToggleCanonical={handleToggleCanonicalSolution}
+          onNextChallenge={handleNextChallenge}
+        />
       </DialogContent>
     </Dialog>
   )
