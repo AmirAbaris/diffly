@@ -6,9 +6,11 @@ import { ArenaCodeViewer } from "@/components/review/arena-code-viewer"
 import { ArenaCommentDrawer } from "@/components/review/arena-comment-drawer"
 import { ChallengeContextPanel } from "@/components/review/challenge-context-panel"
 import { ArenaHeader } from "@/components/review/arena-header"
+import { ReviewResultModal } from "@/components/review/review-result-modal"
 import { SubmissionBar } from "@/components/review/submission-bar"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useChallenge } from "@/hooks/use-challenge"
+import { useChallenges } from "@/hooks/use-challenges"
 import { useReviewDraft } from "@/hooks/use-review-draft"
 import { toast } from "@/hooks/use-toast"
 import { apiClient } from "@/lib/axios"
@@ -33,6 +35,29 @@ export function ArenaLayout({ slug }: ArenaLayoutProps) {
 
   const [mobileTab, setMobileTab] = React.useState<"brief" | "code">("brief")
   const [isSubmitting, setIsSubmitting] = React.useState(false)
+  const [submissionResult, setSubmissionResult] =
+    React.useState<ReviewSubmissionResponse | null>(null)
+  const [isResultModalOpen, setIsResultModalOpen] = React.useState(false)
+
+  const { challenges } = useChallenges()
+  const nextChallengeSlug = React.useMemo(() => {
+    if (!challenges || challenges.length === 0) return null
+    const currentIndex = challenges.findIndex(
+      (c) => c.slug === slug || (challenge?.id && c.id === challenge.id)
+    )
+    if (currentIndex >= 0 && currentIndex < challenges.length - 1) {
+      return challenges[currentIndex + 1].slug
+    }
+    return null
+  }, [challenges, slug, challenge?.id])
+
+  const handleReviewSuccess = React.useCallback(
+    (data: ReviewSubmissionResponse) => {
+      setSubmissionResult(data)
+      setIsResultModalOpen(true)
+    },
+    []
+  )
 
   const handleSubmitReview = React.useCallback(async () => {
     if (!flaggedLines.length || !comments.trim() || isSubmitting) return
@@ -54,6 +79,7 @@ export function ArenaLayout({ slug }: ArenaLayoutProps) {
         variant: "success",
       })
 
+      handleReviewSuccess(response.data)
       resetDraft()
     } catch (err: unknown) {
       const errorMsg =
@@ -69,7 +95,15 @@ export function ArenaLayout({ slug }: ArenaLayoutProps) {
     } finally {
       setIsSubmitting(false)
     }
-  }, [flaggedLines, comments, isSubmitting, challenge?.id, slug, resetDraft])
+  }, [
+    flaggedLines,
+    comments,
+    isSubmitting,
+    challenge?.id,
+    slug,
+    handleReviewSuccess,
+    resetDraft,
+  ])
 
   if (error) {
     return (
@@ -167,7 +201,19 @@ export function ArenaLayout({ slug }: ArenaLayoutProps) {
         comments={comments}
         onResetDraft={resetDraft}
         onSubmitReview={handleSubmitReview}
+        onSubmitSuccess={handleReviewSuccess}
         isSubmitting={isSubmitting}
+      />
+
+      {/* Review Evaluation Result Modal */}
+      <ReviewResultModal
+        open={isResultModalOpen}
+        onOpenChange={setIsResultModalOpen}
+        result={submissionResult}
+        challengeSlug={slug}
+        challengeTitle={challenge?.title}
+        nextChallengeSlug={nextChallengeSlug}
+        onTryAgain={() => setIsResultModalOpen(false)}
       />
     </div>
   )

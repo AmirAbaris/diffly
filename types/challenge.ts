@@ -51,12 +51,50 @@ export interface ReviewSubmissionRequest {
   session_id?: string | null
 }
 
+export interface DetectedIssue {
+  id: string
+  title: string
+  severity: string
+  matched_lines?: number[]
+  matched_keywords?: string[]
+  line_score?: number
+  concept_score?: number
+  explanation?: string
+  [key: string]: unknown
+}
+
+export interface MissedIssue {
+  id: string
+  title: string
+  severity: string
+  expected_lines?: number[]
+  missing_keywords?: string[]
+  explanation?: string
+  [key: string]: unknown
+}
+
 export interface ReviewSubmissionResponse {
   submission_id: number
   id: number
   score: number
   feedback: string
-  detected_issues: Array<Record<string, unknown>>
-  missed_issues: Array<Record<string, unknown>>
+  detected_issues: DetectedIssue[]
+  missed_issues: MissedIssue[]
   created_at: string
+}
+
+export interface ChallengeSolutionResponse {
+  id: number
+  challenge_id: number
+  slug: string
+  canonical_review: string
+  recommended_fix_diff: string
+  expected_issues?: Array<{
+    id: string
+    title: string
+    severity: string
+    lines: number[]
+    keywords: string[]
+    explanation: string
+  }>
 }
