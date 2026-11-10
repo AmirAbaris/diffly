@@ -1,0 +1,132 @@
+"use client"
+
+import * as React from "react"
+import { BookOpen, Code2 } from "lucide-react"
+import { ArenaCodeViewer } from "@/components/review/arena-code-viewer"
+import { ArenaCommentDrawer } from "@/components/review/arena-comment-drawer"
+import { ArenaContextPane } from "@/components/review/arena-context-pane"
+import { ArenaHeader } from "@/components/review/arena-header"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { useChallenge } from "@/hooks/use-challenge"
+import { cn } from "@/lib/utils"
+
+export interface ArenaLayoutProps {
+  slug: string
+}
+
+export function ArenaLayout({ slug }: ArenaLayoutProps) {
+  const { challenge, isLoading, error } = useChallenge(slug)
+
+  const [flaggedLines, setFlaggedLines] = React.useState<number[]>([])
+  const [comment, setComment] = React.useState<string>("")
+  const [mobileTab, setMobileTab] = React.useState<"brief" | "code">("brief")
+  const [isSubmitting, setIsSubmitting] = React.useState(false)
+
+  const handleToggleLine = React.useCallback((line: number) => {
+    setFlaggedLines((prev) =>
+      prev.includes(line) ? prev.filter((l) => l !== line) : [...prev, line]
+    )
+  }, [])
+
+  const handleClearFlaggedLines = React.useCallback(() => {
+    setFlaggedLines([])
+  }, [])
+
+  const handleSubmitReview = React.useCallback(async () => {
+    if (!comment.trim()) return
+    setIsSubmitting(true)
+    // Simulate submission handler hook-in for issue #17
+    await new Promise((resolve) => setTimeout(resolve, 600))
+    setIsSubmitting(false)
+  }, [comment])
+
+  if (error) {
+    return (
+      <div className="flex h-screen flex-col items-center justify-center gap-4 bg-background p-6 text-center">
+        <h1 className="text-xl font-bold text-destructive">
+          Challenge Not Found
+        </h1>
+        <p className="text-sm text-muted-foreground">
+          Could not load challenge with slug &quot;{slug}&quot;.
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div
+      data-testid="arena-layout"
+      className="flex h-screen w-full flex-col overflow-hidden bg-background text-foreground"
+    >
+      {/* Top Navigation Bar */}
+      <ArenaHeader challenge={challenge} isLoading={isLoading} />
+
+      {/* Mobile / Tablet Tab Switcher (Visible only below 1024px) */}
+      <div className="flex shrink-0 border-b border-border bg-muted/30 px-4 py-2 lg:hidden">
+        <Tabs
+          value={mobileTab}
+          onValueChange={(val) => setMobileTab(val as "brief" | "code")}
+          className="w-full"
+        >
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="brief" className="gap-1.5 text-xs">
+              <BookOpen className="size-3.5" />
+              <span>Context & Rules</span>
+            </TabsTrigger>
+            <TabsTrigger value="code" className="gap-1.5 text-xs">
+              <Code2 className="size-3.5" />
+              <span>Code & Review</span>
+              {flaggedLines.length > 0 && (
+                <span className="py-0.2 ml-1 rounded-full bg-amber-500/20 px-1.5 text-[10px] font-bold text-amber-700 dark:text-amber-400">
+                  {flaggedLines.length}
+                </span>
+              )}
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+      </div>
+
+      {/* Main Split Area (Full Height with Independent Scrolling Containers) */}
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        {/* Left Pane: Scenario Context, Environment, Rules of Engagement */}
+        <aside
+          aria-label="Scenario Context and Environment"
+          className={cn(
+            "min-h-0 flex-col overflow-y-auto border-border bg-card/30 lg:flex lg:w-[42%] lg:border-r xl:w-[40%]",
+            mobileTab === "brief" ? "flex w-full" : "hidden"
+          )}
+        >
+          <ArenaContextPane challenge={challenge} isLoading={isLoading} />
+        </aside>
+
+        {/* Right Pane: Interactive Code Viewer and Inline Comment Drawer */}
+        <main
+          aria-label="Code Viewer and Review Editor"
+          className={cn(
+            "min-h-0 flex-col overflow-y-auto bg-background p-4 sm:p-6 lg:flex lg:w-[58%] xl:w-[60%]",
+            mobileTab === "code" ? "flex w-full" : "hidden"
+          )}
+        >
+          <div className="flex flex-col gap-4">
+            <ArenaCodeViewer
+              code={challenge?.code_snippet || ""}
+              language={challenge?.language}
+              flaggedLines={flaggedLines}
+              onToggleLine={handleToggleLine}
+            />
+
+            <ArenaCommentDrawer
+              flaggedLines={flaggedLines}
+              onToggleLine={handleToggleLine}
+              onClearFlaggedLines={handleClearFlaggedLines}
+              comment={comment}
+              onChangeComment={setComment}
+              onSubmitReview={handleSubmitReview}
+              isSubmitting={isSubmitting}
+            />
+          </div>
+        </main>
+      </div>
+    </div>
+  )
+}

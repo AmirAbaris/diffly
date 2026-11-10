@@ -20,6 +20,12 @@ export interface ChallengeSummary {
   best_score: number | null
 }
 
+export interface ChallengeDetail extends ChallengeSummary {
+  threat_model: string
+  defect_target: string
+  code_snippet: string
+}
+
 export interface ChallengeFilters {
   difficulty?: Difficulty | "All"
   category?: Category | "All"
