@@ -24,6 +24,8 @@ export interface SubmissionBarProps {
   onSubmitReview?: () => Promise<void> | void
   onSubmitSuccess?: (result: ReviewSubmissionResponse) => void
   onSubmitError?: (error: unknown) => void
+  onViewResults?: () => void
+  hasSubmitted?: boolean
   isSubmitting?: boolean
   className?: string
 }
@@ -37,6 +39,8 @@ export function SubmissionBar({
   onSubmitReview: propOnSubmitReview,
   onSubmitSuccess,
   onSubmitError,
+  onViewResults,
+  hasSubmitted,
   isSubmitting: propIsSubmitting,
   className,
 }: SubmissionBarProps) {
@@ -225,6 +229,19 @@ export function SubmissionBar({
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>
+
+        {hasSubmitted && onViewResults && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={onViewResults}
+            className="h-8 gap-1.5 px-3 text-xs font-semibold sm:h-9"
+            data-testid="reopen-comparison-button"
+          >
+            <span>Compare Solution</span>
+          </Button>
+        )}
       </div>
     </div>
   )

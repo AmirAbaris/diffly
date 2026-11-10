@@ -63,6 +63,8 @@ class ReviewSubmissionResponse(BaseModel):
     detected_issues: list[dict[str, Any]] = Field(default_factory=list)
     missed_issues: list[dict[str, Any]] = Field(default_factory=list)
     created_at: datetime
+    flagged_lines: list[int] = Field(default_factory=list)
+    comments: str = ""
 
 
 class SubmissionHistoryResponse(BaseModel):
@@ -140,6 +142,8 @@ def submit_review(
         detected_issues=detected_issues_data,
         missed_issues=missed_issues_data,
         created_at=submission.created_at,
+        flagged_lines=submission.get_flagged_lines(),
+        comments=submission.comments,
     )
 
 
