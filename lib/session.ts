@@ -1,4 +1,4 @@
-const GUEST_SESSION_STORAGE_KEY = "diffly_guest_session_id"
+const SESSION_STORAGE_KEY = "diffly_session_id"
 
 export function getOrCreateGuestSessionId(): string {
   if (typeof window === "undefined") {
@@ -6,7 +6,7 @@ export function getOrCreateGuestSessionId(): string {
   }
 
   try {
-    const existing = window.localStorage.getItem(GUEST_SESSION_STORAGE_KEY)
+    const existing = window.localStorage.getItem(SESSION_STORAGE_KEY)
     if (existing && existing.trim()) {
       return existing.trim()
     }
@@ -17,9 +17,31 @@ export function getOrCreateGuestSessionId(): string {
         : Math.random().toString(36).slice(2, 14)
 
     const newSessionId = `guest-${randomSuffix}`
-    window.localStorage.setItem(GUEST_SESSION_STORAGE_KEY, newSessionId)
+    window.localStorage.setItem(SESSION_STORAGE_KEY, newSessionId)
     return newSessionId
   } catch {
     return "guest-fallback"
+  }
+}
+
+export function setGuestSessionId(sessionId: string): void {
+  if (typeof window === "undefined") {
+    return
+  }
+  try {
+    window.localStorage.setItem(SESSION_STORAGE_KEY, sessionId.trim())
+  } catch {
+    // Ignore localStorage write failures in restrictive sandboxes
+  }
+}
+
+export function clearGuestSessionId(): void {
+  if (typeof window === "undefined") {
+    return
+  }
+  try {
+    window.localStorage.removeItem(SESSION_STORAGE_KEY)
+  } catch {
+    // Ignore localStorage removals in restrictive sandboxes
   }
 }
