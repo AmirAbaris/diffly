@@ -4,7 +4,7 @@ import * as React from "react"
 import { BookOpen, Code2 } from "lucide-react"
 import { ArenaCodeViewer } from "@/components/review/arena-code-viewer"
 import { ArenaCommentDrawer } from "@/components/review/arena-comment-drawer"
-import { ArenaContextPane } from "@/components/review/arena-context-pane"
+import { ChallengeContextPanel } from "@/components/review/challenge-context-panel"
 import { ArenaHeader } from "@/components/review/arena-header"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useChallenge } from "@/hooks/use-challenge"
@@ -96,7 +96,7 @@ export function ArenaLayout({ slug }: ArenaLayoutProps) {
             mobileTab === "brief" ? "flex w-full" : "hidden"
           )}
         >
-          <ArenaContextPane challenge={challenge} isLoading={isLoading} />
+          <ChallengeContextPanel challenge={challenge} isLoading={isLoading} />
         </aside>
 
         {/* Right Pane: Interactive Code Viewer and Inline Comment Drawer */}
