@@ -15,14 +15,16 @@
     "lint:js": "eslint",
     "lint:oxlint": "oxlint",
     "lint:py": "([ -f .venv/bin/ruff ] && .venv/bin/ruff check api backend tests) || ruff check api backend tests",
+    "lint:doctor": "react-doctor -y --no-telemetry",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,mjs,json,md}\"",
     "format": "prettier --write \"**/*.{ts,tsx,js,mjs,json,md}\"",
-    "lint": "pnpm lint:oxlint && pnpm lint:js && pnpm format:check",
+    "lint": "pnpm lint:oxlint && pnpm lint:doctor && pnpm lint:js && pnpm format:check",
     "test:py": "([ -f .venv/bin/pytest ] && .venv/bin/pytest tests) || pytest tests",
     "verify:py": "pnpm lint:py && pnpm test:py",
     "typecheck": "tsc --noEmit",
     "prepare": "lefthook install",
-    "verify": "pnpm lint && pnpm test:py && pnpm build"
+    "verify": "pnpm lint && pnpm test:py && pnpm build",
+    "doctor": "react-doctor -y --no-telemetry"
   },
   "dependencies": {
     "axios": "^1.21.0",
@@ -51,6 +53,7 @@
     "oxlint": "^1.92.0",
     "prettier": "^3.9.10",
     "prettier-plugin-tailwindcss": "^0.8.1",
+    "react-doctor": "^0.9.22",
     "tailwindcss": "^4",
     "typescript": "^5"
   }
