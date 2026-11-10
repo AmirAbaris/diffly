@@ -18,6 +18,10 @@ const eslintConfig = defineConfig([
         },
       ],
       "no-multiple-empty-lines": ["error", { max: 1, maxEOF: 0, maxBOF: 0 }],
+      "max-lines": [
+        "error",
+        { max: 350, skipBlankLines: true, skipComments: true },
+      ],
     },
   },
   globalIgnores([

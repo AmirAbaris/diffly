@@ -10,7 +10,11 @@
     "no-unused-vars": "warn",
     "no-debugger": "error",
     "no-console": "warn",
-    "react/react-in-jsx-scope": "off"
+    "react/react-in-jsx-scope": "off",
+    "max-lines": [
+      "error",
+      { "max": 350, "skipBlankLines": true, "skipComments": true }
+    ]
   },
   "ignorePatterns": [
     "node_modules/**",
