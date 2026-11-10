@@ -1,7 +1,14 @@
 "use client"
 
 import * as React from "react"
-import { CheckCircle2, Flag, Loader2, RotateCcw, Send } from "lucide-react"
+import {
+  CheckCircle2,
+  Flag,
+  History,
+  Loader2,
+  RotateCcw,
+  Send,
+} from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   Tooltip,
@@ -25,6 +32,8 @@ export interface SubmissionBarProps {
   onSubmitSuccess?: (result: ReviewSubmissionResponse) => void
   onSubmitError?: (error: unknown) => void
   onViewResults?: () => void
+  onOpenHistory?: () => void
+  attemptCount?: number
   hasSubmitted?: boolean
   isSubmitting?: boolean
   className?: string
@@ -114,6 +123,8 @@ export function SubmissionBar({
   onSubmitSuccess,
   onSubmitError,
   onViewResults,
+  onOpenHistory,
+  attemptCount,
   hasSubmitted,
   isSubmitting: propIsSubmitting,
   className,
@@ -253,6 +264,26 @@ export function SubmissionBar({
           <RotateCcw className="size-3" />
           <span>Reset Draft</span>
         </Button>
+
+        {onOpenHistory && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={onOpenHistory}
+            className="h-8 gap-1.5 px-2.5 text-xs text-muted-foreground hover:text-foreground sm:h-9 sm:px-3"
+            data-testid="submission-bar-history-button"
+            aria-label="View past attempts"
+          >
+            <History className="size-3.5" />
+            <span className="hidden sm:inline">History</span>
+            {attemptCount !== undefined && attemptCount > 0 && (
+              <span className="rounded-full bg-secondary px-1.5 py-0.5 text-[10px] font-bold">
+                {attemptCount}
+              </span>
+            )}
+          </Button>
+        )}
 
         <SubmitButton
           isSubmitting={isSubmitting}
