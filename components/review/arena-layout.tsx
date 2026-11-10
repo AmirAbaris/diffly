@@ -16,6 +16,7 @@ import { useReviewDraft } from "@/hooks/use-review-draft"
 import { useSubmissionHistory } from "@/hooks/use-submission-history"
 import { mutateUserStats } from "@/hooks/use-user-stats"
 import { toast } from "@/hooks/use-toast"
+import { useArenaUIStore } from "@/stores/arena-ui-store"
 import { apiClient } from "@/lib/axios"
 import { cn } from "@/lib/utils"
 import type { ReviewSubmissionResponse } from "@/types/challenge"
@@ -42,16 +43,20 @@ export function ArenaLayout({ slug }: ArenaLayoutProps) {
     resetDraft,
   } = useReviewDraft(slug)
 
-  const [mobileTab, setMobileTab] = React.useState<"brief" | "code">("brief")
-  const [isSubmitting, setIsSubmitting] = React.useState(false)
-  const [submissionResult, setSubmissionResult] =
-    React.useState<ReviewSubmissionResponse | null>(null)
-  const [isResultModalOpen, setIsResultModalOpen] = React.useState(false)
-  const [isHistoryOpen, setIsHistoryOpen] = React.useState(false)
-  const [submittedReview, setSubmittedReview] = React.useState<{
-    flaggedLines: number[]
-    comments: string
-  } | null>(null)
+  const {
+    mobileTab,
+    isSubmitting,
+    submissionResult,
+    isResultModalOpen,
+    isHistoryOpen,
+    submittedReview,
+    setMobileTab,
+    setIsSubmitting,
+    setSubmissionResult,
+    setIsResultModalOpen,
+    setIsHistoryOpen,
+    setSubmittedReview,
+  } = useArenaUIStore()
 
   const { challenges } = useChallenges()
   const nextChallengeSlug = React.useMemo(() => {
@@ -83,7 +88,15 @@ export function ArenaLayout({ slug }: ArenaLayoutProps) {
       mutateChallenge()
       mutateUserStats()
     },
-    [flaggedLines, comments, mutateHistory, mutateChallenge]
+    [
+      flaggedLines,
+      comments,
+      mutateHistory,
+      mutateChallenge,
+      setSubmittedReview,
+      setSubmissionResult,
+      setIsResultModalOpen,
+    ]
   )
 
   const handleSubmitReview = React.useCallback(async () => {
@@ -130,6 +143,7 @@ export function ArenaLayout({ slug }: ArenaLayoutProps) {
     slug,
     handleReviewSuccess,
     resetDraft,
+    setIsSubmitting,
   ])
 
   if (error) {

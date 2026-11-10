@@ -12,40 +12,52 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { SignInForm } from "@/components/auth/sign-in-form"
 import { SignUpForm } from "@/components/auth/sign-up-form"
+import { useAuthModalStore, type AuthTab } from "@/stores/auth-modal-store"
 
 export interface AuthModalProps {
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  initialTab?: "signin" | "signup"
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+  initialTab?: AuthTab
 }
 
-export function AuthModal({
-  open,
-  onOpenChange,
-  initialTab = "signin",
-}: AuthModalProps) {
-  const [activeTab, setActiveTab] = React.useState<"signin" | "signup">(
-    initialTab
-  )
+export function AuthModal({ open, onOpenChange, initialTab }: AuthModalProps) {
+  const storeIsOpen = useAuthModalStore((s) => s.isOpen)
+  const storeInitialTab = useAuthModalStore((s) => s.initialTab)
+  const storeSetIsOpen = useAuthModalStore((s) => s.setIsOpen)
+
+  const isControlled = open !== undefined
+  const isModalOpen = isControlled ? open : storeIsOpen
+  const defaultTab = initialTab ?? storeInitialTab
+
+  const [activeTab, setActiveTab] = React.useState<AuthTab>(defaultTab)
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null)
 
   const handleOpenChange = (newOpen: boolean) => {
     if (!newOpen) {
       setErrorMessage(null)
     } else {
-      setActiveTab(initialTab)
+      setActiveTab(defaultTab)
       setErrorMessage(null)
     }
-    onOpenChange(newOpen)
+
+    if (isControlled) {
+      onOpenChange?.(newOpen)
+    } else {
+      storeSetIsOpen(newOpen)
+    }
   }
 
   const handleSuccess = () => {
     setErrorMessage(null)
-    onOpenChange(false)
+    if (isControlled) {
+      onOpenChange?.(false)
+    } else {
+      storeSetIsOpen(false)
+    }
   }
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
+    <Dialog open={isModalOpen} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader className="gap-1.5">
           <div className="flex items-center gap-2">
@@ -75,7 +87,7 @@ export function AuthModal({
         <Tabs
           value={activeTab}
           onValueChange={(val) => {
-            setActiveTab(val as "signin" | "signup")
+            setActiveTab(val as AuthTab)
             setErrorMessage(null)
           }}
           className="w-full"
