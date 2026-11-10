@@ -85,6 +85,20 @@ export interface ReviewSubmissionResponse {
   comments?: string
 }
 
+export interface SubmissionHistoryItem {
+  attempt_number: number
+  id: number
+  submission_id: number
+  challenge_id: number
+  flagged_lines: number[]
+  comments: string
+  score: number
+  feedback: string
+  detected_issues: DetectedIssue[]
+  missed_issues: MissedIssue[]
+  created_at: string
+}
+
 export interface ChallengeSolutionResponse {
   id: number
   challenge_id: number
