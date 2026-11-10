@@ -4,10 +4,10 @@ This directory documents the active features of **Diffly**.
 
 ## Index of Features
 
-| Feature                                                         | Surface                                | Description                                             | Proven In                     |
-| --------------------------------------------------------------- | -------------------------------------- | ------------------------------------------------------- | ----------------------------- |
-| [System Health & Readiness](system-health.md)                   | REST API (`/api/health`)               | Verifies service liveness and responsiveness            | `scripts/drive.sh health`     |
-| [Strict Code Hygiene & Spacing](code-hygiene-and-formatting.md) | CI / Linter (Ruff + Prettier + ESLint) | Enforces PEP 8 spacing, TS padding, and CI verification | `scripts/drive.sh formatting` |
+| Feature                                                         | Surface                                                                   | Description                                                       | Proven In                     |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------- | ----------------------------------------------------------------- | ----------------------------- |
+| [System Health & Readiness](system-health.md)                   | REST API (`/api/health`)                                                  | Verifies service liveness and responsiveness                      | `scripts/drive.sh health`     |
+| [Strict Code Hygiene & Spacing](code-hygiene-and-formatting.md) | Multi-tier Linter & CI (Ruff + Oxlint + React Doctor + ESLint + Prettier) | Enforces PEP 8 spacing, React best practices, and CI verification | `scripts/drive.sh formatting` |
 
 ## Verification Guidance
 

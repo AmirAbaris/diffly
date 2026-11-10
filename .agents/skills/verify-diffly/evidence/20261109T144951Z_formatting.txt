@@ -1,0 +1,42 @@
+=== Ruff Check ===
+All checks passed!
+=== Ruff Format Check ===
+23 files already formatted
+=== Prettier Check ===
+$ prettier --check "**/*.{ts,tsx,js,mjs,json,md}"
+Checking formatting...
+All matched files use Prettier code style!
+=== Oxlint Check ===
+$ oxlint
+Found 0 warnings and 0 errors.
+Finished in 55ms on 34 files with 155 rules using 10 threads.
+=== React Doctor Check ===
+$ react-doctor -y --no-telemetry
+✔ Select projects › diffly
+  
+✔ Scanned 34 files in 0.4s [~10 workers]
+✔ Scanned 34 files in 822ms
+
+React Doctor — diffly
+Score disabled by --no-score. Want something custom to your company? Contact us at https://react.doctor/enterprise.
+
+3 issues
+Maintainability: 3 warnings
+
+⚠ Non-component export in component file ×3
+  react-doctor/only-export-components
+  components/ui/badge.tsx:48
+  components/ui/button.tsx:64
+  components/ui/toggle.tsx:46
+
+  ────────────────────────────────────────────────────────────
+
+  Docs: https://react.doctor/docs
+  Learn more about fixing issues, setting up CI/CD, and
+  configuring rules with a config file
+
+  GitHub: https://github.com/millionco/react-doctor
+  Report issues and star the repository!
+
+=== ESLint Check ===
+$ eslint

@@ -5,6 +5,10 @@ pre-commit:
       glob: "*.{js,jsx,ts,tsx}"
       run: pnpm exec oxlint {staged_files}
 
+    - name: react-doctor
+      glob: "*.{js,jsx,ts,tsx}"
+      run: pnpm exec react-doctor --staged --no-telemetry
+
     - name: prettier
       glob: "*.{js,jsx,ts,tsx,json,md,css,mjs}"
       run: pnpm exec prettier --check {staged_files}

@@ -12,7 +12,7 @@ The stack comprises:
 
 - **Backend:** FastAPI with modular architecture scaffold.
 - **Frontend:** Next.js (App Router), shadcn/ui components, SWR, Axios, Tailwind CSS.
-- **Code Quality:** Strict PEP 8 function spacing (Ruff E302/E305), Prettier, ESLint `padding-line-between-statements`, and GitHub Actions CI.
+- **Code Quality:** Strict PEP 8 function spacing (Ruff E302/E305), Prettier, Oxlint fast checks, React Doctor best practices, ESLint `padding-line-between-statements`, and GitHub Actions CI.
 
 ## Launch
 
