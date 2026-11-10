@@ -7,6 +7,7 @@ from scalar_fastapi import get_scalar_api_reference
 
 from api.routes.challenges import router as challenges_router
 from api.routes.submissions import router as submissions_router
+from api.routes.user import router as user_router
 from backend.core.config import settings
 from backend.core.db import init_db
 from backend.seed.seed_data import seed_challenges_if_empty
@@ -28,6 +29,8 @@ app = FastAPI(
 
 app.include_router(challenges_router)
 app.include_router(submissions_router)
+app.include_router(user_router)
+
 
 app.add_middleware(
     CORSMiddleware,

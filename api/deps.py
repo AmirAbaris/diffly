@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import Depends, Request
+from fastapi import Depends, HTTPException, Request, status
 from sqlmodel import Session
 
 from backend.core.db import get_session
@@ -26,3 +26,15 @@ def get_optional_current_user(
         return session.get(User, int(user_id_header))
 
     return None
+
+
+def get_current_user(
+    current_user: Annotated[User | None, Depends(get_optional_current_user)],
+) -> User:
+    """Require an authenticated user or raise 401 Unauthorized."""
+    if current_user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required",
+        )
+    return current_user
