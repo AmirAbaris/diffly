@@ -6,9 +6,14 @@ import { ArenaCodeViewer } from "@/components/review/arena-code-viewer"
 import { ArenaCommentDrawer } from "@/components/review/arena-comment-drawer"
 import { ArenaContextPane } from "@/components/review/arena-context-pane"
 import { ArenaHeader } from "@/components/review/arena-header"
+import { SubmissionBar } from "@/components/review/submission-bar"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useChallenge } from "@/hooks/use-challenge"
+import { useReviewDraft } from "@/hooks/use-review-draft"
+import { toast } from "@/hooks/use-toast"
+import { apiClient } from "@/lib/axios"
 import { cn } from "@/lib/utils"
+import type { ReviewSubmissionResponse } from "@/types/challenge"
 
 export interface ArenaLayoutProps {
   slug: string
@@ -17,28 +22,54 @@ export interface ArenaLayoutProps {
 export function ArenaLayout({ slug }: ArenaLayoutProps) {
   const { challenge, isLoading, error } = useChallenge(slug)
 
-  const [flaggedLines, setFlaggedLines] = React.useState<number[]>([])
-  const [comment, setComment] = React.useState<string>("")
+  const {
+    flaggedLines,
+    comments,
+    setComments,
+    toggleFlaggedLine,
+    clearFlaggedLines,
+    resetDraft,
+  } = useReviewDraft(slug)
+
   const [mobileTab, setMobileTab] = React.useState<"brief" | "code">("brief")
   const [isSubmitting, setIsSubmitting] = React.useState(false)
 
-  const handleToggleLine = React.useCallback((line: number) => {
-    setFlaggedLines((prev) =>
-      prev.includes(line) ? prev.filter((l) => l !== line) : [...prev, line]
-    )
-  }, [])
-
-  const handleClearFlaggedLines = React.useCallback(() => {
-    setFlaggedLines([])
-  }, [])
-
   const handleSubmitReview = React.useCallback(async () => {
-    if (!comment.trim()) return
+    if (!flaggedLines.length || !comments.trim() || isSubmitting) return
     setIsSubmitting(true)
-    // Simulate submission handler hook-in for issue #17
-    await new Promise((resolve) => setTimeout(resolve, 600))
-    setIsSubmitting(false)
-  }, [comment])
+    const targetId = challenge?.id ?? slug
+
+    try {
+      const response = await apiClient.post<ReviewSubmissionResponse>(
+        `/api/challenges/${targetId}/review`,
+        {
+          flagged_lines: flaggedLines,
+          comments: comments.trim(),
+        }
+      )
+
+      toast({
+        title: "Review submitted successfully",
+        description: `Score: ${response.data.score}% • ${response.data.feedback || "Evaluation complete."}`,
+        variant: "success",
+      })
+
+      resetDraft()
+    } catch (err: unknown) {
+      const errorMsg =
+        (err as { response?: { data?: { detail?: string } } })?.response?.data
+          ?.detail ||
+        (err instanceof Error ? err.message : "Failed to submit review")
+
+      toast({
+        title: "Submission failed",
+        description: errorMsg,
+        variant: "destructive",
+      })
+    } finally {
+      setIsSubmitting(false)
+    }
+  }, [flaggedLines, comments, isSubmitting, challenge?.id, slug, resetDraft])
 
   if (error) {
     return (
@@ -112,21 +143,32 @@ export function ArenaLayout({ slug }: ArenaLayoutProps) {
               code={challenge?.code_snippet || ""}
               language={challenge?.language}
               flaggedLines={flaggedLines}
-              onToggleLine={handleToggleLine}
+              onToggleLine={toggleFlaggedLine}
             />
 
             <ArenaCommentDrawer
               flaggedLines={flaggedLines}
-              onToggleLine={handleToggleLine}
-              onClearFlaggedLines={handleClearFlaggedLines}
-              comment={comment}
-              onChangeComment={setComment}
+              onToggleLine={toggleFlaggedLine}
+              onClearFlaggedLines={clearFlaggedLines}
+              comment={comments}
+              onChangeComment={setComments}
               onSubmitReview={handleSubmitReview}
               isSubmitting={isSubmitting}
             />
           </div>
         </main>
       </div>
+
+      {/* Sticky Bottom Review Submission Bar */}
+      <SubmissionBar
+        challengeSlug={slug}
+        challengeId={challenge?.id}
+        flaggedLines={flaggedLines}
+        comments={comments}
+        onResetDraft={resetDraft}
+        onSubmitReview={handleSubmitReview}
+        isSubmitting={isSubmitting}
+      />
     </div>
   )
 }
