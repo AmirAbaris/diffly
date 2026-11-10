@@ -10,6 +10,8 @@ export const metadata: Metadata = {
     "Practice code reviews on AI agent antipatterns, security vulnerabilities, and concurrency defects.",
 }
 
+export const instant = false
+
 export default function ChallengesPage() {
   return (
     <main className="p-6">
