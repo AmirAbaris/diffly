@@ -114,3 +114,29 @@ export interface ChallengeSolutionResponse {
     explanation: string
   }>
 }
+
+export interface CategoryProgress {
+  category: string
+  solved: number
+  total: number
+  accuracy: number
+}
+
+export interface UserProgress {
+  total_challenges: number
+  total_attempted: number
+  total_solved: number
+  average_score: number
+  streak_days: number
+  categories_breakdown: CategoryProgress[]
+}
+
+export interface ClaimSessionRequest {
+  session_id?: string | null
+}
+
+export interface ClaimSessionResponse {
+  claimed_count: number
+  user_id: number
+  session_id: string
+}
