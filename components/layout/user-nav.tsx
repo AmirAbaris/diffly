@@ -24,6 +24,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { AuthModal } from "@/components/auth/auth-modal"
 import { useAuth } from "@/hooks/use-auth"
 import { toast } from "@/hooks/use-toast"
+import { useAuthModalStore } from "@/stores/auth-modal-store"
 import { cn } from "@/lib/utils"
 
 export interface UserNavProps {
@@ -33,7 +34,7 @@ export interface UserNavProps {
 
 export function UserNav({ className, onOpenStats }: UserNavProps) {
   const { user, isAuthenticated, isLoading, logout } = useAuth()
-  const [authModalOpen, setAuthModalOpen] = React.useState(false)
+  const openAuthModal = useAuthModalStore((s) => s.openAuthModal)
 
   const handleSignOut = async () => {
     try {
@@ -74,7 +75,7 @@ export function UserNav({ className, onOpenStats }: UserNavProps) {
             type="button"
             variant="outline"
             size="sm"
-            onClick={() => setAuthModalOpen(true)}
+            onClick={() => openAuthModal("signin")}
             data-testid="sign-in-button"
             className="h-8 gap-1.5 px-3 text-xs font-medium"
           >
@@ -83,7 +84,7 @@ export function UserNav({ className, onOpenStats }: UserNavProps) {
           </Button>
         </div>
 
-        <AuthModal open={authModalOpen} onOpenChange={setAuthModalOpen} />
+        <AuthModal />
       </>
     )
   }
@@ -200,7 +201,7 @@ export function UserNav({ className, onOpenStats }: UserNavProps) {
         </DropdownMenu>
       </div>
 
-      <AuthModal open={authModalOpen} onOpenChange={setAuthModalOpen} />
+      <AuthModal />
     </>
   )
 }

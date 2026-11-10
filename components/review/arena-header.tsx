@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { NavStats } from "@/components/layout/nav-stats"
 import { UserNav } from "@/components/layout/user-nav"
+import { useArenaUIStore } from "@/stores/arena-ui-store"
 import type { ChallengeDetail, Difficulty } from "@/types/challenge"
 
 export interface ArenaHeaderProps {
@@ -33,6 +34,8 @@ export function ArenaHeader({
   onOpenHistory,
   attemptCount = 0,
 }: ArenaHeaderProps) {
+  const setHistoryOpen = useArenaUIStore((s) => s.setIsHistoryOpen)
+  const handleOpenHistory = onOpenHistory ?? (() => setHistoryOpen(true))
   return (
     <header className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-card/60 px-4 backdrop-blur-sm sm:px-6">
       <div className="flex min-w-0 items-center gap-3">
@@ -72,28 +75,26 @@ export function ArenaHeader({
       </div>
 
       <div className="flex items-center gap-2">
-        {onOpenHistory && (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={onOpenHistory}
-            className="h-7 gap-1.5 px-2.5 text-xs text-muted-foreground hover:text-foreground sm:h-8"
-            data-testid="history-drawer-trigger"
-            aria-label="View past attempts"
-          >
-            <History className="size-3.5" />
-            <span className="hidden sm:inline">Attempts</span>
-            {attemptCount > 0 && (
-              <Badge
-                variant="secondary"
-                className="h-4 px-1 text-[10px] font-bold"
-              >
-                {attemptCount}
-              </Badge>
-            )}
-          </Button>
-        )}
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={handleOpenHistory}
+          className="h-7 gap-1.5 px-2.5 text-xs text-muted-foreground hover:text-foreground sm:h-8"
+          data-testid="history-drawer-trigger"
+          aria-label="View past attempts"
+        >
+          <History className="size-3.5" />
+          <span className="hidden sm:inline">Attempts</span>
+          {attemptCount > 0 && (
+            <Badge
+              variant="secondary"
+              className="h-4 px-1 text-[10px] font-bold"
+            >
+              {attemptCount}
+            </Badge>
+          )}
+        </Button>
 
         {isLoading || !challenge ? (
           <Skeleton className="h-6 w-20" />

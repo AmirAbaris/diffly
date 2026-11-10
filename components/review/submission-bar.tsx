@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/tooltip"
 import { useReviewDraft } from "@/hooks/use-review-draft"
 import { toast } from "@/hooks/use-toast"
+import { useArenaUIStore } from "@/stores/arena-ui-store"
 import { apiClient } from "@/lib/axios"
 import { cn } from "@/lib/utils"
 import type { ReviewSubmissionResponse } from "@/types/challenge"
@@ -137,6 +138,15 @@ export function SubmissionBar({
 
   const flaggedLines = propFlaggedLines ?? draft.flaggedLines
   const comments = propComments ?? draft.comments
+
+  const storeSetIsResultModalOpen = useArenaUIStore(
+    (s) => s.setIsResultModalOpen
+  )
+  const storeSetIsHistoryOpen = useArenaUIStore((s) => s.setIsHistoryOpen)
+
+  const handleOpenHistory = onOpenHistory ?? (() => storeSetIsHistoryOpen(true))
+  const handleViewResults =
+    onViewResults ?? (() => storeSetIsResultModalOpen(true))
 
   const [internalIsSubmitting, setInternalIsSubmitting] = React.useState(false)
   const isSubmitting = propIsSubmitting ?? internalIsSubmitting
@@ -265,25 +275,23 @@ export function SubmissionBar({
           <span>Reset Draft</span>
         </Button>
 
-        {onOpenHistory && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={onOpenHistory}
-            className="h-8 gap-1.5 px-2.5 text-xs text-muted-foreground hover:text-foreground sm:h-9 sm:px-3"
-            data-testid="submission-bar-history-button"
-            aria-label="View past attempts"
-          >
-            <History className="size-3.5" />
-            <span className="hidden sm:inline">History</span>
-            {attemptCount !== undefined && attemptCount > 0 && (
-              <span className="rounded-full bg-secondary px-1.5 py-0.5 text-[10px] font-bold">
-                {attemptCount}
-              </span>
-            )}
-          </Button>
-        )}
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={handleOpenHistory}
+          className="h-8 gap-1.5 px-2.5 text-xs text-muted-foreground hover:text-foreground sm:h-9 sm:px-3"
+          data-testid="submission-bar-history-button"
+          aria-label="View past attempts"
+        >
+          <History className="size-3.5" />
+          <span className="hidden sm:inline">History</span>
+          {attemptCount !== undefined && attemptCount > 0 && (
+            <span className="rounded-full bg-secondary px-1.5 py-0.5 text-[10px] font-bold">
+              {attemptCount}
+            </span>
+          )}
+        </Button>
 
         <SubmitButton
           isSubmitting={isSubmitting}
@@ -292,12 +300,12 @@ export function SubmissionBar({
           onSubmit={handleSubmit}
         />
 
-        {hasSubmitted && onViewResults && (
+        {hasSubmitted && (
           <Button
             type="button"
             variant="outline"
             size="sm"
-            onClick={onViewResults}
+            onClick={handleViewResults}
             className="h-8 gap-1.5 px-3 text-xs font-semibold sm:h-9"
             data-testid="reopen-comparison-button"
           >
