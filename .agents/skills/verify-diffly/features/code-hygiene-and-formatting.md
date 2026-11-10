@@ -3,9 +3,9 @@
 ## Sub-features
 
 - **PEP 8 Spacing Enforcement:** Ruff enforces exact 2 blank lines between top-level functions and classes (`E302`/`E305`).
-- **TypeScript Function Spacing:** ESLint enforces `padding-line-between-statements` (blank line between functions and classes).
+- **TypeScript Function Spacing & Component Limits:** ESLint enforces `padding-line-between-statements` and a strict 350-line `max-lines` ceiling to prevent oversized monolithic components.
+- **Fast Rust Linting:** Oxlint provides immediate sub-second syntax, correctness, and `max-lines` passes.
 - **React Best Practices & Diagnostics:** React Doctor scans component architecture, hook conventions, accessibility, and anti-patterns.
-- **Fast Rust Linting:** Oxlint provides immediate sub-second syntax and correctness passes.
 - **Prettier & Ruff Formatter Checks:** Automatic CI failure on unformatted code or trailing whitespace.
 - **GitHub Actions CI Guardrail:** Pre-merge automation blocking sloppy code on pull requests.
 

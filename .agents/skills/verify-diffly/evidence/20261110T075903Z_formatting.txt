@@ -1,0 +1,50 @@
+=== Ruff Check ===
+All checks passed!
+=== Ruff Format Check ===
+23 files already formatted
+=== Prettier Check ===
+$ prettier --check "**/*.{ts,tsx,js,mjs,json,md}"
+Checking formatting...
+All matched files use Prettier code style!
+=== Oxlint Check ===
+$ oxlint
+Found 0 warnings and 0 errors.
+Finished in 11ms on 83 files with 156 rules using 10 threads.
+=== React Doctor Check ===
+$ react-doctor -y --no-telemetry
+✔ Select projects › diffly
+  
+✔ Scanned 83 files in 0.5s [~10 workers]
+✔ Scanned 83 files in 1.5s
+
+React Doctor — diffly
+Score disabled by --no-score. Want something custom to your company? Contact us at https://react.doctor/enterprise.
+
+11 issues
+Maintainability: 11 warnings
+
+⚠ Non-component export in component file ×11
+  react-doctor/only-export-components
+  components/review/comparison/staff-review-column.tsx:9
+  components/review/context-panel/progressive-hints.tsx:16
+  components/review/markdown-preview.tsx:17
+  components/review/markdown-preview.tsx:17
+  components/review/result-modal/score-helpers.tsx:11
+  components/review/result-modal/score-helpers.tsx:41
+  components/review/review-result-modal.tsx:29
+  components/review/review-result-modal.tsx:29
+  components/ui/badge.tsx:48
+  components/ui/button.tsx:64
+  components/ui/toggle.tsx:46
+
+  ────────────────────────────────────────────────────────────
+
+  Docs: https://react.doctor/docs
+  Learn more about fixing issues, setting up CI/CD, and
+  configuring rules with a config file
+
+  GitHub: https://github.com/millionco/react-doctor
+  Report issues and star the repository!
+
+=== ESLint Check ===
+$ eslint
