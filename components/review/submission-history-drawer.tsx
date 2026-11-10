@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dialog"
 import { Skeleton } from "@/components/ui/skeleton"
 import { HistoryItem } from "@/components/review/history/history-item"
+import { getScoreBadgeClasses } from "@/components/review/history/history-helpers"
 import { useSubmissionHistory } from "@/hooks/use-submission-history"
 import { cn } from "@/lib/utils"
 import type { SubmissionHistoryItem } from "@/types/challenge"
@@ -125,26 +126,29 @@ function HistoryDrawerHeader({
     return Math.max(...submissions.map((s) => s.score))
   }, [submissions])
 
-  return (
-    <DialogHeader className="gap-1 text-left">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <History className="size-4 text-primary" />
-          <DialogTitle className="text-base font-bold sm:text-lg">
-            Submission History
-          </DialogTitle>
-          {submissions.length > 0 && (
-            <Badge variant="secondary" className="text-xs font-semibold">
-              {submissions.length}{" "}
-              {submissions.length === 1 ? "attempt" : "attempts"}
-            </Badge>
-          )}
-        </div>
+  const bestScoreStyle =
+    bestScore !== null ? getScoreBadgeClasses(bestScore) : null
 
-        {bestScore !== null && (
+  return (
+    <DialogHeader className="gap-1 pr-10 text-left">
+      <div className="flex flex-wrap items-center gap-2">
+        <History className="size-4 text-primary" />
+        <DialogTitle className="text-base font-bold sm:text-lg">
+          Submission History
+        </DialogTitle>
+        {submissions.length > 0 && (
+          <Badge variant="secondary" className="text-xs font-semibold">
+            {submissions.length}{" "}
+            {submissions.length === 1 ? "attempt" : "attempts"}
+          </Badge>
+        )}
+        {bestScore !== null && bestScoreStyle && (
           <Badge
-            variant="outline"
-            className="gap-1 border-emerald-500/30 bg-emerald-500/10 text-xs font-semibold text-emerald-600 dark:text-emerald-400"
+            variant={bestScoreStyle.badgeVariant}
+            className={cn(
+              "gap-1 text-xs font-semibold",
+              bestScoreStyle.className
+            )}
           >
             <TrendingUp className="size-3" />
             Best: {bestScore}%
