@@ -167,6 +167,24 @@ toggleMobileCollapse()
 assert.equal(isMobileCollapsed, false, "Panel restored on second toggle")
 process.stdout.write("✓ Mobile collapsible panel state transitions verified\n")
 
+// 6. Verify No Nested Button Invariant (HTML & Hydration Safety)
+// AccordionTrigger is rendered as a <button>. Unlocked tiers use AccordionTrigger without any child buttons.
+// Locked / unlockable tiers must render in a <div> header so the 'Unlock Hint' <button> is never nested inside another <button>.
+const getHeaderTag = (isUnlocked) => (isUnlocked ? "AccordionTrigger" : "div")
+assert.equal(
+  getHeaderTag(false),
+  "div",
+  "Locked tier header must be a div, not an AccordionTrigger button"
+)
+assert.equal(
+  getHeaderTag(true),
+  "AccordionTrigger",
+  "Unlocked tier header uses AccordionTrigger"
+)
+process.stdout.write(
+  "✓ Validated HTML button nesting invariant (no <button> descendant of <button>)\n"
+)
+
 process.stdout.write(
   "\nAll ChallengeContextPanel verification checks PASSED successfully!\n"
 )

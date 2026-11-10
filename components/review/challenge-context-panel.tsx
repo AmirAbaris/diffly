@@ -401,7 +401,6 @@ function ProgressiveHintsSection({
           const isUnlocked = unlockedSet.has(tier)
           const previousTierUnlocked = tier === 1 || unlockedSet.has(tier - 1)
           const canUnlock = !isUnlocked && previousTierUnlocked
-          const isLocked = !isUnlocked && !previousTierUnlocked
 
           const defaultMeta = DEFAULT_TIER_META[tier] || {
             title: `Tier ${tier}`,
@@ -421,23 +420,43 @@ function ProgressiveHintsSection({
                 isUnlocked ? "bg-card" : "bg-muted/10 opacity-90"
               )}
             >
-              <AccordionTrigger
-                disabled={!isUnlocked}
-                className={cn(
-                  "group px-4 py-3 text-xs hover:no-underline",
-                  !isUnlocked && "cursor-default"
-                )}
-              >
-                <div className="flex flex-1 items-center justify-between gap-3 pr-2">
+              {isUnlocked ? (
+                <AccordionTrigger className="group px-4 py-3 text-xs hover:no-underline">
+                  <div className="flex flex-1 items-center justify-between gap-3 pr-2">
+                    <div className="flex items-center gap-2.5">
+                      <div className="flex size-6 items-center justify-center rounded-full bg-primary text-[11px] font-bold text-primary-foreground transition-colors">
+                        {tier}
+                      </div>
+                      <div className="flex flex-col items-start gap-0.5 text-left">
+                        <span className="font-semibold text-foreground">
+                          Tier {tier}: {tierTitle}
+                        </span>
+                        <span className="text-[10px] text-muted-foreground">
+                          Available to review
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <Badge
+                        variant="secondary"
+                        className="gap-1 border-primary/20 bg-primary/10 text-[10px] font-medium text-primary"
+                      >
+                        <Unlock className="size-2.5" />
+                        Unlocked
+                      </Badge>
+                    </div>
+                  </div>
+                </AccordionTrigger>
+              ) : (
+                <div className="flex flex-1 items-center justify-between gap-3 px-4 py-3 text-xs">
                   <div className="flex items-center gap-2.5">
                     <div
                       className={cn(
                         "flex size-6 items-center justify-center rounded-full text-[11px] font-bold transition-colors",
-                        isUnlocked
-                          ? "bg-primary text-primary-foreground"
-                          : canUnlock
-                            ? "bg-amber-500/20 text-amber-700 dark:text-amber-400"
-                            : "bg-muted text-muted-foreground"
+                        canUnlock
+                          ? "bg-amber-500/20 text-amber-700 dark:text-amber-400"
+                          : "bg-muted text-muted-foreground"
                       )}
                     >
                       {tier}
@@ -447,32 +466,19 @@ function ProgressiveHintsSection({
                         Tier {tier}: {tierTitle}
                       </span>
                       <span className="text-[10px] text-muted-foreground">
-                        {isUnlocked
-                          ? "Available to review"
-                          : defaultMeta.penalty}
+                        {defaultMeta.penalty}
                       </span>
                     </div>
                   </div>
 
                   <div className="flex items-center gap-2">
-                    {isUnlocked ? (
-                      <Badge
-                        variant="secondary"
-                        className="gap-1 border-primary/20 bg-primary/10 text-[10px] font-medium text-primary"
-                      >
-                        <Unlock className="size-2.5" />
-                        Unlocked
-                      </Badge>
-                    ) : canUnlock ? (
+                    {canUnlock ? (
                       <Button
                         type="button"
                         variant="outline"
                         size="xs"
                         data-testid={`unlock-hint-btn-${tier}`}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          onUnlockTier(tier)
-                        }}
+                        onClick={() => onUnlockTier(tier)}
                         className="gap-1.5 border-amber-500/40 bg-amber-500/10 text-[11px] font-semibold text-amber-800 hover:bg-amber-500/20 dark:text-amber-300"
                       >
                         <KeyRound className="size-3" />
@@ -489,10 +495,10 @@ function ProgressiveHintsSection({
                     )}
                   </div>
                 </div>
-              </AccordionTrigger>
+              )}
 
-              <AccordionContent className="px-4 pb-4 text-xs">
-                {isUnlocked ? (
+              {isUnlocked && (
+                <AccordionContent className="px-4 pb-4 text-xs">
                   <div className="flex flex-col gap-2 rounded-xl border border-primary/20 bg-primary/[0.03] p-3.5 dark:bg-primary/[0.06]">
                     <div className="flex items-center gap-1.5 font-semibold text-primary">
                       <Sparkles className="size-3.5" />
@@ -510,14 +516,8 @@ function ProgressiveHintsSection({
                       />
                     )}
                   </div>
-                ) : (
-                  <div className="rounded-lg border border-border/60 bg-muted/40 p-3 text-muted-foreground">
-                    {isLocked
-                      ? `This hint is locked. Unlock Tier ${tier - 1} sequentially first.`
-                      : "Click 'Unlock Hint' to reveal this progressive clue."}
-                  </div>
-                )}
-              </AccordionContent>
+                </AccordionContent>
+              )}
             </AccordionItem>
           )
         })}
