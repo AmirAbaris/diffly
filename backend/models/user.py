@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+from pydantic import EmailStr
 from sqlmodel import Field, Relationship, SQLModel
 
 
@@ -28,3 +29,17 @@ class User(UserBase, table=True):
     updated_at: datetime = Field(default_factory=get_utc_now)
 
     submissions: list["Submission"] = Relationship(back_populates="user")
+
+
+class UserRead(UserBase):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class UserCreate(SQLModel):
+    email: EmailStr
+    username: str
+    password: str
+    avatar_url: str | None = None
+    session_id: str | None = None
