@@ -13,7 +13,7 @@ from backend.models.challenge import (
     Language,
 )
 from backend.models.submission import Submission, SubmissionBase
-from backend.models.user import User, UserBase
+from backend.models.user import User, UserBase, UserCreate, UserRead
 
 
 __all__ = [
@@ -33,4 +33,6 @@ __all__ = [
     "SubmissionBase",
     "User",
     "UserBase",
+    "UserCreate",
+    "UserRead",
 ]

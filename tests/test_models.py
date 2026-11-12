@@ -14,6 +14,8 @@ from backend.models import (
     Language,
     Submission,
     User,
+    UserCreate,
+    UserRead,
 )
 
 
@@ -32,6 +34,31 @@ def test_user_model_instantiation():
     assert user.created_at.tzinfo == UTC
     assert isinstance(user.updated_at, datetime)
     assert user.updated_at.tzinfo == UTC
+
+
+def test_user_read_and_create_schemas():
+    user_create = UserCreate(
+        email="newuser@diffly.dev",
+        username="newuser",
+        password="secretpassword",
+        session_id="guest-1",
+    )
+    assert user_create.email == "newuser@diffly.dev"
+    assert user_create.username == "newuser"
+    assert user_create.session_id == "guest-1"
+
+    now = datetime.now(UTC)
+    user_read = UserRead(
+        id=1,
+        email="newuser@diffly.dev",
+        username="newuser",
+        avatar_url=None,
+        is_active=True,
+        created_at=now,
+        updated_at=now,
+    )
+    assert user_read.id == 1
+    assert not hasattr(user_read, "hashed_password")
 
 
 def test_challenge_model_instantiation_and_helpers():
