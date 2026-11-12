@@ -56,9 +56,9 @@ export function UserNav({ className, onOpenStats }: UserNavProps) {
     return (
       <div
         data-testid="user-nav-loading"
-        className={cn("flex items-center", className)}
+        className={cn("flex items-center gap-2", className)}
       >
-        <Skeleton className="h-8 w-16 rounded-md" />
+        <Skeleton className="h-8 w-16 rounded-md sm:w-28" />
       </div>
     )
   }
@@ -68,17 +68,26 @@ export function UserNav({ className, onOpenStats }: UserNavProps) {
       <>
         <div
           data-testid="user-nav-unauthenticated"
-          className={cn("flex items-center", className)}
+          className={cn("flex items-center gap-2", className)}
         >
           <Button
             type="button"
-            variant="outline"
+            variant="ghost"
             size="sm"
             onClick={() => openAuthModal("signin")}
             data-testid="sign-in-button"
-            className="h-8 px-3 text-xs font-medium"
+            className="h-8 px-2.5 text-xs font-medium text-muted-foreground hover:text-foreground"
           >
             Sign In
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => openAuthModal("signup")}
+            data-testid="register-button"
+            className="h-8 px-3 text-xs font-medium"
+          >
+            Register
           </Button>
         </div>
 
@@ -144,6 +153,7 @@ export function UserNav({ className, onOpenStats }: UserNavProps) {
             <DropdownMenuGroup>
               <DropdownMenuItem
                 className="cursor-pointer gap-2 text-xs"
+                data-testid="user-menu-profile"
                 onClick={() => {
                   toast({
                     title: "Profile",
@@ -157,6 +167,7 @@ export function UserNav({ className, onOpenStats }: UserNavProps) {
 
               <DropdownMenuItem
                 className="cursor-pointer gap-2 text-xs"
+                data-testid="user-menu-stats"
                 onClick={() => {
                   if (onOpenStats) {
                     onOpenStats()
@@ -175,6 +186,7 @@ export function UserNav({ className, onOpenStats }: UserNavProps) {
 
               <DropdownMenuItem
                 className="cursor-pointer gap-2 text-xs"
+                data-testid="user-menu-settings"
                 onClick={() => {
                   toast({
                     title: "Settings",
@@ -193,6 +205,7 @@ export function UserNav({ className, onOpenStats }: UserNavProps) {
             <DropdownMenuItem
               variant="destructive"
               className="cursor-pointer gap-2 text-xs"
+              data-testid="user-menu-signout"
               onClick={handleSignOut}
             >
               <LogOut className="size-3.5" />

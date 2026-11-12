@@ -24,6 +24,10 @@ export function SignInForm({ onSuccess, onError }: SignInFormProps) {
       onError("Please enter your username or email.")
       return
     }
+    if (!password) {
+      onError("Please enter your password.")
+      return
+    }
 
     setIsLoading(true)
     try {
@@ -59,6 +63,7 @@ export function SignInForm({ onSuccess, onError }: SignInFormProps) {
         </label>
         <Input
           id="login-identifier"
+          data-testid="login-identifier-input"
           name="identifier"
           type="text"
           placeholder="alex or alex@diffly.dev…"
@@ -80,6 +85,7 @@ export function SignInForm({ onSuccess, onError }: SignInFormProps) {
         </label>
         <Input
           id="login-password"
+          data-testid="login-password-input"
           name="password"
           type="password"
           placeholder="••••••••"
@@ -87,6 +93,7 @@ export function SignInForm({ onSuccess, onError }: SignInFormProps) {
           onChange={(e) => setPassword(e.target.value)}
           disabled={isLoading}
           autoComplete="current-password"
+          required
         />
       </div>
 
@@ -95,7 +102,12 @@ export function SignInForm({ onSuccess, onError }: SignInFormProps) {
         account.
       </p>
 
-      <Button type="submit" className="w-full gap-2" disabled={isLoading}>
+      <Button
+        type="submit"
+        data-testid="sign-in-submit-button"
+        className="w-full gap-2"
+        disabled={isLoading}
+      >
         {isLoading ? (
           <>
             <Loader2 aria-hidden="true" className="size-4 animate-spin" />

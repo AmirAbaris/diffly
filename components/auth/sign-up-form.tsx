@@ -14,23 +14,39 @@ export interface SignUpFormProps {
 
 export function SignUpForm({ onSuccess, onError }: SignUpFormProps) {
   const { register } = useAuth()
-  const [username, setUsername] = React.useState("")
   const [email, setEmail] = React.useState("")
+  const [username, setUsername] = React.useState("")
   const [password, setPassword] = React.useState("")
   const [confirmPassword, setConfirmPassword] = React.useState("")
   const [isLoading, setIsLoading] = React.useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!username.trim()) {
-      onError("Please enter a username.")
-      return
-    }
-    if (!email.trim() || !email.includes("@")) {
+
+    const trimmedEmail = email.trim()
+    const trimmedUsername = username.trim()
+
+    if (!trimmedEmail || !trimmedEmail.includes("@")) {
       onError("Please enter a valid email address.")
       return
     }
-    if (password && password !== confirmPassword) {
+    if (!trimmedUsername) {
+      onError("Please enter a username.")
+      return
+    }
+    if (trimmedUsername.length < 3) {
+      onError("Username must be at least 3 characters.")
+      return
+    }
+    if (!password) {
+      onError("Please enter a password.")
+      return
+    }
+    if (password.length < 6) {
+      onError("Password must be at least 6 characters.")
+      return
+    }
+    if (password !== confirmPassword) {
       onError("Passwords do not match.")
       return
     }
@@ -38,8 +54,8 @@ export function SignUpForm({ onSuccess, onError }: SignUpFormProps) {
     setIsLoading(true)
     try {
       const user = await register({
-        username: username.trim(),
-        email: email.trim(),
+        email: trimmedEmail,
+        username: trimmedUsername,
         password,
       })
       toast({
@@ -63,27 +79,6 @@ export function SignUpForm({ onSuccess, onError }: SignUpFormProps) {
     <form onSubmit={handleSubmit} className="flex flex-col gap-3">
       <div className="flex flex-col gap-1.5">
         <label
-          htmlFor="register-username"
-          className="text-xs font-medium text-foreground"
-        >
-          Username
-        </label>
-        <Input
-          id="register-username"
-          name="username"
-          type="text"
-          placeholder="dev_reviewer…"
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
-          disabled={isLoading}
-          autoComplete="username"
-          spellCheck={false}
-          required
-        />
-      </div>
-
-      <div className="flex flex-col gap-1.5">
-        <label
           htmlFor="register-email"
           className="text-xs font-medium text-foreground"
         >
@@ -91,6 +86,7 @@ export function SignUpForm({ onSuccess, onError }: SignUpFormProps) {
         </label>
         <Input
           id="register-email"
+          data-testid="register-email-input"
           name="email"
           type="email"
           placeholder="dev@diffly.dev…"
@@ -98,6 +94,28 @@ export function SignUpForm({ onSuccess, onError }: SignUpFormProps) {
           onChange={(e) => setEmail(e.target.value)}
           disabled={isLoading}
           autoComplete="email"
+          spellCheck={false}
+          required
+        />
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <label
+          htmlFor="register-username"
+          className="text-xs font-medium text-foreground"
+        >
+          Username
+        </label>
+        <Input
+          id="register-username"
+          data-testid="register-username-input"
+          name="username"
+          type="text"
+          placeholder="dev_reviewer…"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          disabled={isLoading}
+          autoComplete="username"
           spellCheck={false}
           required
         />
@@ -113,6 +131,7 @@ export function SignUpForm({ onSuccess, onError }: SignUpFormProps) {
           </label>
           <Input
             id="register-password"
+            data-testid="register-password-input"
             name="password"
             type="password"
             placeholder="••••••••"
@@ -120,6 +139,7 @@ export function SignUpForm({ onSuccess, onError }: SignUpFormProps) {
             onChange={(e) => setPassword(e.target.value)}
             disabled={isLoading}
             autoComplete="new-password"
+            required
           />
         </div>
 
@@ -132,6 +152,7 @@ export function SignUpForm({ onSuccess, onError }: SignUpFormProps) {
           </label>
           <Input
             id="register-confirm"
+            data-testid="register-confirm-password-input"
             name="confirmPassword"
             type="password"
             placeholder="••••••••"
@@ -139,6 +160,7 @@ export function SignUpForm({ onSuccess, onError }: SignUpFormProps) {
             onChange={(e) => setConfirmPassword(e.target.value)}
             disabled={isLoading}
             autoComplete="new-password"
+            required
           />
         </div>
       </div>
@@ -148,7 +170,12 @@ export function SignUpForm({ onSuccess, onError }: SignUpFormProps) {
         profile.
       </p>
 
-      <Button type="submit" className="w-full gap-2" disabled={isLoading}>
+      <Button
+        type="submit"
+        data-testid="sign-up-submit-button"
+        className="w-full gap-2"
+        disabled={isLoading}
+      >
         {isLoading ? (
           <>
             <Loader2 aria-hidden="true" className="size-4 animate-spin" />

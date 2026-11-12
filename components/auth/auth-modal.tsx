@@ -29,16 +29,15 @@ export function AuthModal({ open, onOpenChange, initialTab }: AuthModalProps) {
   const isModalOpen = isControlled ? open : storeIsOpen
   const defaultTab = initialTab ?? storeInitialTab
 
-  const [activeTab, setActiveTab] = React.useState<AuthTab>(defaultTab)
+  const [tabOverride, setTabOverride] = React.useState<AuthTab | null>(null)
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null)
 
+  // Derive active tab from override or defaultTab
+  const activeTab = tabOverride ?? defaultTab
+
   const handleOpenChange = (newOpen: boolean) => {
-    if (!newOpen) {
-      setErrorMessage(null)
-    } else {
-      setActiveTab(defaultTab)
-      setErrorMessage(null)
-    }
+    setTabOverride(null)
+    setErrorMessage(null)
 
     if (isControlled) {
       onOpenChange?.(newOpen)
@@ -48,6 +47,7 @@ export function AuthModal({ open, onOpenChange, initialTab }: AuthModalProps) {
   }
 
   const handleSuccess = () => {
+    setTabOverride(null)
     setErrorMessage(null)
     if (isControlled) {
       onOpenChange?.(false)
@@ -58,7 +58,10 @@ export function AuthModal({ open, onOpenChange, initialTab }: AuthModalProps) {
 
   return (
     <Dialog open={isModalOpen} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-[420px]">
+      <DialogContent
+        className="sm:max-w-[420px]"
+        data-testid="auth-modal-content"
+      >
         <DialogHeader className="gap-1">
           <DialogTitle className="text-base font-semibold tracking-tight">
             Diffly Account
@@ -72,6 +75,7 @@ export function AuthModal({ open, onOpenChange, initialTab }: AuthModalProps) {
         {errorMessage && (
           <div
             role="alert"
+            data-testid="auth-error-banner"
             className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/10 p-2.5 text-xs text-destructive"
           >
             <AlertCircle aria-hidden="true" className="size-4 shrink-0" />
@@ -82,17 +86,25 @@ export function AuthModal({ open, onOpenChange, initialTab }: AuthModalProps) {
         <Tabs
           value={activeTab}
           onValueChange={(val) => {
-            setActiveTab(val as AuthTab)
+            setTabOverride(val as AuthTab)
             setErrorMessage(null)
           }}
           className="w-full"
         >
           <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="signin" className="text-xs">
+            <TabsTrigger
+              value="signin"
+              data-testid="auth-tab-signin"
+              className="text-xs"
+            >
               Sign In
             </TabsTrigger>
-            <TabsTrigger value="signup" className="text-xs">
-              Register
+            <TabsTrigger
+              value="signup"
+              data-testid="auth-tab-signup"
+              className="text-xs"
+            >
+              Sign Up
             </TabsTrigger>
           </TabsList>
 

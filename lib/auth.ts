@@ -1,5 +1,10 @@
+"use client"
+
+import axios from "axios"
+import useSWR, { mutate } from "swr"
 import { apiClient } from "@/lib/axios"
 import { claimSession } from "@/hooks/use-user-progress"
+import { mutateUserStats } from "@/hooks/use-user-stats"
 import { getOrCreateGuestSessionId } from "@/lib/session"
 
 export interface AuthUser {
@@ -51,18 +56,55 @@ export function setStoredAuthUser(user: AuthUser | null): void {
   }
 }
 
+export function getAuthErrorMessage(
+  err: unknown,
+  fallback: string = "An unexpected error occurred"
+): string {
+  if (axios.isAxiosError(err)) {
+    const detail = err.response?.data?.detail
+    if (typeof detail === "string" && detail.trim()) {
+      return detail.trim()
+    }
+    if (Array.isArray(detail) && detail.length > 0) {
+      return detail
+        .map((d) => (typeof d === "string" ? d : d.msg || d.message))
+        .filter(Boolean)
+        .join(". ")
+    }
+    if (err.response?.status === 401) {
+      return "Invalid credentials"
+    }
+    if (err.response?.status === 400) {
+      return "Invalid input data provided"
+    }
+    if (err.message && !err.response) {
+      return err.message
+    }
+  }
+  if (err instanceof Error) {
+    return err.message
+  }
+  return fallback
+}
+
 export async function fetchCurrentUser(): Promise<AuthUser | null> {
   try {
-    const response = await apiClient.get<AuthUser>("/api/auth/me")
+    const response = await apiClient.get<AuthUser>(AUTH_USER_SWR_KEY)
     if (response.data) {
       setStoredAuthUser(response.data)
       return response.data
     }
-  } catch {
-    // Backend auth endpoint might not be active or user is unauthenticated
+  } catch (err) {
+    if (
+      axios.isAxiosError(err) &&
+      (err.response?.status === 401 || err.response?.status === 403)
+    ) {
+      setStoredAuthUser(null)
+      return null
+    }
   }
 
-  // Check fallback local client session
+  // Check fallback local client session (e.g. offline)
   return getStoredAuthUser()
 }
 
@@ -73,6 +115,7 @@ export async function apiLogin(
 
   try {
     const response = await apiClient.post<AuthUser>("/api/auth/login", {
+      identifier: credentials.emailOrUsername,
       username: credentials.emailOrUsername,
       password: credentials.password,
       session_id: sessionId,
@@ -83,31 +126,16 @@ export async function apiLogin(
       try {
         await claimSession(sessionId)
       } catch {
-        // Session claim might have been completed automatically by login route
+        // Session claim is automatically completed server-side by /api/auth/login
       }
     }
     return user
-  } catch {
-    // If backend auth endpoint is not yet mounted (issue #26 pending), provide mock user
-    const mockUser: AuthUser = {
-      id: 1,
-      username: credentials.emailOrUsername.includes("@")
-        ? credentials.emailOrUsername.split("@")[0]
-        : credentials.emailOrUsername,
-      email: credentials.emailOrUsername.includes("@")
-        ? credentials.emailOrUsername
-        : `${credentials.emailOrUsername}@diffly.dev`,
-      avatar_url: null,
-    }
-    setStoredAuthUser(mockUser)
-    if (sessionId) {
-      try {
-        await claimSession(sessionId)
-      } catch {
-        // Ignore session claim error if guest is empty
-      }
-    }
-    return mockUser
+  } catch (err) {
+    const message = getAuthErrorMessage(
+      err,
+      "Failed to sign in. Please check your credentials."
+    )
+    throw new Error(message, { cause: err })
   }
 }
 
@@ -129,26 +157,16 @@ export async function apiRegister(
       try {
         await claimSession(sessionId)
       } catch {
-        // Session claim might have been completed automatically
+        // Session claim is automatically completed server-side by /api/auth/register
       }
     }
     return user
-  } catch {
-    const mockUser: AuthUser = {
-      id: 1,
-      username: credentials.username,
-      email: credentials.email,
-      avatar_url: null,
-    }
-    setStoredAuthUser(mockUser)
-    if (sessionId) {
-      try {
-        await claimSession(sessionId)
-      } catch {
-        // Ignore session claim error if guest is empty
-      }
-    }
-    return mockUser
+  } catch (err) {
+    const message = getAuthErrorMessage(
+      err,
+      "Registration failed. Please try again."
+    )
+    throw new Error(message, { cause: err })
   }
 }
 
@@ -156,8 +174,58 @@ export async function apiLogout(): Promise<void> {
   try {
     await apiClient.post("/api/auth/logout")
   } catch {
-    // Endpoint might not exist yet
+    // Suppress network errors during logout
   } finally {
     setStoredAuthUser(null)
+  }
+}
+
+export function useAuth() {
+  const {
+    data,
+    error,
+    isLoading,
+    isValidating,
+    mutate: boundMutate,
+  } = useSWR<AuthUser | null>(AUTH_USER_SWR_KEY, fetchCurrentUser, {
+    revalidateOnFocus: false,
+    shouldRetryOnError: false,
+  })
+
+  const user = data ?? null
+
+  const login = async (credentials: LoginCredentials) => {
+    const loggedUser = await apiLogin(credentials)
+    await boundMutate(loggedUser, false)
+    await mutateUserStats()
+    await mutate("/api/challenges")
+    return loggedUser
+  }
+
+  const register = async (credentials: RegisterCredentials) => {
+    const newUser = await apiRegister(credentials)
+    await boundMutate(newUser, false)
+    await mutateUserStats()
+    await mutate("/api/challenges")
+    return newUser
+  }
+
+  const logout = async () => {
+    await apiLogout()
+    await boundMutate(null, false)
+    await mutateUserStats()
+    await mutate("/api/challenges")
+  }
+
+  return {
+    user,
+    isAuthenticated: !!user,
+    isLoading,
+    isValidating,
+    login,
+    register,
+    logout,
+    mutate: boundMutate,
+    error,
   }
 }
