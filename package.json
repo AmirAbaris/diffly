@@ -19,11 +19,13 @@
     "format:check": "prettier --check \"**/*.{ts,tsx,js,mjs,json,md}\"",
     "format": "prettier --write \"**/*.{ts,tsx,js,mjs,json,md}\"",
     "lint": "pnpm lint:oxlint && pnpm lint:doctor && pnpm lint:js && pnpm format:check",
-    "test:py": "([ -f .venv/bin/pytest ] && .venv/bin/pytest tests) || pytest tests",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:py": "([ -f .venv/bin/pytest ] && .venv/bin/pytest tests --cov=api --cov=backend --cov-fail-under=85) || pytest tests --cov=api --cov=backend --cov-fail-under=85",
     "verify:py": "pnpm lint:py && pnpm test:py",
     "typecheck": "tsc --noEmit",
     "prepare": "lefthook install",
-    "verify": "pnpm lint && pnpm test:py && pnpm build",
+    "verify": "pnpm lint && pnpm test:py && pnpm test && pnpm build",
     "doctor": "react-doctor -y --no-telemetry"
   },
   "dependencies": {
@@ -45,18 +47,25 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.9",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "^6.3.0",
     "concurrently": "^10.0.6",
     "eslint": "^9",
     "eslint-config-next": "16.4.4",
+    "jsdom": "^31.0.0",
     "lefthook": "^2.2.2",
     "oxlint": "^1.92.0",
     "prettier": "^3.9.10",
     "prettier-plugin-tailwindcss": "^0.8.1",
     "react-doctor": "^0.9.22",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vite-tsconfig-paths": "^6.1.1",
+    "vitest": "^5.1.0"
   }
 }
