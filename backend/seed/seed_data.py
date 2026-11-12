@@ -79,13 +79,19 @@ def seed_challenges(session: Session | None = None) -> list[Challenge]:
 
 def seed_challenges_if_empty(session: Session | None = None) -> list[Challenge]:
     """Seed challenges only if the challenges table currently contains no records."""
-    with get_managed_session(session) as db:
-        first_record = db.exec(select(Challenge)).first()
-        if first_record is None:
-            logger.info("Challenges table is empty. Running initial seeding...")
-            return seed_challenges(db)
-        logger.info("Challenges table already seeded. Skipping initial seed.")
-        return list(db.exec(select(Challenge)).all())
+    try:
+        with get_managed_session(session) as db:
+            first_record = db.exec(select(Challenge)).first()
+            if first_record is None:
+                logger.info("Challenges table is empty. Running initial seeding...")
+                return seed_challenges(db)
+            logger.info("Challenges table already seeded. Skipping initial seed.")
+            return list(db.exec(select(Challenge)).all())
+    except Exception as exc:
+        logger.warning(
+            "Notice during seed_challenges_if_empty (concurrent worker): %s", exc
+        )
+        return []
 
 
 def main() -> None:

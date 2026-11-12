@@ -19,8 +19,10 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 10080  # 7 days
     AUTH_COOKIE_NAME: str = "diffly_access_token"
     ENVIRONMENT: str = "development"
+    NODE_ENV: str = "development"
+    PORT: int = 8000
     COOKIE_SECURE: bool = False
-    CORS_ORIGINS: list[str] = [
+    CORS_ORIGINS: list[str] | str = [
         "http://localhost:3000",
         "http://127.0.0.1:3000",
         "http://localhost:8000",
@@ -31,7 +33,10 @@ class Settings(BaseSettings):
     def is_cookie_secure(self) -> bool:
         if self.COOKIE_SECURE:
             return True
-        return self.ENVIRONMENT.lower() == "production"
+        return (
+            self.ENVIRONMENT.lower() == "production"
+            or self.NODE_ENV.lower() == "production"
+        )
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
