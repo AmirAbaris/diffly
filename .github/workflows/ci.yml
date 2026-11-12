@@ -2,7 +2,7 @@ name: CI Code Verification
 
 on:
   push:
-    branches: [main, setup/*, feat/*]
+    branches: [main, setup/*, feat/*, t3/*]
   pull_request:
     branches: [main]
 
@@ -24,16 +24,16 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install ruff pytest httpx
+          pip install ruff pytest pytest-cov httpx
 
       - name: Python Formatting & Spacing Check (Ruff)
         run: |
           ruff check api backend tests
           ruff format --check api backend tests
 
-      - name: Python Unit Tests
+      - name: Python Unit & API Tests (Pytest + Coverage >= 85%)
         run: |
-          pytest tests
+          pytest tests --cov=api --cov=backend --cov-fail-under=85
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
@@ -60,6 +60,9 @@ jobs:
 
       - name: Frontend Lint (ESLint)
         run: pnpm lint:js
+
+      - name: Frontend Unit & Component Tests (Vitest)
+        run: pnpm test
 
       - name: Next.js Build
         run: pnpm build
