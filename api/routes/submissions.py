@@ -98,8 +98,6 @@ def submit_review(
         Header(alias="X-Diffly-Session-Id", description="Guest session identifier"),
     ] = None,
 ) -> ReviewSubmissionResponse:
-    challenge = get_challenge_or_404(identifier, session)
-
     guest_session_id: str | None = None
     if header_session_id and header_session_id.strip():
         guest_session_id = header_session_id.strip()
@@ -109,6 +107,13 @@ def submit_review(
     user_id = current_user.id if current_user and current_user.id is not None else None
     if user_id is None and guest_session_id is None:
         guest_session_id = f"guest-{uuid4().hex[:12]}"
+
+    challenge = get_challenge_or_404(
+        identifier,
+        session,
+        user_id=user_id,
+        session_id=guest_session_id,
+    )
 
     eval_result = evaluate_review(
         challenge=challenge,
@@ -164,12 +169,7 @@ def get_submission_history(
         Query(alias="session_id", description="Guest session query parameter"),
     ] = None,
 ) -> list[SubmissionHistoryResponse]:
-    challenge = get_challenge_or_404(identifier, session)
-
-    conditions = []
-    if current_user and current_user.id is not None:
-        conditions.append(Submission.user_id == current_user.id)
-
+    user_id = current_user.id if current_user and current_user.id is not None else None
     session_id = (
         header_session_id.strip()
         if header_session_id and header_session_id.strip()
@@ -180,6 +180,16 @@ def get_submission_history(
         else None
     )
 
+    challenge = get_challenge_or_404(
+        identifier,
+        session,
+        user_id=user_id,
+        session_id=session_id,
+    )
+
+    conditions = []
+    if user_id is not None:
+        conditions.append(Submission.user_id == user_id)
     if session_id:
         conditions.append(Submission.session_id == session_id)
 

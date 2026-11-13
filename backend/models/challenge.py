@@ -3,7 +3,13 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
-from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    computed_field,
+    field_validator,
+    model_validator,
+)
 from sqlmodel import Field, Relationship, SQLModel
 
 
@@ -85,6 +91,16 @@ class DefectCriterion(BaseModel):
     explanation: str = ""
 
     model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    @computed_field
+    @property
+    def matched_lines(self) -> list[int]:
+        return self.lines
+
+    @computed_field
+    @property
+    def matched_keywords(self) -> list[str]:
+        return self.keywords
 
     @model_validator(mode="before")
     @classmethod
@@ -191,6 +207,9 @@ class ChallengeBase(SQLModel):
     canonical_review: str = Field(default="")
     recommended_fix_diff: str = Field(default="")
     estimated_minutes: int = Field(default=5)
+    is_public: bool = Field(default=True, index=True)
+    user_id: int | None = Field(default=None, foreign_key="users.id", index=True)
+    session_id: str | None = Field(default=None, index=True)
 
     @field_validator("expected_issues", mode="before")
     @classmethod
@@ -293,6 +312,7 @@ class Challenge(ChallengeBase, table=True):
             total_hints=total_hints,
             is_solved=is_solved,
             best_score=best_score,
+            is_public=self.is_public,
         )
 
     def to_detail(
@@ -318,6 +338,7 @@ class Challenge(ChallengeBase, table=True):
             total_hints=total_hints,
             is_solved=is_solved,
             best_score=best_score,
+            is_public=self.is_public,
         )
 
 
@@ -336,9 +357,77 @@ class ChallengeSummary(BaseModel):
     total_hints: int = 0
     is_solved: bool = False
     best_score: int | None = None
+    is_public: bool = True
 
 
 class ChallengeDetail(ChallengeSummary):
     threat_model: str = ""
     defect_target: str = ""
     code_snippet: str
+
+
+class CustomChallengesListResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    items: list[ChallengeSummary] = Field(default_factory=list)
+    total: int = 0
+    quota_limit: int = 5
+    quota_remaining: int = 5
+
+
+class GenerateCustomChallengeRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    topic: str = Field(
+        ...,
+        min_length=3,
+        description=(
+            "Topic or vulnerability scenario to generate "
+            "(e.g. Next.js 15 Server Actions IDOR)"
+        ),
+    )
+    language: Language = Field(
+        default=Language.PYTHON,
+        description="Programming language: python, typescript, go, rust",
+    )
+    difficulty: Difficulty = Field(
+        default=Difficulty.MEDIUM,
+        description="Challenge difficulty: Easy, Medium, Hard",
+    )
+
+
+class CustomChallengeResponse(BaseModel):
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    id: int = 0
+    slug: str
+    title: str
+    difficulty: Difficulty
+    category: Category = Category.SECURITY
+    language: Language
+    description: str
+    threat_model: str = ""
+    defect_target: str = ""
+    code_snippet: str
+    expected_issues: list[DefectCriterion] = Field(default_factory=list)
+    hints: list[HintResponse] = Field(default_factory=list)
+    canonical_review: str = ""
+    recommended_fix_diff: str = ""
+    estimated_minutes: int = 5
+    line_count: int = 0
+    total_hints: int = 0
+    is_custom: bool = True
+
+    @model_validator(mode="after")
+    def compute_counts(self) -> "CustomChallengeResponse":
+        if self.code_snippet and self.line_count == 0:
+            self.line_count = len(self.code_snippet.splitlines())
+        if self.hints and self.total_hints == 0:
+            self.total_hints = len(self.hints)
+        return self
+
+    def get_expected_issues(self) -> list[DefectCriterion]:
+        return self.expected_issues
+
+    def get_hints(self) -> list[HintItem]:
+        return [HintItem(tier=h.tier, label=h.label, text=h.text) for h in self.hints]

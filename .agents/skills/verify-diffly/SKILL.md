@@ -57,9 +57,23 @@ Drive active features using the drive script:
 
 # Drive strict code formatting and spacing guardrail
 .agents/skills/verify-diffly/scripts/drive.sh formatting
+
+# Drive live Google Gemini BYOK generation (requires GEMINI_API_KEY)
+GEMINI_API_KEY='...' .agents/skills/verify-diffly/scripts/drive.sh gemini-live
 ```
 
 See the [Feature Map](features/README.md) for detailed descriptions.
+
+## External Integration Verification Protocol
+
+When working on third-party integrations (e.g. Google Gemini, external LLMs, webhooks):
+
+1. **Never rely solely on mocks**: Unit tests with mocks verify parser logic, but they DO NOT verify endpoint validity, active model availability, or provider deprecation.
+2. **Drive Live Evidence**: When live credentials are provided or requested via `request_secret`, run `.agents/skills/verify-diffly/scripts/drive.sh gemini-live` and confirm evidence is captured in `.agents/skills/verify-diffly/evidence/`.
+3. **Transparent Reporting**: If live credentials are not available, agents MUST explicitly state:
+   - "Mock/Unit tests: PASSED"
+   - "Live Provider Verification: UNTESTED (credentials not configured)"
+     Never declare a third-party API integration "fully tested and verified" based solely on unit test mocks.
 
 ## Evidence
 

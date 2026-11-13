@@ -7,12 +7,26 @@ from backend.services.evaluation_service import (
     MissedIssue,
     evaluate_review,
 )
+from backend.services.gemini_generator import (
+    GeminiAPIError,
+    GeminiAuthError,
+    GeminiError,
+    GeminiRateLimitError,
+    GeminiSchemaError,
+    generate_custom_challenge,
+)
 
 
 __all__ = [
     "DetectedIssue",
     "EvaluationInput",
     "EvaluationResult",
+    "GeminiAPIError",
+    "GeminiAuthError",
+    "GeminiError",
+    "GeminiRateLimitError",
+    "GeminiSchemaError",
     "MissedIssue",
     "evaluate_review",
+    "generate_custom_challenge",
 ]

@@ -44,8 +44,44 @@ case "$FEATURE" in
         cat "$OUT"
         echo "Evidence recorded to $OUT"
         ;;
+    gemini-live)
+        echo "==> Driving Feature: Live Google Gemini API Integration & Structured Challenge Output"
+        OUT="$EVIDENCE_DIR/${TIMESTAMP}_gemini_live.json"
+        if [ -z "${GEMINI_API_KEY:-}" ]; then
+            echo "ERROR: GEMINI_API_KEY environment variable is not set." >&2
+            echo "Provide a key via GEMINI_API_KEY='...' .agents/skills/verify-diffly/scripts/drive.sh gemini-live" >&2
+            exit 1
+        fi
+
+        PYTHON_BIN="$REPO_ROOT/.venv/bin/python"
+        if [ ! -x "$PYTHON_BIN" ]; then
+            PYTHON_BIN="python3"
+        fi
+
+        "$PYTHON_BIN" -c "
+import asyncio, json, os, sys
+sys.path.insert(0, '$REPO_ROOT')
+from backend.models.challenge import Difficulty, GenerateCustomChallengeRequest, Language
+from backend.services.gemini_generator import generate_custom_challenge
+
+async def run():
+    req = GenerateCustomChallengeRequest(
+        topic='Next.js Server Actions IDOR vulnerability',
+        language=Language.TYPESCRIPT,
+        difficulty=Difficulty.MEDIUM,
+    )
+    res = await generate_custom_challenge(req, os.environ['GEMINI_API_KEY'])
+    data = res.model_dump()
+    with open('$OUT', 'w') as f:
+        json.dump(data, f, indent=2, default=str)
+    print(f'SUCCESS: Generated \"{res.title}\" ({res.line_count} lines) with {len(res.expected_issues)} defect(s).')
+
+asyncio.run(run())
+"
+        echo "Evidence recorded to $OUT"
+        ;;
     *)
-        echo "Unknown feature '$FEATURE'. Options: health, formatting" >&2
+        echo "Unknown feature '$FEATURE'. Options: health, formatting, gemini-live" >&2
         exit 1
         ;;
 esac

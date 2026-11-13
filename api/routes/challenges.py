@@ -1,9 +1,10 @@
-"""Challenge catalog API routes."""
-
-from typing import Annotated
+import json
+from typing import Annotated, Any
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
-from sqlmodel import Session, or_, select
+from pydantic import BaseModel, ConfigDict, Field
+from sqlmodel import Session, func, or_, select
 
 from api.deps import get_optional_current_user
 from backend.core.db import get_session
@@ -13,12 +14,28 @@ from backend.models.challenge import (
     ChallengeDetail,
     ChallengeSolutionResponse,
     ChallengeSummary,
+    CustomChallengeResponse,
+    CustomChallengesListResponse,
+    DefectCriterion,
     Difficulty,
+    GenerateCustomChallengeRequest,
     HintResponse,
     Language,
 )
 from backend.models.submission import Submission
 from backend.models.user import User
+from backend.services.evaluation_service import (
+    DetectedIssue,
+    MissedIssue,
+    evaluate_review,
+)
+from backend.services.gemini_generator import (
+    GeminiAPIError,
+    GeminiAuthError,
+    GeminiRateLimitError,
+    GeminiSchemaError,
+    generate_custom_challenge,
+)
 
 
 router = APIRouter(prefix="/api/challenges", tags=["challenges"])
@@ -50,7 +67,7 @@ def list_challenges(
     ] = None,
 ) -> list[ChallengeSummary]:
     """Retrieve list of challenges with optional filtering and completion status."""
-    statement = select(Challenge)
+    statement = select(Challenge).where(Challenge.is_public.is_(True))
 
     if difficulty is not None:
         statement = statement.where(Challenge.difficulty == difficulty)
@@ -101,8 +118,340 @@ def list_challenges(
     ]
 
 
-def get_challenge_or_404(identifier: str, session: Session) -> Challenge:
-    """Find a challenge by numeric ID or slug, raising 404 if missing."""
+class CustomEvaluationRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    expected_issues: list[DefectCriterion | dict[str, Any]] = Field(
+        ...,
+        description="Expected defect criteria for grading",
+    )
+    code_snippet: str = Field(
+        default="",
+        description="Code snippet of the challenge",
+    )
+    flagged_lines: list[int] = Field(
+        default_factory=list,
+        description="Line numbers flagged by reviewer as defective",
+    )
+    comments: str = Field(
+        default="",
+        description="User review critique explaining the defect",
+    )
+
+
+class CustomEvaluationResponse(BaseModel):
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    score: int = Field(ge=0, le=100)
+    line_precision_score: float = Field(default=0.0, ge=0.0, le=100.0)
+    concept_score: float = Field(default=0.0, ge=0.0, le=100.0)
+    false_positive_penalty: float = Field(default=0.0, ge=0.0)
+    false_positive_lines: list[int] = Field(default_factory=list)
+    detected_issues: list[DetectedIssue] = Field(default_factory=list)
+    missed_issues: list[MissedIssue] = Field(default_factory=list)
+    summary: str = ""
+    critique: str = ""
+    feedback: str = ""
+    execution_time_ms: float = 0.0
+    flagged_lines: list[int] = Field(default_factory=list)
+    comments: str = ""
+
+
+@router.post(
+    "/generate-custom",
+    response_model=CustomChallengeResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def generate_custom_challenge_endpoint(
+    payload: GenerateCustomChallengeRequest,
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User | None, Depends(get_optional_current_user)] = None,
+    header_session_id: Annotated[
+        str | None,
+        Header(alias="X-Diffly-Session-Id", description="Guest session identifier"),
+    ] = None,
+    x_gemini_key: Annotated[
+        str | None,
+        Header(
+            alias="X-Gemini-Key",
+            description="User-supplied Google Gemini API key",
+        ),
+    ] = None,
+) -> CustomChallengeResponse:
+    """Generate a custom challenge and persist to PostgreSQL (max 5 quota)."""
+    if not x_gemini_key or not x_gemini_key.strip():
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=(
+                "Missing or invalid Gemini API key. "
+                "Provide a valid key in the X-Gemini-Key header."
+            ),
+        )
+
+    user_id = current_user.id if current_user and current_user.id is not None else None
+    session_id = (
+        header_session_id.strip()
+        if header_session_id and header_session_id.strip()
+        else None
+    )
+    if user_id is None and session_id is None:
+        session_id = f"guest-{uuid4().hex[:12]}"
+
+    # Enforce strict 5 custom challenges quota per user/guest
+    conditions = []
+    if user_id is not None:
+        conditions.append(Challenge.user_id == user_id)
+    if session_id is not None:
+        conditions.append(Challenge.session_id == session_id)
+
+    count_stmt = select(func.count(Challenge.id)).where(
+        Challenge.is_public.is_(False),
+        or_(*conditions),
+    )
+    existing_count = session.exec(count_stmt).one()
+    if existing_count >= 5:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Quota limit reached. You can have at most 5 custom challenges. "
+                "Please delete an existing custom challenge to create a new one."
+            ),
+        )
+
+    try:
+        generated = await generate_custom_challenge(
+            request=payload,
+            api_key=x_gemini_key,
+        )
+    except GeminiAuthError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(exc),
+        ) from exc
+    except GeminiRateLimitError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=str(exc),
+        ) from exc
+    except (GeminiAPIError, GeminiSchemaError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+    # Ensure unique slug in DB
+    base_slug = generated.slug
+    candidate_slug = base_slug
+    while (
+        session.exec(
+            select(Challenge.id).where(Challenge.slug == candidate_slug)
+        ).first()
+        is not None
+    ):
+        candidate_slug = f"{base_slug}-{uuid4().hex[:6]}"
+
+    # Save challenge to PostgreSQL as a private challenge
+    new_challenge = Challenge(
+        slug=candidate_slug,
+        title=generated.title,
+        difficulty=generated.difficulty,
+        category=generated.category,
+        language=generated.language,
+        description=generated.description,
+        threat_model=generated.threat_model,
+        defect_target=generated.defect_target,
+        code_snippet=generated.code_snippet,
+        expected_issues=json.dumps(
+            [issue.model_dump() for issue in generated.expected_issues]
+        ),
+        hints=json.dumps([h.model_dump() for h in generated.hints]),
+        canonical_review=generated.canonical_review,
+        recommended_fix_diff=generated.recommended_fix_diff,
+        estimated_minutes=generated.estimated_minutes,
+        is_public=False,
+        user_id=user_id,
+        session_id=session_id,
+    )
+    session.add(new_challenge)
+    session.commit()
+    session.refresh(new_challenge)
+
+    return CustomChallengeResponse(
+        id=new_challenge.id or 0,
+        slug=new_challenge.slug,
+        title=new_challenge.title,
+        difficulty=new_challenge.difficulty,
+        category=new_challenge.category,
+        language=new_challenge.language,
+        description=new_challenge.description,
+        threat_model=new_challenge.threat_model,
+        defect_target=new_challenge.defect_target,
+        code_snippet=new_challenge.code_snippet,
+        expected_issues=new_challenge.get_expected_issues(),
+        hints=[h.to_response() for h in new_challenge.get_hints()],
+        canonical_review=new_challenge.canonical_review,
+        recommended_fix_diff=new_challenge.recommended_fix_diff,
+        estimated_minutes=new_challenge.estimated_minutes,
+        line_count=len(new_challenge.code_snippet.splitlines()),
+        total_hints=len(new_challenge.get_hints()),
+        is_custom=True,
+    )
+
+
+@router.get("/custom", response_model=CustomChallengesListResponse)
+def list_custom_challenges(
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User | None, Depends(get_optional_current_user)] = None,
+    header_session_id: Annotated[
+        str | None,
+        Header(alias="X-Diffly-Session-Id", description="Guest session identifier"),
+    ] = None,
+) -> CustomChallengesListResponse:
+    """List the current user's private custom challenges and quota status."""
+    user_id = current_user.id if current_user and current_user.id is not None else None
+    session_id = (
+        header_session_id.strip()
+        if header_session_id and header_session_id.strip()
+        else None
+    )
+
+    conditions = []
+    if user_id is not None:
+        conditions.append(Challenge.user_id == user_id)
+    if session_id is not None:
+        conditions.append(Challenge.session_id == session_id)
+
+    if not conditions:
+        return CustomChallengesListResponse(
+            items=[],
+            total=0,
+            quota_limit=5,
+            quota_remaining=5,
+        )
+
+    stmt = (
+        select(Challenge)
+        .where(Challenge.is_public.is_(False), or_(*conditions))
+        .order_by(Challenge.created_at.desc())
+    )
+    challenges = session.exec(stmt).all()
+    summaries = [ch.to_summary() for ch in challenges]
+    total = len(summaries)
+    return CustomChallengesListResponse(
+        items=summaries,
+        total=total,
+        quota_limit=5,
+        quota_remaining=max(0, 5 - total),
+    )
+
+
+@router.delete("/custom/{identifier}")
+def delete_custom_challenge(
+    identifier: str,
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User | None, Depends(get_optional_current_user)] = None,
+    header_session_id: Annotated[
+        str | None,
+        Header(alias="X-Diffly-Session-Id", description="Guest session identifier"),
+    ] = None,
+) -> dict[str, Any]:
+    """Delete a user's private custom challenge to free up quota."""
+    user_id = current_user.id if current_user and current_user.id is not None else None
+    session_id = (
+        header_session_id.strip()
+        if header_session_id and header_session_id.strip()
+        else None
+    )
+
+    if identifier.isdigit():
+        ch_id = int(identifier)
+        stmt = select(Challenge).where(
+            or_(Challenge.id == ch_id, Challenge.slug == identifier)
+        )
+    else:
+        stmt = select(Challenge).where(Challenge.slug == identifier)
+
+    challenge = session.exec(stmt).first()
+    if challenge is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Challenge not found",
+        )
+
+    if challenge.is_public:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot delete public catalog challenges",
+        )
+
+    is_owner = (user_id is not None and challenge.user_id == user_id) or (
+        session_id is not None and challenge.session_id == session_id
+    )
+    if not is_owner:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to delete this challenge",
+        )
+
+    # Delete any submissions tied to this challenge
+    sub_stmt = select(Submission).where(Submission.challenge_id == challenge.id)
+    for sub in session.exec(sub_stmt).all():
+        session.delete(sub)
+
+    deleted_id = challenge.id
+    deleted_slug = challenge.slug
+    session.delete(challenge)
+    session.commit()
+
+    return {
+        "detail": "Custom challenge deleted successfully",
+        "id": deleted_id,
+        "slug": deleted_slug,
+    }
+
+
+@router.post(
+    "/evaluate-custom",
+    response_model=CustomEvaluationResponse,
+    status_code=status.HTTP_200_OK,
+)
+def evaluate_custom_challenge_endpoint(
+    payload: CustomEvaluationRequest,
+) -> CustomEvaluationResponse:
+    """Statelessly evaluate a review submission against custom challenge metadata."""
+    eval_result = evaluate_review(
+        challenge={
+            "expected_issues": payload.expected_issues,
+            "code_snippet": payload.code_snippet,
+        },
+        flagged_lines=payload.flagged_lines,
+        user_comments=payload.comments,
+    )
+
+    return CustomEvaluationResponse(
+        score=eval_result.score,
+        line_precision_score=eval_result.line_precision_score,
+        concept_score=eval_result.concept_score,
+        false_positive_penalty=eval_result.false_positive_penalty,
+        false_positive_lines=eval_result.false_positive_lines,
+        detected_issues=eval_result.detected_issues,
+        missed_issues=eval_result.missed_issues,
+        summary=eval_result.summary,
+        critique=eval_result.critique,
+        feedback=eval_result.critique,
+        execution_time_ms=eval_result.execution_time_ms,
+        flagged_lines=payload.flagged_lines,
+        comments=payload.comments,
+    )
+
+
+def get_challenge_or_404(
+    identifier: str,
+    session: Session,
+    user_id: int | None = None,
+    session_id: str | None = None,
+) -> Challenge:
+    """Find a challenge by ID or slug, raising 404 if missing or unauthorized."""
     if identifier.isdigit():
         challenge_id = int(identifier)
         statement = select(Challenge).where(
@@ -117,6 +466,17 @@ def get_challenge_or_404(identifier: str, session: Session) -> Challenge:
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Challenge not found",
         )
+
+    if not challenge.is_public:
+        is_owner = (user_id is not None and challenge.user_id == user_id) or (
+            session_id is not None and challenge.session_id == session_id
+        )
+        if not is_owner:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Challenge not found",
+            )
+
     return challenge
 
 
@@ -131,7 +491,15 @@ def get_challenge(
     ] = None,
 ) -> ChallengeDetail:
     """Retrieve challenge detail by numeric ID or URL slug with completion status."""
-    challenge = get_challenge_or_404(identifier, session)
+    user_id = current_user.id if current_user and current_user.id is not None else None
+    guest_session_id = session_id.strip() if session_id and session_id.strip() else None
+
+    challenge = get_challenge_or_404(
+        identifier,
+        session,
+        user_id=user_id,
+        session_id=guest_session_id,
+    )
 
     conditions = []
     if current_user and current_user.id is not None:
@@ -166,9 +534,26 @@ def get_challenge_hints(
             description="Filter by progressive hint tier (1, 2, or 3)",
         ),
     ] = None,
+    current_user: Annotated[User | None, Depends(get_optional_current_user)] = None,
+    header_session_id: Annotated[
+        str | None,
+        Header(alias="X-Diffly-Session-Id", description="Guest session identifier"),
+    ] = None,
 ) -> list[HintResponse]:
     """Retrieve progressive tiered hints for a challenge by numeric ID or URL slug."""
-    challenge = get_challenge_or_404(identifier, session)
+    user_id = current_user.id if current_user and current_user.id is not None else None
+    guest_session_id = (
+        header_session_id.strip()
+        if header_session_id and header_session_id.strip()
+        else None
+    )
+
+    challenge = get_challenge_or_404(
+        identifier,
+        session,
+        user_id=user_id,
+        session_id=guest_session_id,
+    )
     hints = [h.to_response() for h in challenge.get_hints()]
     hints.sort(key=lambda h: h.tier)
 
@@ -203,7 +588,23 @@ def get_challenge_solution(
 
     Requires at least one submission attempt for the challenge or explicit ?reveal=true.
     """
-    challenge = get_challenge_or_404(identifier, session)
+    session_id = (
+        header_session_id.strip()
+        if header_session_id and header_session_id.strip()
+        else None
+    ) or (
+        query_session_id.strip()
+        if query_session_id and query_session_id.strip()
+        else None
+    )
+    user_id = current_user.id if current_user and current_user.id is not None else None
+
+    challenge = get_challenge_or_404(
+        identifier,
+        session,
+        user_id=user_id,
+        session_id=session_id,
+    )
 
     if not reveal:
         session_id = (
