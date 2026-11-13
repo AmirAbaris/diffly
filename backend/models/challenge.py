@@ -207,6 +207,9 @@ class ChallengeBase(SQLModel):
     canonical_review: str = Field(default="")
     recommended_fix_diff: str = Field(default="")
     estimated_minutes: int = Field(default=5)
+    is_public: bool = Field(default=True, index=True)
+    user_id: int | None = Field(default=None, foreign_key="users.id", index=True)
+    session_id: str | None = Field(default=None, index=True)
 
     @field_validator("expected_issues", mode="before")
     @classmethod
@@ -309,6 +312,7 @@ class Challenge(ChallengeBase, table=True):
             total_hints=total_hints,
             is_solved=is_solved,
             best_score=best_score,
+            is_public=self.is_public,
         )
 
     def to_detail(
@@ -334,6 +338,7 @@ class Challenge(ChallengeBase, table=True):
             total_hints=total_hints,
             is_solved=is_solved,
             best_score=best_score,
+            is_public=self.is_public,
         )
 
 
@@ -352,12 +357,22 @@ class ChallengeSummary(BaseModel):
     total_hints: int = 0
     is_solved: bool = False
     best_score: int | None = None
+    is_public: bool = True
 
 
 class ChallengeDetail(ChallengeSummary):
     threat_model: str = ""
     defect_target: str = ""
     code_snippet: str
+
+
+class CustomChallengesListResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    items: list[ChallengeSummary] = Field(default_factory=list)
+    total: int = 0
+    quota_limit: int = 5
+    quota_remaining: int = 5
 
 
 class GenerateCustomChallengeRequest(BaseModel):

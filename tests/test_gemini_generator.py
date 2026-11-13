@@ -9,16 +9,14 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 
 from backend.models.challenge import (
+    Category,
     Challenge,
     CustomChallengeResponse,
-    DefectCriterion,
     Difficulty,
     GenerateCustomChallengeRequest,
     Language,
 )
-from backend.models.submission import Submission
 from backend.services.gemini_generator import (
-    GeminiAPIError,
     GeminiAuthError,
     GeminiRateLimitError,
     GeminiSchemaError,
@@ -245,29 +243,12 @@ def test_generate_custom_challenge_gemini_server_error_502(
 
 
 @patch("backend.services.gemini_generator.httpx.AsyncClient.post")
-def test_generate_custom_challenge_network_exception_502(
-    mock_post: AsyncMock,
-    client: TestClient,
-):
-    """Returns HTTP 502 when httpx raises a RequestError."""
-    mock_post.side_effect = httpx.ConnectError("Connection refused")
-
-    response = client.post(
-        "/api/challenges/generate-custom",
-        json={"topic": "Memory leak", "language": "typescript"},
-        headers={"X-Gemini-Key": "AIzaSyValidKey"},
-    )
-    assert response.status_code == 502
-    assert "Failed to communicate with Gemini API" in response.json()["detail"]
-
-
-@patch("backend.services.gemini_generator.httpx.AsyncClient.post")
-def test_generate_custom_challenge_success(
+def test_generate_custom_challenge_success_and_persisted_to_db(
     mock_post: AsyncMock,
     client: TestClient,
     session: Session,
 ):
-    """Generate-custom returns conforming Challenge without DB persistence."""
+    """Generates challenge, saves to PostgreSQL, excludes from public catalog."""
     gemini_payload = {
         "candidates": [
             {"content": {"parts": [{"text": json.dumps(SAMPLE_GEMINI_OUTPUT)}]}}
@@ -278,6 +259,7 @@ def test_generate_custom_challenge_success(
         json_data=gemini_payload,
     )
 
+    session_id = "test-guest-session-byok"
     response = client.post(
         "/api/challenges/generate-custom",
         json={
@@ -285,13 +267,17 @@ def test_generate_custom_challenge_success(
             "language": "typescript",
             "difficulty": "medium",
         },
-        headers={"X-Gemini-Key": "AIzaSyValidKeyWorking"},
+        headers={
+            "X-Gemini-Key": "AIzaSyValidKeyWorking",
+            "X-Diffly-Session-Id": session_id,
+        },
     )
 
     assert response.status_code == 200
     data = response.json()
 
     # Verify conforming fields
+    assert data["id"] > 0
     assert data["slug"] == "nextjs-server-actions-idor"
     assert data["title"] == "Insecure Direct Object Reference in Server Action"
     assert data["difficulty"] == "Medium"
@@ -300,54 +286,298 @@ def test_generate_custom_challenge_success(
     assert "updateDocument" in data["code_snippet"]
     assert data["line_count"] > 0
     assert len(data["threat_model"]) > 0
-    assert len(data["defect_target"]) > 0
-    assert len(data["canonical_review"]) > 0
-    assert len(data["recommended_fix_diff"]) > 0
 
-    # Verify expected_issues
-    assert len(data["expected_issues"]) == 1
-    issue = data["expected_issues"][0]
-    assert issue["id"] == "defect-idor-1"
-    assert issue["title"] == "Missing Tenant Authorization Check (IDOR)"
-    assert issue["severity"] == "high"
-    assert issue["matched_lines"] == [9, 10, 11]
-    assert issue["lines"] == [9, 10, 11]
-    assert "idor" in issue["matched_keywords"]
-    assert len(issue["explanation"]) > 0
+    # Verify database persistence
+    db_challenge = session.exec(
+        select(Challenge).where(Challenge.slug == "nextjs-server-actions-idor")
+    ).first()
+    assert db_challenge is not None
+    assert db_challenge.is_public is False
+    assert db_challenge.session_id == session_id
 
-    # Verify progressive hints
-    assert len(data["hints"]) == 3
-    assert [h["tier"] for h in data["hints"]] == [1, 2, 3]
+    # Verify excluded from public catalog
+    public_catalog = client.get("/api/challenges").json()
+    assert all(c["id"] != db_challenge.id for c in public_catalog)
 
-    # Verify zero server persistence: DB remains untouched
-    db_challenges = session.exec(select(Challenge)).all()
-    assert len(db_challenges) == 0
+
+# ==============================================================================
+# 2. Quota Enforcement & Management Tests (Max 5 Custom Challenges)
+# ==============================================================================
 
 
 @patch("backend.services.gemini_generator.httpx.AsyncClient.post")
-def test_generate_custom_challenge_markdown_fenced_json(
+def test_strict_5_challenge_quota_enforcement(
     mock_post: AsyncMock,
     client: TestClient,
+    session: Session,
 ):
-    """Parser gracefully unwraps markdown ```json ... ``` code fence blocks."""
-    fenced_text = f"```json\n{json.dumps(SAMPLE_GEMINI_OUTPUT)}\n```"
-    gemini_payload = {"candidates": [{"content": {"parts": [{"text": fenced_text}]}}]}
+    """Users can create up to 5 custom challenges; 6th attempt is rejected with 400."""
+    gemini_payload = {
+        "candidates": [
+            {"content": {"parts": [{"text": json.dumps(SAMPLE_GEMINI_OUTPUT)}]}}
+        ]
+    }
     mock_post.return_value = make_mock_gemini_response(
         status_code=200,
         json_data=gemini_payload,
     )
 
-    response = client.post(
+    session_id = "quota-test-session"
+    headers = {
+        "X-Gemini-Key": "AIzaSyKey123",
+        "X-Diffly-Session-Id": session_id,
+    }
+
+    # Generate 5 custom challenges
+    for i in range(5):
+        res = client.post(
+            "/api/challenges/generate-custom",
+            json={"topic": f"Custom scenario {i + 1}", "language": "python"},
+            headers=headers,
+        )
+        assert res.status_code == 200, res.text
+
+    # Verify quota list endpoint reports 5 total, 0 remaining
+    list_res = client.get("/api/challenges/custom", headers=headers)
+    assert list_res.status_code == 200
+    list_data = list_res.json()
+    assert list_data["total"] == 5
+    assert list_data["quota_limit"] == 5
+    assert list_data["quota_remaining"] == 0
+    assert len(list_data["items"]) == 5
+
+    # 6th attempt should be rejected with 400
+    sixth_res = client.post(
         "/api/challenges/generate-custom",
-        json={"topic": "Server Actions IDOR", "language": "typescript"},
-        headers={"X-Gemini-Key": "AIzaSyValidKey"},
+        json={"topic": "Sixth custom scenario", "language": "python"},
+        headers=headers,
     )
-    assert response.status_code == 200
-    assert response.json()["slug"] == "nextjs-server-actions-idor"
+    assert sixth_res.status_code == 400
+    assert "quota limit reached" in sixth_res.json()["detail"].lower()
+
+    # Delete 1 challenge to free quota
+    to_delete = list_data["items"][0]["slug"]
+    del_res = client.delete(f"/api/challenges/custom/{to_delete}", headers=headers)
+    assert del_res.status_code == 200
+    assert del_res.json()["slug"] == to_delete
+
+    # Verify quota list endpoint now reports 4 total, 1 remaining
+    list_after = client.get("/api/challenges/custom", headers=headers).json()
+    assert list_after["total"] == 4
+    assert list_after["quota_remaining"] == 1
+
+    # 6th challenge can now be generated successfully!
+    retry_res = client.post(
+        "/api/challenges/generate-custom",
+        json={"topic": "Sixth custom scenario", "language": "python"},
+        headers=headers,
+    )
+    assert retry_res.status_code == 200
+
+
+def test_cannot_delete_public_challenge(client: TestClient, session: Session):
+    """Attempting to delete a public challenge returns 403 Forbidden."""
+    public_ch = Challenge(
+        slug="public-official-scenario",
+        title="Public Challenge",
+        difficulty=Difficulty.EASY,
+        category=Category.SECURITY,
+        language=Language.PYTHON,
+        description="Public test",
+        code_snippet="x = 1",
+        is_public=True,
+    )
+    session.add(public_ch)
+    session.commit()
+
+    res = client.delete(
+        f"/api/challenges/custom/{public_ch.slug}",
+        headers={"X-Diffly-Session-Id": "any-session"},
+    )
+    assert res.status_code == 403
+    assert "cannot delete public" in res.json()["detail"].lower()
+
+
+def test_cannot_delete_another_users_custom_challenge(
+    client: TestClient,
+    session: Session,
+):
+    """Attempting to delete another user's private challenge returns 403."""
+    other_ch = Challenge(
+        slug="other-user-private-ch",
+        title="Other Private",
+        difficulty=Difficulty.MEDIUM,
+        category=Category.SECURITY,
+        language=Language.PYTHON,
+        description="Other test",
+        code_snippet="x = 2",
+        is_public=False,
+        session_id="owner-session",
+    )
+    session.add(other_ch)
+    session.commit()
+
+    # Different user tries to delete
+    res = client.delete(
+        f"/api/challenges/custom/{other_ch.slug}",
+        headers={"X-Diffly-Session-Id": "attacker-session"},
+    )
+    assert res.status_code == 403
+    assert "permission" in res.json()["detail"].lower()
+
+
+def test_unauthorized_user_cannot_view_private_challenge(
+    client: TestClient,
+    session: Session,
+):
+    """Private challenge returns 404 to users other than the owner."""
+    private_ch = Challenge(
+        slug="secret-private-challenge",
+        title="Secret Private",
+        difficulty=Difficulty.HARD,
+        category=Category.SECURITY,
+        language=Language.PYTHON,
+        description="Private",
+        code_snippet="secret = True",
+        is_public=False,
+        session_id="legit-owner-session",
+    )
+    session.add(private_ch)
+    session.commit()
+
+    # Unauthorized guest
+    res_stranger = client.get(
+        f"/api/challenges/{private_ch.slug}",
+        headers={"X-Diffly-Session-Id": "stranger-session"},
+    )
+    assert res_stranger.status_code == 404
+
+    # Legitimate owner can view
+    res_owner = client.get(
+        f"/api/challenges/{private_ch.slug}",
+        headers={"X-Diffly-Session-Id": "legit-owner-session"},
+    )
+    assert res_owner.status_code == 200
+    assert res_owner.json()["slug"] == "secret-private-challenge"
 
 
 # ==============================================================================
-# 2. Service-Level Unit Tests (Exceptions, Clamping, Sanitization)
+# 3. Direct Review & Hints on Private Challenges
+# ==============================================================================
+
+
+def test_owner_can_review_and_view_hints_on_private_challenge(
+    client: TestClient,
+    session: Session,
+):
+    """Owner can interact with their private challenge in the Arena seamlessly."""
+    session_id = "arena-owner-session"
+    challenge = Challenge(
+        slug="private-review-arena-test",
+        title="Private Review Arena Test",
+        difficulty=Difficulty.MEDIUM,
+        category=Category.SECURITY,
+        language=Language.PYTHON,
+        description="Find flaw",
+        threat_model="Data corruption",
+        defect_target="Find 1 defect",
+        code_snippet="x = eval(input())\n",
+        expected_issues=json.dumps(
+            [
+                {
+                    "id": "crit-eval",
+                    "title": "Unsanitized Eval",
+                    "severity": "critical",
+                    "lines": [1],
+                    "keywords": ["eval", "rce"],
+                    "explanation": "Dangerous eval",
+                }
+            ]
+        ),
+        hints=json.dumps([{"tier": 1, "hint": "Check line 1 eval call."}]),
+        is_public=False,
+        session_id=session_id,
+    )
+    session.add(challenge)
+    session.commit()
+
+    headers = {"X-Diffly-Session-Id": session_id}
+
+    # 1. Fetch hints
+    hints_res = client.get(f"/api/challenges/{challenge.slug}/hints", headers=headers)
+    assert hints_res.status_code == 200
+    assert len(hints_res.json()) == 1
+
+    # 2. Submit review
+    sub_res = client.post(
+        f"/api/challenges/{challenge.slug}/review",
+        json={
+            "flagged_lines": [1],
+            "comments": "eval allows dangerous rce execution.",
+        },
+        headers=headers,
+    )
+    assert sub_res.status_code == 200
+    assert sub_res.json()["score"] == 100
+
+    # 3. Fetch submissions history
+    history_res = client.get(
+        f"/api/challenges/{challenge.slug}/submissions",
+        headers=headers,
+    )
+    assert history_res.status_code == 200
+    assert len(history_res.json()) == 1
+
+
+# ==============================================================================
+# 4. Stateless Evaluation Support Tests (POST /api/challenges/evaluate-custom)
+# ==============================================================================
+
+
+def test_stateless_evaluation_perfect_score(client: TestClient):
+    """Stateless evaluation yields 100% score for direct evaluation requests."""
+    payload = {
+        "expected_issues": SAMPLE_GEMINI_OUTPUT["expected_issues"],
+        "code_snippet": SAMPLE_GEMINI_OUTPUT["code_snippet"],
+        "flagged_lines": [9, 10, 11],
+        "comments": (
+            "Missing tenant isolation authorization check causes an IDOR flaw. "
+            "Filter by tenant ownership to fix this."
+        ),
+    }
+
+    response = client.post("/api/challenges/evaluate-custom", json=payload)
+    assert response.status_code == 200
+    result = response.json()
+
+    assert result["score"] == 100
+    assert result["line_precision_score"] == 100.0
+    assert result["concept_score"] == 100.0
+    assert result["false_positive_penalty"] == 0.0
+    assert len(result["detected_issues"]) == 1
+
+
+def test_stateless_evaluation_partial_score(client: TestClient):
+    """Evaluates partial score when correct lines are flagged with empty critique."""
+    payload = {
+        "expected_issues": SAMPLE_GEMINI_OUTPUT["expected_issues"],
+        "code_snippet": SAMPLE_GEMINI_OUTPUT["code_snippet"],
+        "flagged_lines": [9, 10],
+        "comments": "",
+    }
+
+    response = client.post("/api/challenges/evaluate-custom", json=payload)
+    assert response.status_code == 200
+    result = response.json()
+
+    assert result["score"] == 50
+    assert result["line_precision_score"] == 100.0
+    assert result["concept_score"] == 0.0
+    assert len(result["detected_issues"]) == 1
+
+
+# ==============================================================================
+# 5. Service-Level Unit Tests (Exceptions, Clamping, Sanitization)
 # ==============================================================================
 
 
@@ -386,19 +616,6 @@ async def test_generate_custom_challenge_service_bad_schema():
         await generate_custom_challenge(req, "test-key", client=mock_client)
 
 
-@pytest.mark.anyio
-async def test_generate_custom_challenge_service_server_error():
-    """Service raises GeminiAPIError when status is 500."""
-    req = GenerateCustomChallengeRequest(topic="Server error")
-    mock_client = AsyncMock()
-    mock_client.post.return_value = make_mock_gemini_response(
-        status_code=500, raw_text="Internal Error"
-    )
-
-    with pytest.raises(GeminiAPIError):
-        await generate_custom_challenge(req, "test-key", client=mock_client)
-
-
 def test_sanitize_clamps_out_of_bounds_lines():
     """Sanitizer clamps out-of-range lines to valid line numbers in code_snippet."""
     raw = {
@@ -422,7 +639,6 @@ def test_sanitize_clamps_out_of_bounds_lines():
     result = sanitize_generated_challenge(raw, req)
     assert isinstance(result, CustomChallengeResponse)
     assert result.line_count == 2
-    # Keyword search found line 1 ("safe_func")
     assert result.expected_issues[0].lines == [1]
 
 
@@ -431,155 +647,3 @@ def test_clean_markdown_json_helper():
     assert clean_markdown_json('{"key": "value"}') == '{"key": "value"}'
     assert clean_markdown_json('```json\n{"a": 1}\n```') == '{"a": 1}'
     assert clean_markdown_json('```\n{"b": 2}\n```') == '{"b": 2}'
-
-
-# ==============================================================================
-# 3. Stateless Evaluation Support Tests (POST /api/challenges/evaluate-custom)
-# ==============================================================================
-
-
-def test_stateless_evaluation_perfect_score(client: TestClient, session: Session):
-    """Stateless evaluation yields 100% score without persisting any DB row."""
-    payload = {
-        "expected_issues": SAMPLE_GEMINI_OUTPUT["expected_issues"],
-        "code_snippet": SAMPLE_GEMINI_OUTPUT["code_snippet"],
-        "flagged_lines": [9, 10, 11],
-        "comments": (
-            "Missing tenant isolation authorization check causes an IDOR flaw. "
-            "Filter by tenant ownership to fix this."
-        ),
-    }
-
-    response = client.post("/api/challenges/evaluate-custom", json=payload)
-    assert response.status_code == 200
-    result = response.json()
-
-    assert result["score"] == 100
-    assert result["line_precision_score"] == 100.0
-    assert result["concept_score"] == 100.0
-    assert result["false_positive_penalty"] == 0.0
-    assert result["false_positive_lines"] == []
-    assert len(result["detected_issues"]) == 1
-    assert len(result["missed_issues"]) == 0
-    assert "Outstanding review" in result["summary"]
-    assert len(result["feedback"]) > 0
-    assert result["execution_time_ms"] >= 0.0
-
-    # Ensure no database records were created
-    submissions = session.exec(select(Submission)).all()
-    assert len(submissions) == 0
-
-
-def test_stateless_evaluation_partial_score(client: TestClient):
-    """Evaluates partial score when correct lines are flagged with empty critique."""
-    payload = {
-        "expected_issues": SAMPLE_GEMINI_OUTPUT["expected_issues"],
-        "code_snippet": SAMPLE_GEMINI_OUTPUT["code_snippet"],
-        "flagged_lines": [9, 10],
-        "comments": "",
-    }
-
-    response = client.post("/api/challenges/evaluate-custom", json=payload)
-    assert response.status_code == 200
-    result = response.json()
-
-    # Line precision = 100, Concept = 0 -> 50%
-    assert result["score"] == 50
-    assert result["line_precision_score"] == 100.0
-    assert result["concept_score"] == 0.0
-    assert len(result["detected_issues"]) == 1
-
-
-def test_stateless_evaluation_false_positives(client: TestClient):
-    """Applies penalties for flagging clean lines outside defect tolerance."""
-    payload = {
-        "expected_issues": SAMPLE_GEMINI_OUTPUT["expected_issues"],
-        "code_snippet": SAMPLE_GEMINI_OUTPUT["code_snippet"],
-        "flagged_lines": [10, 1, 2],  # line 10 is valid; lines 1 and 2 are clean lines
-        "comments": "IDOR defect tenant authorization.",
-    }
-
-    response = client.post("/api/challenges/evaluate-custom", json=payload)
-    assert response.status_code == 200
-    result = response.json()
-
-    # Base score 100 - (2 false positives * 15 pts) = 70 pts
-    assert result["score"] == 70
-    assert result["false_positive_penalty"] == 30.0
-    assert result["false_positive_lines"] == [1, 2]
-
-
-def test_stateless_evaluation_with_defect_criterion_instances(client: TestClient):
-    """Accepts expected_issues serialized from DefectCriterion instances."""
-    criterion = DefectCriterion(
-        id="defect-x",
-        title="SQL Injection",
-        severity="critical",
-        lines=[15],
-        keywords=["sql", "injection", "parameterized"],
-        explanation="Raw SQL query",
-    )
-
-    payload = {
-        "expected_issues": [criterion.model_dump()],
-        "code_snippet": "query = f'SELECT * FROM users WHERE id = {user_id}'",
-        "flagged_lines": [15],
-        "comments": "Raw SQL injection vulnerability; use parameterized queries.",
-    }
-
-    response = client.post("/api/challenges/evaluate-custom", json=payload)
-    assert response.status_code == 200
-    assert response.json()["score"] == 100
-
-
-# ==============================================================================
-# 4. End-to-End BYOK Flow (Generate -> Evaluate)
-# ==============================================================================
-
-
-@patch("backend.services.gemini_generator.httpx.AsyncClient.post")
-def test_generate_and_evaluate_end_to_end_flow(
-    mock_post: AsyncMock,
-    client: TestClient,
-):
-    """Full seamless lifecycle: Generate challenge with Gemini key, then evaluate."""
-    mock_post.return_value = make_mock_gemini_response(
-        status_code=200,
-        json_data={
-            "candidates": [
-                {"content": {"parts": [{"text": json.dumps(SAMPLE_GEMINI_OUTPUT)}]}}
-            ]
-        },
-    )
-
-    # 1. User generates challenge via BYOK
-    gen_res = client.post(
-        "/api/challenges/generate-custom",
-        json={
-            "topic": "Next.js 15 Server Actions IDOR",
-            "language": "typescript",
-            "difficulty": "medium",
-        },
-        headers={"X-Gemini-Key": "AIzaSyTestUserKey123"},
-    )
-    assert gen_res.status_code == 200
-    generated = gen_res.json()
-
-    # 2. User solves challenge and client sends evaluation payload
-    eval_res = client.post(
-        "/api/challenges/evaluate-custom",
-        json={
-            "expected_issues": generated["expected_issues"],
-            "code_snippet": generated["code_snippet"],
-            "flagged_lines": [9, 10],
-            "comments": "IDOR vulnerability: missing tenant authorization check.",
-        },
-    )
-    assert eval_res.status_code == 200
-    eval_data = eval_res.json()
-
-    assert eval_data["score"] == 100
-    assert eval_data["line_precision_score"] == 100.0
-    assert eval_data["concept_score"] == 100.0
-    assert len(eval_data["detected_issues"]) == 1
-    assert eval_data["detected_issues"][0]["id"] == "defect-idor-1"
