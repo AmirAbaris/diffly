@@ -647,3 +647,51 @@ def test_clean_markdown_json_helper():
     assert clean_markdown_json('{"key": "value"}') == '{"key": "value"}'
     assert clean_markdown_json('```json\n{"a": 1}\n```') == '{"a": 1}'
     assert clean_markdown_json('```\n{"b": 2}\n```') == '{"b": 2}'
+
+
+@pytest.mark.anyio
+async def test_generate_custom_challenge_model_fallback_on_404_or_503():
+    """Service automatically falls back to next model on 404/503 errors."""
+    req = GenerateCustomChallengeRequest(topic="Fallback test")
+    mock_client = AsyncMock()
+    # First model returns 404 (deprecated), second returns 200
+    mock_client.post.side_effect = [
+        make_mock_gemini_response(status_code=404, raw_text="Model deprecated"),
+        make_mock_gemini_response(
+            status_code=200,
+            json_data={
+                "candidates": [
+                    {"content": {"parts": [{"text": json.dumps(SAMPLE_GEMINI_OUTPUT)}]}}
+                ]
+            },
+        ),
+    ]
+
+    result = await generate_custom_challenge(
+        req, "test-key", client=mock_client, model="deprecated-model"
+    )
+    assert result.slug == "nextjs-server-actions-idor"
+    assert mock_client.post.call_count == 2
+
+
+@pytest.mark.live
+@pytest.mark.anyio
+async def test_live_gemini_generation():
+    """Live integration test against Google Gemini API with actual credentials."""
+    import os
+
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        pytest.skip("GEMINI_API_KEY environment variable not set")
+
+    req = GenerateCustomChallengeRequest(
+        topic="FastAPI raw SQL injection vulnerability in search endpoint",
+        language=Language.PYTHON,
+        difficulty=Difficulty.EASY,
+    )
+    result = await generate_custom_challenge(req, api_key)
+    assert result.title
+    assert result.slug
+    assert len(result.code_snippet) > 50
+    assert len(result.expected_issues) >= 1
+    assert len(result.hints) == 3

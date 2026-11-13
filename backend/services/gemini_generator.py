@@ -23,6 +23,12 @@ from backend.models.challenge import (
 
 
 DEFAULT_GEMINI_MODEL = "gemini-3.1-flash-lite"
+FALLBACK_GEMINI_MODELS = (
+    "gemini-3.1-flash-lite",
+    "gemini-3.5-flash-lite",
+    "gemini-3.5-flash",
+    "gemini-flash-latest",
+)
 GEMINI_API_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
 
 
@@ -387,18 +393,44 @@ async def generate_custom_challenge(
         },
     }
 
+    models_to_try = [model]
+    for fallback in FALLBACK_GEMINI_MODELS:
+        if fallback not in models_to_try:
+            models_to_try.append(fallback)
+
     owns_client = client is None
     http_client = client or httpx.AsyncClient(timeout=30.0)
 
+    last_response: httpx.Response | None = None
     try:
-        response = await http_client.post(url, json=payload, headers=headers)
-    except httpx.RequestError as exc:
-        raise GeminiAPIError(
-            f"Failed to communicate with Gemini API: {exc.__class__.__name__}"
-        ) from exc
+        for current_model in models_to_try:
+            url = f"{GEMINI_API_BASE_URL}/{current_model}:generateContent"
+            try:
+                response = await http_client.post(url, json=payload, headers=headers)
+                last_response = response
+            except httpx.RequestError as exc:
+                if current_model == models_to_try[-1]:
+                    raise GeminiAPIError(
+                        "Failed to communicate with Gemini API: "
+                        f"{exc.__class__.__name__}"
+                    ) from exc
+                continue
+
+            # If model is deprecated (404) or busy (503), try next fallback
+            if (
+                response.status_code in {404, 503}
+                and current_model != models_to_try[-1]
+            ):
+                continue
+            break
     finally:
         if owns_client:
             await http_client.aclose()
+
+    if last_response is None:
+        raise GeminiAPIError("No response received from Gemini API")
+
+    response = last_response
 
     if response.status_code == 400:
         err_body = response.text

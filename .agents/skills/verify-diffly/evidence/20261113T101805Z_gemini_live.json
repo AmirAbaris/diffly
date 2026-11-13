@@ -1,0 +1,67 @@
+{
+  "id": 0,
+  "slug": "nextjs-server-actions-idor",
+  "title": "Insecure Direct Object Reference in Next.js Server Action",
+  "difficulty": "Medium",
+  "category": "Security",
+  "language": "typescript",
+  "description": "Review a Next.js Server Action handling user project updates to find a subtle IDOR vulnerability where request parameters are trusted without proper resource ownership verification.",
+  "threat_model": "An attacker with a standard user account can enumerate or guess project IDs belonging to other tenants and modify their names and descriptions. This violates confidentiality and integrity boundaries in a multi-tenant application.",
+  "defect_target": "Identify 1 High-Severity authorization bypass.",
+  "code_snippet": "import { revalidatePath } from 'next/cache';\nimport { db } from '@/lib/db';\nimport { getCurrentUser } from '@/lib/auth';\n\ninterface UpdateProjectInput {\n  projectId: string;\n  name: string;\n  description: string;\n}\n\nexport async function updateProject(input: UpdateProjectInput) {\n  const user = await getCurrentUser();\n  \n  if (!user) {\n    throw new Error('Unauthorized');\n  }\n\n  const { projectId, name, description } = input;\n\n  if (!name || name.trim() === '') {\n    throw new Error('Project name is required');\n  }\n\n  const existingProject = await db.project.findUnique({\n    where: { id: projectId },\n  });\n\n  if (!existingProject) {\n    throw new Error('Project not found');\n  }\n\n  const updatedProject = await db.project.update({\n    where: { id: projectId },\n    data: {\n      name,\n      description,\n    },\n  });\n\n  revalidatePath('/dashboard');\n  return { success: true, project: updatedProject };\n}",
+  "expected_issues": [
+    {
+      "id": "idor-missing-ownership",
+      "title": "Insecure Direct Object Reference (IDOR) via Missing Ownership Check",
+      "severity": "high",
+      "lines": [
+        23,
+        24,
+        25,
+        26
+      ],
+      "keywords": [
+        "idor",
+        "authorization",
+        "ownership",
+        "access-control"
+      ],
+      "explanation": "The server action verifies that a user is authenticated, but it fails to check whether the authenticated user actually owns the project specified by 'projectId'. An attacker can supply any valid project ID belonging to another user and overwrite its contents.",
+      "matched_lines": [
+        23,
+        24,
+        25,
+        26
+      ],
+      "matched_keywords": [
+        "idor",
+        "authorization",
+        "ownership",
+        "access-control"
+      ]
+    }
+  ],
+  "hints": [
+    {
+      "tier": 1,
+      "label": "Contextual Clue",
+      "text": "Examine how user context is used throughout the server action after authentication."
+    },
+    {
+      "tier": 2,
+      "label": "Vulnerability Class",
+      "text": "Authentication verifies who the user is, but authorization checks whether they have permission to access a specific resource."
+    },
+    {
+      "tier": 3,
+      "label": "Line Pointer",
+      "text": "Check lines 23-26 where the database query fetches the project strictly by 'id' without scoping it to the current user's identifier."
+    }
+  ],
+  "canonical_review": "While the code properly verifies user authentication and input validation, it contains a critical Insecure Direct Object Reference (IDOR) vulnerability. The query looks up the project solely by its ID without verifying that the project's owner ID matches the currently authenticated user's ID. An attacker authenticated to the application can simply pass another user's project ID in the input payload to modify arbitrary projects.",
+  "recommended_fix_diff": "--- a/actions/update-project.ts\n+++ b/actions/update-project.ts\n@@ -23,3 +23,4 @@\n   const existingProject = await db.project.findUnique({\n-    where: { id: projectId },\n+    where: { id: projectId, userId: user.id },\n   });",
+  "estimated_minutes": 5,
+  "line_count": 42,
+  "total_hints": 3,
+  "is_custom": true
+}

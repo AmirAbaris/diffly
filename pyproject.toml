@@ -55,3 +55,6 @@ docstring-code-format = true
 pythonpath = ["."]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
+markers = [
+    "live: marks tests that require live external API credentials (deselect with '-m \"not live\"')",
+]
