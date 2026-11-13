@@ -3,7 +3,13 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
-from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    computed_field,
+    field_validator,
+    model_validator,
+)
 from sqlmodel import Field, Relationship, SQLModel
 
 
@@ -85,6 +91,16 @@ class DefectCriterion(BaseModel):
     explanation: str = ""
 
     model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    @computed_field
+    @property
+    def matched_lines(self) -> list[int]:
+        return self.lines
+
+    @computed_field
+    @property
+    def matched_keywords(self) -> list[str]:
+        return self.keywords
 
     @model_validator(mode="before")
     @classmethod
@@ -342,3 +358,61 @@ class ChallengeDetail(ChallengeSummary):
     threat_model: str = ""
     defect_target: str = ""
     code_snippet: str
+
+
+class GenerateCustomChallengeRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    topic: str = Field(
+        ...,
+        min_length=3,
+        description=(
+            "Topic or vulnerability scenario to generate "
+            "(e.g. Next.js 15 Server Actions IDOR)"
+        ),
+    )
+    language: Language = Field(
+        default=Language.PYTHON,
+        description="Programming language: python, typescript, go, rust",
+    )
+    difficulty: Difficulty = Field(
+        default=Difficulty.MEDIUM,
+        description="Challenge difficulty: Easy, Medium, Hard",
+    )
+
+
+class CustomChallengeResponse(BaseModel):
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    id: int = 0
+    slug: str
+    title: str
+    difficulty: Difficulty
+    category: Category = Category.SECURITY
+    language: Language
+    description: str
+    threat_model: str = ""
+    defect_target: str = ""
+    code_snippet: str
+    expected_issues: list[DefectCriterion] = Field(default_factory=list)
+    hints: list[HintResponse] = Field(default_factory=list)
+    canonical_review: str = ""
+    recommended_fix_diff: str = ""
+    estimated_minutes: int = 5
+    line_count: int = 0
+    total_hints: int = 0
+    is_custom: bool = True
+
+    @model_validator(mode="after")
+    def compute_counts(self) -> "CustomChallengeResponse":
+        if self.code_snippet and self.line_count == 0:
+            self.line_count = len(self.code_snippet.splitlines())
+        if self.hints and self.total_hints == 0:
+            self.total_hints = len(self.hints)
+        return self
+
+    def get_expected_issues(self) -> list[DefectCriterion]:
+        return self.expected_issues
+
+    def get_hints(self) -> list[HintItem]:
+        return [HintItem(tier=h.tier, label=h.label, text=h.text) for h in self.hints]

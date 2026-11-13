@@ -1,8 +1,9 @@
 """Challenge catalog API routes."""
 
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from pydantic import BaseModel, ConfigDict, Field
 from sqlmodel import Session, or_, select
 
 from api.deps import get_optional_current_user
@@ -13,12 +14,27 @@ from backend.models.challenge import (
     ChallengeDetail,
     ChallengeSolutionResponse,
     ChallengeSummary,
+    CustomChallengeResponse,
+    DefectCriterion,
     Difficulty,
+    GenerateCustomChallengeRequest,
     HintResponse,
     Language,
 )
 from backend.models.submission import Submission
 from backend.models.user import User
+from backend.services.evaluation_service import (
+    DetectedIssue,
+    MissedIssue,
+    evaluate_review,
+)
+from backend.services.gemini_generator import (
+    GeminiAPIError,
+    GeminiAuthError,
+    GeminiRateLimitError,
+    GeminiSchemaError,
+    generate_custom_challenge,
+)
 
 
 router = APIRouter(prefix="/api/challenges", tags=["challenges"])
@@ -99,6 +115,127 @@ def list_challenges(
         )
         for ch in challenges
     ]
+
+
+class CustomEvaluationRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    expected_issues: list[DefectCriterion | dict[str, Any]] = Field(
+        ...,
+        description="Expected defect criteria for grading",
+    )
+    code_snippet: str = Field(
+        default="",
+        description="Code snippet of the challenge",
+    )
+    flagged_lines: list[int] = Field(
+        default_factory=list,
+        description="Line numbers flagged by reviewer as defective",
+    )
+    comments: str = Field(
+        default="",
+        description="User review critique explaining the defect",
+    )
+
+
+class CustomEvaluationResponse(BaseModel):
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    score: int = Field(ge=0, le=100)
+    line_precision_score: float = Field(default=0.0, ge=0.0, le=100.0)
+    concept_score: float = Field(default=0.0, ge=0.0, le=100.0)
+    false_positive_penalty: float = Field(default=0.0, ge=0.0)
+    false_positive_lines: list[int] = Field(default_factory=list)
+    detected_issues: list[DetectedIssue] = Field(default_factory=list)
+    missed_issues: list[MissedIssue] = Field(default_factory=list)
+    summary: str = ""
+    critique: str = ""
+    feedback: str = ""
+    execution_time_ms: float = 0.0
+    flagged_lines: list[int] = Field(default_factory=list)
+    comments: str = ""
+
+
+@router.post(
+    "/generate-custom",
+    response_model=CustomChallengeResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def generate_custom_challenge_endpoint(
+    payload: GenerateCustomChallengeRequest,
+    x_gemini_key: Annotated[
+        str | None,
+        Header(
+            alias="X-Gemini-Key",
+            description="User-supplied Google Gemini API key",
+        ),
+    ] = None,
+) -> CustomChallengeResponse:
+    """Generate a custom code review challenge using Google Gemini (BYOK)."""
+    if not x_gemini_key or not x_gemini_key.strip():
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=(
+                "Missing or invalid Gemini API key. "
+                "Provide a valid key in the X-Gemini-Key header."
+            ),
+        )
+
+    try:
+        return await generate_custom_challenge(
+            request=payload,
+            api_key=x_gemini_key,
+        )
+    except GeminiAuthError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(exc),
+        ) from exc
+    except GeminiRateLimitError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=str(exc),
+        ) from exc
+    except (GeminiAPIError, GeminiSchemaError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+
+@router.post(
+    "/evaluate-custom",
+    response_model=CustomEvaluationResponse,
+    status_code=status.HTTP_200_OK,
+)
+def evaluate_custom_challenge_endpoint(
+    payload: CustomEvaluationRequest,
+) -> CustomEvaluationResponse:
+    """Statelessly evaluate a review submission against custom challenge metadata."""
+    eval_result = evaluate_review(
+        challenge={
+            "expected_issues": payload.expected_issues,
+            "code_snippet": payload.code_snippet,
+        },
+        flagged_lines=payload.flagged_lines,
+        user_comments=payload.comments,
+    )
+
+    return CustomEvaluationResponse(
+        score=eval_result.score,
+        line_precision_score=eval_result.line_precision_score,
+        concept_score=eval_result.concept_score,
+        false_positive_penalty=eval_result.false_positive_penalty,
+        false_positive_lines=eval_result.false_positive_lines,
+        detected_issues=eval_result.detected_issues,
+        missed_issues=eval_result.missed_issues,
+        summary=eval_result.summary,
+        critique=eval_result.critique,
+        feedback=eval_result.critique,
+        execution_time_ms=eval_result.execution_time_ms,
+        flagged_lines=payload.flagged_lines,
+        comments=payload.comments,
+    )
 
 
 def get_challenge_or_404(identifier: str, session: Session) -> Challenge:
