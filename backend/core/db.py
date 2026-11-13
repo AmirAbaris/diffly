@@ -6,7 +6,9 @@ from backend.core.config import settings
 
 
 connect_args = (
-    {"check_same_thread": False} if settings.DATABASE_URL.startswith("sqlite") else {}
+    {"check_same_thread": False, "timeout": 30}
+    if settings.DATABASE_URL.startswith("sqlite")
+    else {}
 )
 
 engine = create_engine(
@@ -19,7 +21,14 @@ engine = create_engine(
 def init_db() -> None:
     import backend.models  # noqa: F401
 
-    SQLModel.metadata.create_all(engine)
+    try:
+        SQLModel.metadata.create_all(engine)
+    except Exception as exc:
+        err_msg = str(exc).lower()
+        if "already exists" in err_msg or "locked" in err_msg:
+            pass
+        else:
+            raise
 
 
 def get_session() -> Generator[Session, None, None]:

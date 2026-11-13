@@ -24,7 +24,7 @@
     "test:py": "([ -f .venv/bin/pytest ] && .venv/bin/pytest tests --cov=api --cov=backend --cov-fail-under=85) || pytest tests --cov=api --cov=backend --cov-fail-under=85",
     "verify:py": "pnpm lint:py && pnpm test:py",
     "typecheck": "tsc --noEmit",
-    "prepare": "lefthook install",
+    "prepare": "([ -d .git ] && lefthook install) || true",
     "verify": "pnpm lint && pnpm test:py && pnpm test && pnpm build",
     "doctor": "react-doctor -y --no-telemetry"
   },
