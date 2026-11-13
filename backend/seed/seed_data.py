@@ -1,6 +1,7 @@
 """Database seeding utility for Diffly challenges.
 
-Provides idempotent seeding and upsert capability for curated code review challenges.
+Provides idempotent seeding and upsert capability for curated code review challenges
+loaded dynamically from `content/challenges/` bundles.
 Can be executed as a CLI script via `python -m backend.seed.seed_data` or called
 programmatically on application startup.
 """
@@ -8,12 +9,13 @@ programmatically on application startup.
 import logging
 from collections.abc import Generator
 from contextlib import contextmanager
+from pathlib import Path
 
 from sqlmodel import Session, select
 
 from backend.core.db import engine, init_db
 from backend.models.challenge import Challenge
-from backend.seed.challenges import CHALLENGES_DATA
+from backend.seed.loader import load_challenges_from_dir
 
 
 logger = logging.getLogger("diffly.seed")
@@ -31,16 +33,21 @@ def get_managed_session(
             yield new_session
 
 
-def seed_challenges(session: Session | None = None) -> list[Challenge]:
+def seed_challenges(
+    session: Session | None = None,
+    content_dir: Path | str | None = None,
+) -> list[Challenge]:
     """Seed or update challenges idempotently (upsert by slug).
 
+    Traverses content/challenges/ bundles dynamically.
     If a challenge with the given slug already exists, its attributes are updated.
     Otherwise, a new challenge is created.
     """
+    challenges_data = load_challenges_from_dir(content_dir)
     seeded_challenges: list[Challenge] = []
 
     with get_managed_session(session) as db:
-        for challenge_dict in CHALLENGES_DATA:
+        for challenge_dict in challenges_data:
             slug = challenge_dict["slug"]
             existing = db.exec(select(Challenge).where(Challenge.slug == slug)).first()
 
@@ -77,14 +84,17 @@ def seed_challenges(session: Session | None = None) -> list[Challenge]:
     return seeded_challenges
 
 
-def seed_challenges_if_empty(session: Session | None = None) -> list[Challenge]:
+def seed_challenges_if_empty(
+    session: Session | None = None,
+    content_dir: Path | str | None = None,
+) -> list[Challenge]:
     """Seed challenges only if the challenges table currently contains no records."""
     try:
         with get_managed_session(session) as db:
             first_record = db.exec(select(Challenge)).first()
             if first_record is None:
                 logger.info("Challenges table is empty. Running initial seeding...")
-                return seed_challenges(db)
+                return seed_challenges(db, content_dir=content_dir)
             logger.info("Challenges table already seeded. Skipping initial seed.")
             return list(db.exec(select(Challenge)).all())
     except Exception as exc:

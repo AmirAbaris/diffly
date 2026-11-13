@@ -34,11 +34,27 @@ class Category(StrEnum):
     SECURITY = "Security"
     CONCURRENCY = "Concurrency"
     PERFORMANCE = "Performance"
+    LOGIC_FLAWS = "Logic Flaws"
 
     @classmethod
     def _missing_(cls, value: object):
         if isinstance(value, str):
             clean_val = value.lower().replace("-", " ").replace("_", " ")
+            aliases = {
+                "agent antipatterns": cls.AGENT_ANTIPATHS,
+                "agent antipattern": cls.AGENT_ANTIPATHS,
+                "agent antipaths": cls.AGENT_ANTIPATHS,
+                "agent antipath": cls.AGENT_ANTIPATHS,
+                "security vuln": cls.SECURITY,
+                "security vulnerability": cls.SECURITY,
+                "security": cls.SECURITY,
+                "concurrency race": cls.CONCURRENCY,
+                "concurrency": cls.CONCURRENCY,
+                "logic flaws": cls.LOGIC_FLAWS,
+                "logic flaw": cls.LOGIC_FLAWS,
+            }
+            if clean_val in aliases:
+                return aliases[clean_val]
             for member in cls:
                 if member.value.lower() == clean_val:
                     return member
@@ -48,6 +64,8 @@ class Category(StrEnum):
 class Language(StrEnum):
     PYTHON = "python"
     TYPESCRIPT = "typescript"
+    GO = "go"
+    RUST = "rust"
 
     @classmethod
     def _missing_(cls, value: object):
@@ -80,6 +98,10 @@ class DefectCriterion(BaseModel):
                     d["explanation"] = str(d["defect"])
             if "line" in d and not d.get("lines"):
                 d["lines"] = [int(d["line"])]
+            if "matched_lines" in d and not d.get("lines"):
+                d["lines"] = [int(x) for x in d["matched_lines"]]
+            if "matched_keywords" in d and not d.get("keywords"):
+                d["keywords"] = [str(x) for x in d["matched_keywords"]]
             if "id" not in d or d["id"] == "":
                 d["id"] = str(d.get("line", "1"))
             return d

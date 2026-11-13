@@ -1,0 +1,58 @@
+order: 2
+slug: fastapi-raw-sql-injection
+title: FastAPI Raw SQL Query String Interpolation
+difficulty: easy
+category: security_vuln
+language: python
+estimated_minutes: 5
+defect_target: Find 1 Critical SQL Injection Vulnerability in user search query
+expected_issues:
+- id: crit-sql-injection
+  title: SQL Injection via String Interpolation in text()
+  severity: critical
+  matched_lines:
+  - 16
+  - 17
+  - 18
+  - 19
+  matched_keywords:
+  - sql injection
+  - f-string
+  - text()
+  - bindparam
+  - parameterized
+  - cwe-89
+  line_score: 0.6
+  concept_score: 0.4
+  explanation: Constructing SQL queries using f-string interpolation directly embeds
+    untrusted input into the SQL statement, causing SQL injection (CWE-89). Malicious
+    input in parameter `q` can manipulate query logic or exfiltrate sensitive data.
+hints:
+- tier: 1
+  title: Contextual Clue
+  hint: Check how the search query string `q` is passed into SQLAlchemy's `text()`
+    function.
+- tier: 2
+  title: Vulnerability Class
+  hint: String formatting or f-strings in SQL statements bypass DBAPI parameter escaping,
+    introducing SQL injection (CWE-89).
+- tier: 3
+  title: Line Pointer & Guidance
+  hint: 'Lines 16-19 construct the query with `f"... ''%{q}%''"`. Instead, use SQL
+    parameter placeholders `:pattern` and pass `params={"pattern": f"%{q}%"}` to `session.execute()`.'
+canonical_review: |-
+  Senior Staff Engineer Review Critique:
+  Directly interpolating user input `q` into a raw SQL query using Python f-strings is a classic and severe SQL injection vulnerability (CWE-89 / OWASP Top 10 A03:2021). Even when wrapping queries in SQLAlchemy `text()`, the database driver cannot distinguish between code and data if strings are pre-interpolated before reaching the database driver.
+
+  Recommendation:
+  Always use bound parameters or the ORM abstraction. For raw SQL, write `:pattern` and pass `{"pattern": f"%{q}%"}` as parameters to `session.execute(query, params)`. Better yet, use SQLModel's type-safe query builder: `session.exec(select(User).where(User.username.contains(q))).all()`.
+recommended_fix_diff: |
+  --- a/api/routes/users.py
+  +++ b/api/routes/users.py
+  @@ -15,5 +15,6 @@
+  -    q_str = f"SELECT id FROM users WHERE name LIKE '%{q}%'"
+  +    q_str = "SELECT id FROM users WHERE name LIKE :p"
+       try:
+  -        res = session.execute(text(q)).fetchall()
+  +        params = {"p": f"%{q}%"}
+  +        res = session.execute(text(q), params).fetchall()

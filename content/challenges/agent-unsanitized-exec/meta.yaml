@@ -1,0 +1,67 @@
+order: 1
+slug: agent-unsanitized-exec
+title: Unsanitized Autonomous Calculator Tool Execution
+difficulty: easy
+category: agent_antipatterns
+language: python
+estimated_minutes: 5
+defect_target: Find 1 Critical RCE Vulnerability in agent tool execution
+expected_issues:
+- id: crit-rce-eval
+  title: Arbitrary Code Execution via Unsanitized eval()
+  severity: critical
+  matched_lines:
+  - 27
+  - 28
+  - 29
+  - 30
+  - 31
+  matched_keywords:
+  - eval
+  - exec
+  - rce
+  - remote code execution
+  - builtins
+  - ast
+  - arbitrary code
+  line_score: 0.6
+  concept_score: 0.4
+  explanation: Using python's built-in eval() on unvalidated input permits Remote
+    Code Execution. Even with a restricted namespace, builtins or dunder attributes
+    (__class__, __subclasses__) can be leveraged to escape sandboxing and invoke system
+    binaries.
+hints:
+- tier: 1
+  title: Contextual Clue
+  hint: Analyze how the agent tool parses and computes the mathematical expression
+    passed by reasoning prompts.
+- tier: 2
+  title: Vulnerability Class
+  hint: Invoking Python dynamic code execution (eval/exec) on untrusted strings creates
+    an Arbitrary Code Execution (RCE) vulnerability.
+- tier: 3
+  title: Line Pointer & Guidance
+  hint: 'Look at lines 28-31: `eval(clean_expr, ...)` allows arbitrary Python execution.
+    Replace eval() with an AST-based arithmetic parser using `ast.parse` that strictly
+    permits numeric literals and whitelisted binary operators.'
+canonical_review: |-
+  Senior Staff Engineer Review Critique:
+  Direct evaluation using `eval()` in autonomous agent tool chains is an unacceptable security hazard. LLM-generated strings and user prompts must never be treated as trusted Python code. Passing `{'__builtins__': __builtins__}` leaves the entire standard library and introspection primitives accessible. An attacker or jailbroken agent can pass `__import__('os').system('id')` or traverse `().__class__.__bases__[0].__subclasses__()` to bypass dictionary constraints.
+
+  Recommendation:
+  Do not use `eval()` or `exec()`. Implement a safe expression evaluator using Python's `ast` module (`ast.parse`) with an explicit whitelist of supported AST nodes (e.g. `ast.BinOp`, `ast.UnaryOp`, `ast.Constant`, and operators `ast.Add`, `ast.Sub`, `ast.Mult`, `ast.Div`). Any unrecognized node or attribute traversal must raise an error.
+recommended_fix_diff: "--- a/tools/calculator.py\n+++ b/tools/calculator.py\n@@ -1,4\
+  \ +1,5 @@\n+import ast\n import math\n+import operator\n from typing import Any\n\
+  \ \n+SAFE_OPS = {\n+    ast.Add: operator.add,\n+    ast.Sub: operator.sub,\n+ \
+  \   ast.Mult: operator.mul,\n+    ast.Div: operator.truediv,\n+}\n+\n+def safe_eval(node:\
+  \ ast.AST, allowed: dict[str, Any]) -> Any:\n+    if isinstance(node, ast.Constant):\n\
+  +        if isinstance(node.value, (int, float)):\n+            return node.value\n\
+  +    if isinstance(node, ast.Name) and node.id in allowed:\n+        return allowed[node.id]\n\
+  +    if isinstance(node, ast.BinOp) and type(node.op) in SAFE_OPS:\n+        return\
+  \ SAFE_OPS[type(node.op)](\n+            safe_eval(node.left, allowed),\n+     \
+  \       safe_eval(node.right, allowed),\n+        )\n+    raise ValueError(f\"Unsupported:\
+  \ {type(node).__name__}\")\n+\n class CalculatorTool:\n@@ -25,5 +42,4 @@\n     \
+  \    try:\n-            result = eval(clean_expr, globals(), locals())\n+      \
+  \      parsed_tree = ast.parse(clean_expr, mode=\"eval\")\n+            result =\
+  \ safe_eval(parsed_tree.body, self.allowed_names)\n             return {\"status\"\
+  : \"success\", \"result\": result}\n"
