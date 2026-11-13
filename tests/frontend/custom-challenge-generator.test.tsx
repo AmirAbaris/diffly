@@ -149,7 +149,6 @@ describe("Custom Challenge Generator & Quota Flow", () => {
         "1/5 Used"
       )
 
-      // AI Studio link
       const link = screen.getByTestId("get-gemini-key-link")
       expect(link).toHaveAttribute(
         "href",
@@ -158,7 +157,6 @@ describe("Custom Challenge Generator & Quota Flow", () => {
       expect(link).toHaveAttribute("target", "_blank")
       expect(link).toHaveAttribute("rel", "noopener noreferrer")
 
-      // Privacy reassurance text
       expect(
         screen.getByText(
           /your key is stored only in your browser's local storage/i
@@ -191,18 +189,15 @@ describe("Custom Challenge Generator & Quota Flow", () => {
 
       render(<CustomChallengeModal open={true} />)
 
-      // Quota limit banner
       const banner = await screen.findByTestId("quota-limit-banner")
       expect(banner).toBeInTheDocument()
       expect(
         screen.getByText(/you have reached your limit of 5 custom challenges/i)
       ).toBeInTheDocument()
 
-      // Generate button is disabled
       const submitBtn = screen.getByTestId("generate-challenge-submit-btn")
       expect(submitBtn).toBeDisabled()
 
-      // Quick switch to manage library
       const user = userEvent.setup()
       const manageBtn = screen.getByTestId("quota-manage-btn")
       await user.click(manageBtn)

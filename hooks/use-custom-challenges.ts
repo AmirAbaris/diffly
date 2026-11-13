@@ -33,9 +33,7 @@ export function setStoredGeminiKey(key: string, remember: boolean): void {
     } else {
       window.localStorage.removeItem(GEMINI_API_KEY_STORAGE_KEY)
     }
-  } catch {
-    // Ignore storage write errors in restricted sandbox environments
-  }
+  } catch {}
 }
 
 export function useCustomChallenges() {

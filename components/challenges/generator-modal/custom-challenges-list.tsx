@@ -2,7 +2,8 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { ArrowRight, Loader2, Sparkles, Trash2 } from "lucide-react"
+import { ArrowRight, Inbox, Loader2, Trash2 } from "lucide-react"
+import { DifficultyBadge } from "@/components/challenges/catalog-grid"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -14,7 +15,7 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty"
 import { toast } from "@/hooks/use-toast"
-import type { ChallengeSummary } from "@/types/challenge"
+import { formatLanguageLabel, type ChallengeSummary } from "@/types/challenge"
 
 export interface CustomChallengesListProps {
   challenges: ChallengeSummary[]
@@ -57,9 +58,12 @@ export function CustomChallengesList({
 
   if (isLoading && challenges.length === 0) {
     return (
-      <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">
-        <Loader2 aria-hidden="true" className="mr-2 size-4 animate-spin" />
-        Loading your custom challenges…
+      <div className="flex items-center justify-center gap-2 py-12 text-xs text-muted-foreground">
+        <Loader2
+          aria-hidden="true"
+          className="size-4 animate-spin motion-reduce:animate-none"
+        />
+        <span>Loading your custom challenges…</span>
       </div>
     )
   }
@@ -69,12 +73,12 @@ export function CustomChallengesList({
       <Empty data-testid="custom-challenges-empty" className="border py-8">
         <EmptyHeader>
           <EmptyMedia variant="icon">
-            <Sparkles aria-hidden="true" />
+            <Inbox aria-hidden="true" />
           </EmptyMedia>
           <EmptyTitle>No custom challenges yet</EmptyTitle>
           <EmptyDescription>
             You have 5 available custom slots. Generate your first personalized
-            code review challenge using Gemini!
+            code review challenge using Gemini.
           </EmptyDescription>
         </EmptyHeader>
         <EmptyContent>
@@ -93,7 +97,9 @@ export function CustomChallengesList({
   return (
     <div className="flex flex-col gap-3" data-testid="custom-challenges-list">
       <div className="flex items-center justify-between text-xs text-muted-foreground">
-        <span>Your Private Library ({challenges.length}/5)</span>
+        <span className="tabular-nums">
+          Your Private Library ({challenges.length}/5)
+        </span>
         <span>Click to review or delete to free quota</span>
       </div>
 
@@ -107,26 +113,18 @@ export function CustomChallengesList({
               data-testid={`custom-challenge-item-${ch.id}`}
               className="group flex items-center justify-between gap-3 rounded-lg border border-border bg-card/60 p-3 transition-colors hover:border-foreground/20 hover:bg-muted/40"
             >
-              <div className="flex min-w-0 flex-1 flex-col gap-1">
+              <div className="flex min-w-0 flex-1 flex-col gap-1.5">
                 <div className="flex flex-wrap items-center gap-1.5">
-                  <Badge variant="outline" className="text-[10px] uppercase">
-                    {ch.language}
-                  </Badge>
-                  <Badge
-                    variant={
-                      ch.difficulty === "Hard"
-                        ? "destructive"
-                        : ch.difficulty === "Medium"
-                          ? "warning"
-                          : "success"
-                    }
-                    className="text-[10px]"
-                  >
-                    {ch.difficulty}
+                  <DifficultyBadge difficulty={ch.difficulty} />
+                  <Badge variant="outline">{ch.category}</Badge>
+                  <Badge variant="secondary" className="font-mono">
+                    {formatLanguageLabel(ch.language)}
                   </Badge>
                   {ch.is_solved && (
-                    <Badge variant="success" className="text-[10px]">
-                      Solved
+                    <Badge variant="success" className="tabular-nums">
+                      {ch.best_score !== null
+                        ? `Solved · ${ch.best_score}%`
+                        : "Solved"}
                     </Badge>
                   )}
                 </div>
@@ -134,14 +132,20 @@ export function CustomChallengesList({
                 <Link
                   href={`/challenges/${ch.slug}`}
                   onClick={onCloseModal}
-                  className="truncate text-xs font-medium text-foreground hover:underline"
+                  className="truncate text-sm font-medium text-foreground hover:underline"
                 >
                   {ch.title}
                 </Link>
 
-                <p className="line-clamp-1 text-[11px] text-muted-foreground">
+                <p className="line-clamp-1 text-xs text-muted-foreground">
                   {ch.description}
                 </p>
+
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground tabular-nums">
+                  <span>{ch.estimated_minutes}m</span>
+                  <span aria-hidden="true">·</span>
+                  <span>{ch.line_count} lines</span>
+                </div>
               </div>
 
               <div className="flex shrink-0 items-center gap-1.5">
@@ -152,8 +156,8 @@ export function CustomChallengesList({
                   onClick={onCloseModal}
                 >
                   <Link href={`/challenges/${ch.slug}`}>
-                    Review
-                    <ArrowRight aria-hidden="true" className="ml-1 size-3" />
+                    <span>Review</span>
+                    <ArrowRight aria-hidden="true" data-icon="inline-end" />
                   </Link>
                 </Button>
 
@@ -169,10 +173,10 @@ export function CustomChallengesList({
                   {isDeleting ? (
                     <Loader2
                       aria-hidden="true"
-                      className="size-3.5 animate-spin"
+                      className="animate-spin motion-reduce:animate-none"
                     />
                   ) : (
-                    <Trash2 aria-hidden="true" className="size-3.5" />
+                    <Trash2 aria-hidden="true" />
                   )}
                 </Button>
               </div>

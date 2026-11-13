@@ -3,7 +3,6 @@
 import * as React from "react"
 import { useRouter } from "next/navigation"
 import axios from "axios"
-import { Sparkles } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import {
   Dialog,
@@ -18,7 +17,6 @@ import {
   GeneratorForm,
   type GeneratorFormValues,
 } from "@/components/challenges/generator-modal/generator-form"
-import { GeneratorLoadingPhase } from "@/components/challenges/generator-modal/generator-loading-phase"
 import { useCustomChallenges } from "@/hooks/use-custom-challenges"
 import { toast } from "@/hooks/use-toast"
 import {
@@ -26,10 +24,36 @@ import {
   type CustomChallengeTab,
 } from "@/stores/custom-challenge-modal-store"
 
+export type GeneratorLifecycleState =
+  | { status: "idle" }
+  | { status: "generating" }
+  | { status: "error"; message: string }
+
 export interface CustomChallengeModalProps {
   open?: boolean
   onOpenChange?: (open: boolean) => void
   initialTab?: CustomChallengeTab
+}
+
+function resolveGenerationErrorMessage(err: unknown): string {
+  if (axios.isAxiosError(err)) {
+    const detail = err.response?.data?.detail
+    if (typeof detail === "string") {
+      return detail
+    }
+    if (err.response?.status === 401) {
+      return "Invalid or expired Gemini API key. Please check your key at Google AI Studio."
+    }
+    if (err.response?.status === 429) {
+      return "Gemini API rate limit reached. Please wait a minute and try again."
+    }
+    if (err.response?.status === 400) {
+      return "Quota limit reached. Please delete an existing custom challenge first."
+    }
+  } else if (err instanceof Error) {
+    return err.message
+  }
+  return "Failed to generate challenge. Please check your API key and try again."
 }
 
 export function CustomChallengeModal({
@@ -50,9 +74,12 @@ export function CustomChallengeModal({
     React.useState<CustomChallengeTab | null>(null)
   const activeTab = tabOverride ?? defaultTab
 
-  const [isGenerating, setIsGenerating] = React.useState(false)
-  const [currentTopic, setCurrentTopic] = React.useState("")
-  const [errorMessage, setErrorMessage] = React.useState<string | null>(null)
+  const [lifecycle, setLifecycle] = React.useState<GeneratorLifecycleState>({
+    status: "idle",
+  })
+
+  const isGenerating = lifecycle.status === "generating"
+  const errorMessage = lifecycle.status === "error" ? lifecycle.message : null
 
   const {
     customChallenges,
@@ -66,11 +93,10 @@ export function CustomChallengeModal({
 
   const handleOpenChange = (newOpen: boolean) => {
     if (isGenerating) {
-      // Prevent accidental dismissal while AI model generation is in flight
       return
     }
     setTabOverride(null)
-    setErrorMessage(null)
+    setLifecycle({ status: "idle" })
     if (isControlled) {
       onOpenChange?.(newOpen)
     } else {
@@ -84,9 +110,7 @@ export function CustomChallengeModal({
 
   const handleGenerate = async (values: GeneratorFormValues) => {
     try {
-      setIsGenerating(true)
-      setCurrentTopic(values.topic)
-      setErrorMessage(null)
+      setLifecycle({ status: "generating" })
 
       const generated = await generateCustomChallenge(
         {
@@ -98,36 +122,24 @@ export function CustomChallengeModal({
       )
 
       toast({
-        title: "Challenge generated!",
+        title: "Challenge generated",
         description: `"${generated.title}" is ready for code review.`,
         variant: "default",
       })
 
-      setIsGenerating(false)
-      handleClose()
+      setLifecycle({ status: "idle" })
+      setTabOverride(null)
+      if (isControlled) {
+        onOpenChange?.(false)
+      } else {
+        storeSetIsOpen(false)
+      }
       router.push(`/challenges/${generated.slug}`)
     } catch (err: unknown) {
-      setIsGenerating(false)
-      let message =
-        "Failed to generate challenge. Please check your API key and try again."
-      if (axios.isAxiosError(err)) {
-        const detail = err.response?.data?.detail
-        if (typeof detail === "string") {
-          message = detail
-        } else if (err.response?.status === 401) {
-          message =
-            "Invalid or expired Gemini API key. Please check your key at Google AI Studio."
-        } else if (err.response?.status === 429) {
-          message =
-            "Gemini API rate limit reached. Please wait a minute and try again."
-        } else if (err.response?.status === 400) {
-          message =
-            "Quota limit reached. Please delete an existing custom challenge first."
-        }
-      } else if (err instanceof Error) {
-        message = err.message
-      }
-      setErrorMessage(message)
+      setLifecycle({
+        status: "error",
+        message: resolveGenerationErrorMessage(err),
+      })
     }
   }
 
@@ -138,18 +150,13 @@ export function CustomChallengeModal({
         data-testid="custom-challenge-modal-content"
       >
         <DialogHeader className="gap-1">
-          <div className="flex items-center justify-between pr-4">
-            <div className="flex items-center gap-2">
-              <div className="flex size-7 items-center justify-center rounded-md bg-primary/10 text-primary">
-                <Sparkles aria-hidden="true" className="size-4" />
-              </div>
-              <DialogTitle className="text-base font-semibold tracking-tight">
-                Custom Challenge Generator
-              </DialogTitle>
-            </div>
+          <div className="flex flex-wrap items-center gap-2 pr-8">
+            <DialogTitle className="text-base font-semibold tracking-tight">
+              Custom Challenge Generator
+            </DialogTitle>
             <Badge
-              variant={isQuotaFull ? "warning" : "outline"}
-              className="text-xs tabular-nums"
+              variant={isQuotaFull ? "warning" : "secondary"}
+              className="tabular-nums"
               data-testid="modal-quota-badge"
             >
               {total}/{quotaLimit} Used
@@ -161,55 +168,54 @@ export function CustomChallengeModal({
           </DialogDescription>
         </DialogHeader>
 
-        {isGenerating ? (
-          <GeneratorLoadingPhase topic={currentTopic} />
-        ) : (
-          <Tabs
-            value={activeTab}
-            onValueChange={(val) => {
-              setTabOverride(val as CustomChallengeTab)
-              setErrorMessage(null)
-            }}
-            className="w-full"
-          >
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger
-                value="generate"
-                data-testid="tab-generate-trigger"
-                className="text-xs"
-              >
-                Create Challenge
-              </TabsTrigger>
-              <TabsTrigger
-                value="manage"
-                data-testid="tab-manage-trigger"
-                className="text-xs"
-              >
-                Manage Library ({total}/{quotaLimit})
-              </TabsTrigger>
-            </TabsList>
+        <Tabs
+          value={activeTab}
+          onValueChange={(val) => {
+            if (isGenerating) return
+            setTabOverride(val as CustomChallengeTab)
+            setLifecycle({ status: "idle" })
+          }}
+          className="w-full"
+        >
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger
+              value="generate"
+              disabled={isGenerating}
+              data-testid="tab-generate-trigger"
+              className="text-xs"
+            >
+              Create Challenge
+            </TabsTrigger>
+            <TabsTrigger
+              value="manage"
+              disabled={isGenerating}
+              data-testid="tab-manage-trigger"
+              className="text-xs text-nowrap tabular-nums"
+            >
+              Manage Library ({total}/{quotaLimit})
+            </TabsTrigger>
+          </TabsList>
 
-            <TabsContent value="generate" className="mt-4">
-              <GeneratorForm
-                isQuotaFull={isQuotaFull}
-                isGenerating={isGenerating}
-                errorMessage={errorMessage}
-                onSubmit={handleGenerate}
-                onSwitchToManage={() => setTabOverride("manage")}
-              />
-            </TabsContent>
+          <TabsContent value="generate" className="mt-4">
+            <GeneratorForm
+              isQuotaFull={isQuotaFull}
+              isGenerating={isGenerating}
+              errorMessage={errorMessage}
+              onSubmit={handleGenerate}
+              onSwitchToManage={() => setTabOverride("manage")}
+            />
+          </TabsContent>
 
-            <TabsContent value="manage" className="mt-4">
-              <CustomChallengesList
-                challenges={customChallenges}
-                isLoading={isLoading}
-                onDelete={deleteCustomChallenge}
-                onSwitchToGenerate={() => setTabOverride("generate")}
-                onCloseModal={handleClose}
-              />
-            </TabsContent>
-          </Tabs>
-        )}
+          <TabsContent value="manage" className="mt-4">
+            <CustomChallengesList
+              challenges={customChallenges}
+              isLoading={isLoading}
+              onDelete={deleteCustomChallenge}
+              onSwitchToGenerate={() => setTabOverride("generate")}
+              onCloseModal={handleClose}
+            />
+          </TabsContent>
+        </Tabs>
       </DialogContent>
     </Dialog>
   )
