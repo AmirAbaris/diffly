@@ -2,6 +2,7 @@
   "name": "diffly",
   "version": "0.1.0",
   "type": "module",
+  "license": "MIT",
   "private": true,
   "engines": {
     "node": ">=22.0.0"
