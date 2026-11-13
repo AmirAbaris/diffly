@@ -1,0 +1,77 @@
+order: 15
+slug: async-race-condition-db-transaction
+title: Async Race Condition in Non-Atomic Balance Transfer
+difficulty: medium
+category: concurrency
+language: typescript
+estimated_minutes: 6
+defect_target: Find 1 High Severity Race Condition in Balance Transfer Handler
+expected_issues:
+- id: high-async-race-balance-transfer
+  title: Non-Atomic Check-Then-Act Balance Transfer Vulnerable to Double Spending
+  severity: high
+  matched_lines:
+  - 19
+  - 20
+  - 21
+  - 23
+  - 36
+  - 37
+  - 38
+  - 41
+  matched_keywords:
+  - race condition
+  - transaction
+  - atomic
+  - $transaction
+  - double spend
+  - check-then-act
+  - cwe-362
+  line_score: 0.6
+  concept_score: 0.4
+  explanation: Reading the sender balance and updating it across multiple non-transactional queries with intermediate `await` points introduces a race condition (CWE-362) that permits double-spending funds via concurrent requests.
+hints:
+- tier: 1
+  title: Contextual Clue
+  hint: Analyze the sequence of operations between reading `senderWallet.balance` and executing the `prisma.wallet.update` calls.
+- tier: 2
+  title: Vulnerability Class
+  hint: Concurrency race conditions (Time-of-Check to Time-of-Use / CWE-362) occur when state verification and state mutations are not executed atomically.
+- tier: 3
+  title: Line Pointer & Guidance
+  hint: 'Look at lines 19-44. Wrap the balance check and both updates inside an interactive transaction (`prisma.$transaction(async (tx) => { ... })`) with conditional atomic updates (`balance: { decrement: amount }`).'
+canonical_review: |-
+  Senior Staff Engineer Review Critique:
+  Performing a check-then-act balance verification across multiple asynchronous Prisma queries without database transaction boundaries is a catastrophic concurrency flaw in financial systems. 
+
+  When two transfer requests arrive within milliseconds of each other, both read the identical initial balance (`$100`), both pass the balance check, and both decrement the wallet sequentially, allowing a user to transfer `$200` from an account holding only `$100`.
+
+  Recommendation:
+  Always execute multi-account state mutations inside an atomic transaction: `prisma.$transaction`. Utilize atomic decrement operations with a condition (`UPDATE wallets SET balance = balance - :amount WHERE id = :id AND balance >= :amount`) or row-level pessimistic locking (`SELECT ... FOR UPDATE`).
+recommended_fix_diff: |
+  --- a/services/wallet.ts
+  +++ b/services/wallet.ts
+  @@ -18,12 +18,15 @@
+  -  const senderWallet = await prisma.wallet.findUnique({
+  -    where: { userId: senderId },
+  -  });
+  -
+  -  if (!senderWallet || senderWallet.balance < amount) {
+  -    return res.status(400).json({ error: "Insufficient balance" });
+  -  }
+  -
+  -  // Asynchronous audit logging outside atomic boundary
+  -  await notifyAuditLog({
+  +  await prisma.$transaction(async (tx) => {
+  +    const updatedSender = await tx.wallet.updateMany({
+  +      where: { userId: senderId, balance: { gte: amount } },
+  +      data: { balance: { decrement: amount } },
+  +    });
+  +    if (updatedSender.count === 0) {
+  +      throw new Error("Insufficient balance or concurrent update conflict");
+  +    }
+  +    await tx.wallet.update({
+  +      where: { userId: recipientId },
+  +      data: { balance: { increment: amount } },
+  +    });
+  +  });

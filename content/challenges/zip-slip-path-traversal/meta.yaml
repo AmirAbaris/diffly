@@ -1,0 +1,57 @@
+order: 11
+slug: zip-slip-path-traversal
+title: Path Traversal via Unsanitized Zip Archive Extraction
+difficulty: medium
+category: security_vuln
+language: typescript
+estimated_minutes: 7
+defect_target: Find 1 High Severity Path Traversal Vulnerability in Archive Extractor
+expected_issues:
+- id: high-zip-slip-traversal
+  title: Arbitrary File Write via Zip Slip Path Traversal (CWE-22)
+  severity: high
+  matched_lines:
+  - 21
+  - 22
+  - 23
+  - 32
+  - 33
+  matched_keywords:
+  - zip slip
+  - path traversal
+  - path.join
+  - destinationPath
+  - arbitrary file write
+  - cwe-22
+  line_score: 0.6
+  concept_score: 0.4
+  explanation: Directly concatenating archive entry names using `path.join(destinationDirectory, file.path)` is vulnerable to Zip Slip (CWE-22). File paths containing `../` escape the target root and overwrite arbitrary host files.
+hints:
+- tier: 1
+  title: Contextual Clue
+  hint: Review how `destinationPath` is constructed from archive entry paths in the loop.
+- tier: 2
+  title: Vulnerability Class
+  hint: Zip Slip is a form of directory traversal (CWE-22) that allows an archive to write files outside the target directory.
+- tier: 3
+  title: Line Pointer & Guidance
+  hint: 'Look at line 22: `path.join(destinationDirectory, file.path)`. Resolve the path using `path.resolve` and verify that `resolvedPath.startsWith(path.resolve(destinationDirectory) + path.sep)` before writing.'
+canonical_review: |-
+  Senior Staff Engineer Review Critique:
+  Extracting files from an archive using `path.join(destinationDirectory, file.path)` without verifying canonical path containment is vulnerable to the Zip Slip path traversal vulnerability (CWE-22). 
+
+  Attackers can create archives where filenames contain `../../` relative directory traversal elements. When extracted, files are written outside the intended directory, potentially overwriting application binaries, cron jobs, or `.ssh/authorized_keys`.
+
+  Recommendation:
+  Always resolve the path using `path.resolve` and check that the resolved destination starts with the resolved target directory prefix before extracting any entry.
+recommended_fix_diff: |
+  --- a/utils/extractor.ts
+  +++ b/utils/extractor.ts
+  @@ -21,4 +21,8 @@
+       // Construct destination file path from archive entry name
+  -    const destinationPath = path.join(destinationDirectory, file.path);
+  +    const resolvedRoot = path.resolve(destinationDirectory);
+  +    const destinationPath = path.resolve(resolvedRoot, file.path);
+  +    if (!destinationPath.startsWith(resolvedRoot + path.sep)) {
+  +      throw new Error(`Path traversal attempt detected in entry: ${file.path}`);
+  +    }

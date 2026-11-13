@@ -1,0 +1,69 @@
+order: 21
+slug: webhook-hmac-replay-attack
+title: Broken Replay Protection in Webhook HMAC Verifier
+difficulty: medium
+category: logic_flaws
+language: python
+estimated_minutes: 6
+defect_target: Find 1 High Severity Replay Attack Vulnerability in Signature Guard
+expected_issues:
+- id: high-webhook-replay-attack
+  title: Missing Timestamp Freshness Validation Permitting Webhook Replay Attacks
+  severity: high
+  matched_lines:
+  - 16
+  - 28
+  - 29
+  - 30
+  - 31
+  matched_keywords:
+  - replay attack
+  - timestamp
+  - freshness check
+  - x_webhook_timestamp
+  - hmac
+  - signature
+  - cwe-294
+  line_score: 0.6
+  concept_score: 0.4
+  explanation: The webhook verifier ignores `X-Webhook-Timestamp` freshness and omits the timestamp from the HMAC digest computation. Captured webhook payloads can be replayed indefinitely to trigger duplicate billing actions (CWE-294).
+hints:
+- tier: 1
+  title: Contextual Clue
+  hint: Check how the `x_webhook_timestamp` header parameter is used during verification.
+- tier: 2
+  title: Vulnerability Class
+  hint: Replay attacks (CWE-294) occur when signed messages lack timestamp expiration or nonce freshness guarantees.
+- tier: 3
+  title: Line Pointer & Guidance
+  hint: 'Look at lines 16 and 29-31. Verify that `abs(time.time() - float(x_webhook_timestamp)) <= 300` and construct the HMAC signature over `f"{x_webhook_timestamp}.".encode() + raw_body`.'
+canonical_review: |-
+  Senior Staff Engineer Review Critique:
+  Verifying the HMAC of a webhook payload without enforcing timestamp freshness creates an immediate replay vulnerability (CWE-294). 
+
+  An attacker or compromised intermediary that observes a valid `payment_intent.succeeded` webhook can replay the exact HTTP payload hours or days later. Because the HMAC signature remains valid against the raw body, the server processes the event again, granting duplicate credits or subscriptions.
+
+  Recommendation:
+  1. Validate that `abs(time.time() - int(x_webhook_timestamp)) < 300` seconds (5 minutes tolerance for clock drift).
+  2. Bind the timestamp to the signature by signing `f"t={x_webhook_timestamp},{raw_body.decode()}"`.
+  3. Store processed webhook event IDs in Redis or database with TTL for idempotency deduplication.
+recommended_fix_diff: |
+  --- a/webhooks/stripe.py
+  +++ b/webhooks/stripe.py
+  @@ -24,4 +24,10 @@
+           )
+   
+  +    try:
+  +        event_time = int(x_webhook_timestamp)
+  +        if abs(time.time() - event_time) > 300:
+  +            raise HTTPException(status_code=400, detail="Webhook timestamp expired")
+  +    except ValueError:
+  +        raise HTTPException(status_code=400, detail="Invalid timestamp header")
+  +
+  -    expected_sig = hmac.new(
+  -        WEBHOOK_SECRET, msg=raw_body, digestmod=hashlib.sha256
+  -    ).hexdigest()
+  +    signed_payload = f"{event_time}.".encode() + raw_body
+  +    expected_sig = hmac.new(
+  +        WEBHOOK_SECRET, msg=signed_payload, digestmod=hashlib.sha256
+  +    ).hexdigest()

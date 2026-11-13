@@ -1,0 +1,52 @@
+order: 20
+slug: pagination-cursor-off-by-one
+title: Off-by-One Boundary Record Skip in Pagination Cursor
+difficulty: easy
+category: logic_flaws
+language: typescript
+estimated_minutes: 5
+defect_target: Find 1 Medium Severity Off-by-One Pagination Flaw in Feed Service
+expected_issues:
+- id: med-pagination-off-by-one
+  title: Erroneous Result Array Slicing Skipping Boundary Record
+  severity: medium
+  matched_lines:
+  - 36
+  - 37
+  - 38
+  matched_keywords:
+  - off-by-one
+  - records.slice
+  - pagination
+  - cursor
+  - boundary
+  - keyset pagination
+  line_score: 0.6
+  concept_score: 0.4
+  explanation: Calling `records.slice(1, limit + 1)` when `params.afterCursor` is present discards the first returned record of each page. Because the database query already filters records with `gt`, slicing index 1 skips valid records.
+hints:
+- tier: 1
+  title: Contextual Clue
+  hint: Compare how `records` are sliced in `pageItems` when `params.afterCursor` is provided versus when it is omitted.
+- tier: 2
+  title: Vulnerability Class
+  hint: Off-by-one array indexing / slicing defects cause boundary elements to be dropped or duplicated in paginated APIs.
+- tier: 3
+  title: Line Pointer & Guidance
+  hint: 'Look at line 38: `records.slice(1, limit + 1)`. Because Prisma `where` already excluded the previous page cursor, the query returns only new records. Always slice `records.slice(0, limit)`.'
+canonical_review: |-
+  Senior Staff Engineer Review Critique:
+  In cursor pagination where the database `where` condition already filters out previously retrieved records, slicing `records.slice(1, limit + 1)` is a classic off-by-one indexing bug. 
+
+  The author incorrectly assumed the query returned the cursor item as index 0. Because the database query executed with an exclusive `gt` filter, index 0 is actually the first fresh record of the new page. Slicing from index 1 silently drops one record on every page navigation.
+
+  Recommendation:
+  Always slice `records.slice(0, limit)`. Keep pagination logic consistent between first page queries and subsequent cursor queries.
+recommended_fix_diff: |
+  --- a/services/feed.ts
+  +++ b/services/feed.ts
+  @@ -36,4 +36,3 @@
+  -  // Bug: Slices off first record assuming it was the cursor boundary
+  -  const pageItems = params.afterCursor ? records.slice(1, limit + 1) : records.slice(0, limit);
+  +  const pageItems = records.slice(0, limit);
+     const hasMore = records.length > limit;

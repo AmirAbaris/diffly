@@ -1,0 +1,60 @@
+order: 12
+slug: idor-tenant-data-leak
+title: Insecure Direct Object Reference in Multi-Tenant API
+difficulty: easy
+category: security_vuln
+language: typescript
+estimated_minutes: 5
+defect_target: Find 1 High Severity IDOR Access Control Defect in Resource Route
+expected_issues:
+- id: high-idor-tenant-leak
+  title: Missing Tenant Ownership Verification in Resource Deletion (IDOR)
+  severity: high
+  matched_lines:
+  - 24
+  - 25
+  - 26
+  - 33
+  - 34
+  - 35
+  matched_keywords:
+  - idor
+  - tenantId
+  - insecure direct object reference
+  - tenant isolation
+  - authorization
+  - cwe-639
+  line_score: 0.6
+  concept_score: 0.4
+  explanation: Querying and deleting documents by `documentId` without scoping to `user.tenantId` creates an IDOR vulnerability (CWE-639 / BOLA), allowing authenticated users to delete documents belonging to other organizations.
+hints:
+- tier: 1
+  title: Contextual Clue
+  hint: Look closely at the `where` filter passed into Prisma's `findUnique` and `delete` calls.
+- tier: 2
+  title: Vulnerability Class
+  hint: Insecure Direct Object Reference (IDOR / CWE-639) occurs when access control checks fail to verify that the requesting subject owns the target object.
+- tier: 3
+  title: Line Pointer & Guidance
+  hint: 'Look at lines 24-26 and 33-35: `where: { id: documentId }`. Scope the query to the authenticated organization: `where: { id: documentId, tenantId: user.tenantId }`.'
+canonical_review: |-
+  Senior Staff Engineer Review Critique:
+  Deleting records directly by primary key without scoping to the requesting tenant violates fundamental multi-tenant isolation principles (OWASP Top 10 A01:2021 Broken Access Control / BOLA).
+
+  In multi-tenant SaaS architectures, relying on unguessable IDs (e.g. UUIDs) is security through obscurity. Any authenticated user can enumerate or replay IDs discovered from logs, webhooks, or shared links to delete data belonging to other tenants.
+
+  Recommendation:
+  Always include the caller's verified `tenantId` in every database query filter: `where: { id: documentId, tenantId: user.tenantId }`. Ensure composite indexes exist on `(tenantId, id)`.
+recommended_fix_diff: |
+  --- a/routes/documents.ts
+  +++ b/routes/documents.ts
+  @@ -24,3 +24,3 @@
+       const existingDoc = await prisma.document.findUnique({
+  -      where: { id: documentId },
+  +      where: { id: documentId, tenantId: user.tenantId },
+       });
+  @@ -33,3 +33,3 @@
+       await prisma.document.delete({
+  -      where: { id: documentId },
+  +      where: { id: documentId, tenantId: user.tenantId },
+       });

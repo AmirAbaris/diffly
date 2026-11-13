@@ -27,12 +27,16 @@ export function ChallengeCatalog() {
     rawCategory === "Agent Antipaths" ||
     rawCategory === "Security" ||
     rawCategory === "Concurrency" ||
-    rawCategory === "Performance"
+    rawCategory === "Performance" ||
+    rawCategory === "Logic Flaws"
       ? rawCategory
       : "All"
 
   const language: Language | "All" =
-    rawLanguage === "python" || rawLanguage === "typescript"
+    rawLanguage === "python" ||
+    rawLanguage === "typescript" ||
+    rawLanguage === "go" ||
+    rawLanguage === "rust"
       ? rawLanguage
       : "All"
 

@@ -20,16 +20,17 @@ def test_list_challenges_returns_challenge_summaries(
     response = client.get("/api/challenges")
     assert response.status_code == 200
     data = response.json()
-    assert len(data) == 5
+    assert len(data) == 25
 
     slugs = {item["slug"] for item in data}
-    assert slugs == {
+    expected_sample_slugs = {
         "agent-unsanitized-exec",
         "fastapi-raw-sql-injection",
         "nextjs-race-condition-useeffect",
         "agent-prompt-injection-leak",
         "asyncio-unhandled-task-gather",
     }
+    assert expected_sample_slugs.issubset(slugs)
 
     # Verify ChallengeSummary metadata on a challenge
     item = next(ch for ch in data if ch["slug"] == "agent-unsanitized-exec")
@@ -63,21 +64,21 @@ def test_list_challenges_filter_by_difficulty(client: TestClient, session: Sessi
     res = client.get("/api/challenges?difficulty=Easy")
     assert res.status_code == 200
     easy_items = res.json()
-    assert len(easy_items) == 2
+    assert len(easy_items) == 7
     assert all(item["difficulty"] == "Easy" for item in easy_items)
 
     # Medium
     res_med = client.get("/api/challenges?difficulty=Medium")
     assert res_med.status_code == 200
     med_items = res_med.json()
-    assert len(med_items) == 2
+    assert len(med_items) == 14
 
     # Hard
     res_hard = client.get("/api/challenges?difficulty=Hard")
     assert res_hard.status_code == 200
     hard_items = res_hard.json()
-    assert len(hard_items) == 1
-    assert hard_items[0]["slug"] == "agent-prompt-injection-leak"
+    assert len(hard_items) == 4
+    assert any(item["slug"] == "agent-prompt-injection-leak" for item in hard_items)
 
 
 def test_list_challenges_filter_by_category(client: TestClient, session: Session):
@@ -87,9 +88,13 @@ def test_list_challenges_filter_by_category(client: TestClient, session: Session
     res = client.get("/api/challenges?category=Concurrency")
     assert res.status_code == 200
     concurrency_items = res.json()
-    assert len(concurrency_items) == 2
+    assert len(concurrency_items) == 5
     slugs = {item["slug"] for item in concurrency_items}
-    assert slugs == {"nextjs-race-condition-useeffect", "asyncio-unhandled-task-gather"}
+    expected_slugs = {
+        "nextjs-race-condition-useeffect",
+        "asyncio-unhandled-task-gather",
+    }
+    assert expected_slugs.issubset(slugs)
 
 
 def test_list_challenges_filter_by_language(client: TestClient, session: Session):
@@ -99,12 +104,20 @@ def test_list_challenges_filter_by_language(client: TestClient, session: Session
     res = client.get("/api/challenges?language=typescript")
     assert res.status_code == 200
     ts_items = res.json()
-    assert len(ts_items) == 1
-    assert ts_items[0]["slug"] == "nextjs-race-condition-useeffect"
+    assert len(ts_items) == 8
+    assert any(item["slug"] == "nextjs-race-condition-useeffect" for item in ts_items)
 
     res_py = client.get("/api/challenges?language=python")
     assert res_py.status_code == 200
-    assert len(res_py.json()) == 4
+    assert len(res_py.json()) == 10
+
+    res_go = client.get("/api/challenges?language=go")
+    assert res_go.status_code == 200
+    assert len(res_go.json()) == 5
+
+    res_rs = client.get("/api/challenges?language=rust")
+    assert res_rs.status_code == 200
+    assert len(res_rs.json()) == 2
 
 
 def test_list_challenges_filter_by_search(client: TestClient, session: Session):
@@ -127,7 +140,7 @@ def test_list_challenges_filter_combinations(client: TestClient, session: Sessio
     res = client.get("/api/challenges?difficulty=Easy&language=python")
     assert res.status_code == 200
     items = res.json()
-    assert len(items) == 2
+    assert len(items) == 5
     assert all(
         item["difficulty"] == "Easy" and item["language"] == "python" for item in items
     )
@@ -136,8 +149,8 @@ def test_list_challenges_filter_combinations(client: TestClient, session: Sessio
     res = client.get("/api/challenges?category=Concurrency&language=typescript")
     assert res.status_code == 200
     items = res.json()
-    assert len(items) == 1
-    assert items[0]["slug"] == "nextjs-race-condition-useeffect"
+    assert len(items) == 2
+    assert "nextjs-race-condition-useeffect" in {item["slug"] for item in items}
 
     # Search + Difficulty
     res = client.get("/api/challenges?search=injection&difficulty=Hard")
@@ -147,7 +160,7 @@ def test_list_challenges_filter_combinations(client: TestClient, session: Sessio
     assert items[0]["slug"] == "agent-prompt-injection-leak"
 
     # Combination with no matching results
-    res_empty = client.get("/api/challenges?difficulty=Hard&language=typescript")
+    res_empty = client.get("/api/challenges?difficulty=Easy&language=rust")
     assert res_empty.status_code == 200
     assert res_empty.json() == []
 

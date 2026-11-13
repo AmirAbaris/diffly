@@ -1,0 +1,72 @@
+order: 17
+slug: rust-unbounded-channel-oom
+title: Unbounded Channel Buffer and Memory Exhaustion
+difficulty: medium
+category: performance
+language: rust
+estimated_minutes: 7
+defect_target: Find 1 High Severity Unbounded Buffer OOM Defect in Pipeline
+expected_issues:
+- id: high-unbounded-channel-oom
+  title: Unbounded mpsc Channel Buffering Leading to OOM Crash Under Load
+  severity: high
+  matched_lines:
+  - 18
+  - 19
+  - 20
+  - 24
+  - 25
+  - 26
+  matched_keywords:
+  - unbounded_channel
+  - backpressure
+  - mpsc
+  - memory exhaustion
+  - oom
+  - channel buffer
+  - bounded
+  line_score: 0.6
+  concept_score: 0.4
+  explanation: Using `tokio::sync::mpsc::unbounded_channel` provides no backpressure against fast producers. When the storage consumer lags behind incoming traffic, in-flight messages accumulate unboundedly in RAM until process OOM termination.
+hints:
+- tier: 1
+  title: Contextual Clue
+  hint: Look at the channel initialization in `TelemetryPipeline::new` and how messages are pushed into it.
+- tier: 2
+  title: Vulnerability Class
+  hint: Uncontrolled resource consumption (CWE-400) / missing backpressure causes memory exhaustion under burst traffic.
+- tier: 3
+  title: Line Pointer & Guidance
+  hint: 'Look at line 19: `mpsc::unbounded_channel()`. Switch to a bounded channel `mpsc::channel(capacity)` and make `enqueue_event` an async function that awaits `self.sender.send(event).await` or rejects messages when saturated.'
+canonical_review: |-
+  Senior Staff Engineer Review Critique:
+  Utilizing unbounded channels (`tokio::sync::mpsc::unbounded_channel`) in production network services is an anti-pattern. While convenient because `send()` is synchronous, unbounded queues transfer downstream consumer backpressure risk directly into heap memory exhaustion.
+
+  If the downstream disk writer experiences a 500ms latency stall during an ingestion burst of 50,000 requests/sec, the queue will buffer gigabytes of telemetry payloads until the operating system terminates the process via OOM killer.
+
+  Recommendation:
+  Always use bounded channels with explicit capacity (e.g. `mpsc::channel(10_000)`). The producer must either await `send().await` to propagate natural TCP backpressure to clients or return HTTP 429 Too Many Requests when the buffer is saturated.
+recommended_fix_diff: |
+  --- a/pipeline/telemetry.rs
+  +++ b/pipeline/telemetry.rs
+  @@ -13,4 +13,4 @@
+   pub struct TelemetryPipeline {
+  -    sender: mpsc::UnboundedSender<TelemetryEvent>,
+  +    sender: mpsc::Sender<TelemetryEvent>,
+   }
+   
+   impl TelemetryPipeline {
+  -    pub fn new() -> (Self, mpsc::UnboundedReceiver<TelemetryEvent>) {
+  -        let (tx, rx) = mpsc::unbounded_channel::<TelemetryEvent>();
+  +    pub fn new(capacity: usize) -> (Self, mpsc::Receiver<TelemetryEvent>) {
+  +        let (tx, rx) = mpsc::channel::<TelemetryEvent>(capacity);
+           (Self { sender: tx }, rx)
+       }
+  @@ -23,4 +23,4 @@
+  -    pub fn enqueue_event(&self, event: TelemetryEvent) -> Result<(), &'static str> {
+  -        self.sender
+  -            .send(event)
+  +    pub async fn enqueue_event(&self, event: TelemetryEvent) -> Result<(), &'static str> {
+  +        self.sender
+  +            .send(event).await
+               .map_err(|_| "Failed to enqueue event: receiver dropped")

@@ -1,9 +1,9 @@
 export type Difficulty = "Easy" | "Medium" | "Hard"
 
 export type Category =
-  "Agent Antipaths" | "Security" | "Concurrency" | "Performance"
+  "Agent Antipaths" | "Security" | "Concurrency" | "Performance" | "Logic Flaws"
 
-export type Language = "python" | "typescript"
+export type Language = "python" | "typescript" | "go" | "rust"
 
 export interface ChallengeSummary {
   id: number

@@ -1,0 +1,66 @@
+order: 19
+slug: toctou-file-lock
+title: Time-of-Check to Time-of-Use Race in File Lock
+difficulty: medium
+category: logic_flaws
+language: go
+estimated_minutes: 6
+defect_target: Find 1 Medium Severity TOCTOU File Race in Lock Manager
+expected_issues:
+- id: med-toctou-file-lock
+  title: Non-Atomic File Existence Check and Creation (TOCTOU)
+  severity: medium
+  matched_lines:
+  - 23
+  - 24
+  - 25
+  - 30
+  - 31
+  - 32
+  matched_keywords:
+  - toctou
+  - race condition
+  - os.Stat
+  - os.Create
+  - os.O_EXCL
+  - atomic
+  - cwe-367
+  line_score: 0.6
+  concept_score: 0.4
+  explanation: Checking file existence with `os.Stat` before calling `os.Create` creates a Time-of-Check to Time-of-Use (TOCTOU) race condition (CWE-367). Multiple concurrent processes can acquire the lock simultaneously.
+hints:
+- tier: 1
+  title: Contextual Clue
+  hint: Analyze the time gap between `os.Stat` and `os.Create` in `Acquire()`.
+- tier: 2
+  title: Vulnerability Class
+  hint: Time-of-Check to Time-of-Use (TOCTOU / CWE-367) occurs when state changes between a condition check and the subsequent dependent operation.
+- tier: 3
+  title: Line Pointer & Guidance
+  hint: 'Look at lines 23-32. Remove `os.Stat` and atomically create the lockfile using `os.OpenFile(l.path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)`. If the file already exists, `O_EXCL` fails atomically.'
+canonical_review: |-
+  Senior Staff Engineer Review Critique:
+  Separating lockfile checking from lockfile creation is a textbook TOCTOU concurrency flaw (CWE-367). In a multi-process environment, another process can run `os.Create()` immediately after the first process checks `os.Stat()`. Both processes will believe they exclusively hold the lock.
+
+  Recommendation:
+  Use OS-level atomic creation flags. Replace `os.Stat` followed by `os.Create` with a single atomic call: `os.OpenFile(l.path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)`. The `O_EXCL` flag guarantees that file creation succeeds if and only if the file did not already exist, with kernel-level atomicity.
+recommended_fix_diff: |
+  --- a/lock/process.go
+  +++ b/lock/process.go
+  @@ -22,12 +22,6 @@
+  -	// Step 1: Check if lockfile already exists
+  -	_, err := os.Stat(l.path)
+  -	if err == nil {
+  -		return ErrAlreadyLocked
+  -	} else if !os.IsNotExist(err) {
+  -		return fmt.Errorf("failed to inspect lockfile status: %w", err)
+  -	}
+  -
+  -	// Step 2: Time-of-Check to Time-of-Use race window.
+  -	file, err := os.Create(l.path)
+  +	file, err := os.OpenFile(l.path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+   	if err != nil {
+  +		if os.IsExist(err) {
+  +			return ErrAlreadyLocked
+  +		}
+   		return fmt.Errorf("failed to create lockfile: %w", err)

@@ -59,12 +59,20 @@ export function CodeViewer({
     if (lang === "js" || lang === "javascript") return "javascript"
     if (lang === "tsx") return "tsx"
     if (lang === "jsx") return "jsx"
+    if (lang === "go") return "go"
+    if (lang === "rust" || lang === "rs") return "rust"
     return "python"
   }, [language])
 
   const resolvedFileName =
     fileName ||
-    (normalizedLanguage === "python" ? "solution.py" : "solution.ts")
+    (normalizedLanguage === "python"
+      ? "solution.py"
+      : normalizedLanguage === "go"
+        ? "solution.go"
+        : normalizedLanguage === "rust"
+          ? "solution.rs"
+          : "solution.ts")
 
   const flaggedSet = React.useMemo(() => new Set(flaggedLines), [flaggedLines])
 

@@ -1,0 +1,63 @@
+order: 9
+slug: jwt-none-algorithm-auth-bypass
+title: JWT None Algorithm & Key Confusion Bypass
+difficulty: hard
+category: security_vuln
+language: typescript
+estimated_minutes: 8
+defect_target: Find 1 Critical JWT Authentication Bypass in Token Verifier
+expected_issues:
+- id: crit-jwt-auth-bypass
+  title: Insecure Token Verification Permitting Algorithm 'none' and Key Confusion
+  severity: critical
+  matched_lines:
+  - 31
+  - 32
+  - 33
+  - 34
+  - 35
+  - 36
+  matched_keywords:
+  - none algorithm
+  - jwt.verify
+  - key confusion
+  - algorithms
+  - rs256
+  - authentication bypass
+  - cwe-347
+  line_score: 0.6
+  concept_score: 0.4
+  explanation: "Accepting `alg: \"none\"` bypasses token signature verification completely. Calling `jwt.verify()` without pinning `algorithms: [\"RS256\"]` also permits HMAC/RSA key confusion attacks, allowing arbitrary privilege escalation."
+hints:
+- tier: 1
+  title: Contextual Clue
+  hint: Review how the middleware branches based on the token's header `alg` field.
+- tier: 2
+  title: Vulnerability Class
+  hint: Improper verification of cryptographic signatures (CWE-347) allows forged JSON Web Tokens via the unsigned `none` algorithm or algorithm switching.
+- tier: 3
+  title: Line Pointer & Guidance
+  hint: 'Look at lines 31-36. Remove the `alg === "none"` branch entirely and call `jwt.verify(token, PUBLIC_KEY, { algorithms: ["RS256"] })` with strictly pinned algorithms.'
+canonical_review: |-
+  Senior Staff Engineer Review Critique:
+  Bypassing signature verification when `alg === "none"` is one of the most famous JWT vulnerabilities in software history (CVE-2015-9235). Any client can craft a token containing `{"sub": "admin", "role": "admin"}` with an empty signature and gain full system access.
+
+  Additionally, calling `jwt.verify(token, PUBLIC_KEY)` without an explicit `algorithms: ["RS256"]` whitelist allows algorithm confusion: an attacker can convert the RSA public key to an HMAC secret, sign the token using `HS256`, and forge valid tokens.
+
+  Recommendation:
+  Never trust client-specified algorithm headers. Always pass `{ algorithms: ["RS256"] }` in the verification options to strictly enforce asymmetric signature verification.
+recommended_fix_diff: |
+  --- a/middleware/auth.ts
+  +++ b/middleware/auth.ts
+  @@ -27,11 +27,4 @@
+  -    const alg = decodedHeader.header.alg;
+  -    let verifiedPayload: AuthTokenPayload;
+  -
+  -    if (alg === "none" || !alg) {
+  -      verifiedPayload = decodedHeader.payload as AuthTokenPayload;
+  -    } else {
+  -      verifiedPayload = jwt.verify(token, PUBLIC_KEY) as AuthTokenPayload;
+  -    }
+  +    const verifiedPayload = jwt.verify(token, PUBLIC_KEY, {
+  +      algorithms: ["RS256"],
+  +    }) as AuthTokenPayload;

@@ -1,0 +1,69 @@
+order: 25
+slug: n-plus-one-query-waterfall
+title: N+1 Query Waterfall in Nested Relationship Serializer
+difficulty: easy
+category: performance
+language: python
+estimated_minutes: 5
+defect_target: Find 1 Medium Severity N+1 Query Waterfall in API Serializer
+expected_issues:
+- id: med-n-plus-one-waterfall
+  title: Iterative Database Queries Inside Loop (N+1 Query Problem)
+  severity: medium
+  matched_lines:
+  - 18
+  - 19
+  - 20
+  - 21
+  - 24
+  - 25
+  matched_keywords:
+  - n+1 query
+  - waterfall
+  - selectinload
+  - joinedload
+  - batch query
+  - session.exec
+  - database performance
+  line_score: 0.6
+  concept_score: 0.4
+  explanation: Executing separate `session.exec` queries inside the member iteration loop produces $2N+1$ database roundtrips. Relationships must be eager-loaded using `joinedload`/`selectinload` or batched using `WHERE IN`.
+hints:
+- tier: 1
+  title: Contextual Clue
+  hint: Observe what database operations take place inside the `for member in members` loop.
+- tier: 2
+  title: Vulnerability Class
+  hint: The N+1 query problem causes severe database performance degradation by issuing multiple sequential queries instead of a batch fetch.
+- tier: 3
+  title: Line Pointer & Guidance
+  hint: 'Look at lines 18-26. Avoid calling `self.session.exec()` inside the loop. Eager load `profile` and `role` relationships using `options(selectinload(...))` or fetch all IDs in bulk using `where(UserProfile.user_id.in_(user_ids))`.'
+canonical_review: |-
+  Senior Staff Engineer Review Critique:
+  Executing individual database queries inside a `for` loop is a quintessential database anti-pattern (the N+1 query problem). Each iteration incurs network latency, serialization overhead, and database connection locking.
+
+  For an organization with 250 members, this single endpoint issues over 500 synchronous database roundtrips, causing API timeouts and connection starvation across the application.
+
+  Recommendation:
+  Use SQLAlchemy / SQLModel relationship eager loading (`joinedload` or `selectinload`) on the primary query, or collect all `user_ids` and `role_ids` into sets and perform two bulk queries (`WHERE id IN (...)`) to construct in-memory lookup maps before the loop.
+recommended_fix_diff: |
+  --- a/serializers/org.py
+  +++ b/serializers/org.py
+  @@ -13,7 +13,12 @@
+           members = self.session.exec(stmt).all()
+   
+  +        user_ids = [m.user_id for m in members]
+  +        role_ids = [m.role_id for m in members]
+  +        profiles = {p.user_id: p for p in self.session.exec(select(UserProfile).where(UserProfile.user_id.in_(user_ids))).all()}
+  +        roles = {r.id: r for r in self.session.exec(select(OrgRole).where(OrgRole.id.in_(role_ids))).all()}
+  +
+           roster: list[dict[str, Any]] = []
+  -
+  -        # Defect: N+1 query waterfall inside loop executing queries per member
+           for member in members:
+  -            profile_stmt = select(UserProfile).where(UserProfile.user_id == member.user_id)
+  -            profile = self.session.exec(profile_stmt).first()
+  -            role_stmt = select(OrgRole).where(OrgRole.id == member.role_id)
+  -            role = self.session.exec(role_stmt).first()
+  +            profile = profiles.get(member.user_id)
+  +            role = roles.get(member.role_id)

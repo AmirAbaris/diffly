@@ -54,6 +54,8 @@ function formatLanguageLabel(language: string): string {
   const norm = language.toLowerCase().trim()
   if (norm === "python") return "Python"
   if (norm === "typescript") return "TypeScript"
+  if (norm === "go") return "Go"
+  if (norm === "rust") return "Rust"
   return language
 }
 

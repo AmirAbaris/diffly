@@ -7,19 +7,19 @@ from backend.seed.challenges import CHALLENGES_DATA
 from backend.seed.seed_data import seed_challenges, seed_challenges_if_empty
 
 
-def test_seed_dataset_contains_all_5_mvp_challenges():
-    """Verify that CHALLENGES_DATA has exactly the 5 specified MVP challenges."""
-    assert len(CHALLENGES_DATA) == 5
+def test_seed_dataset_contains_all_curated_challenges():
+    """Verify that CHALLENGES_DATA has at least 20-25 challenges with MVP slugs."""
+    assert len(CHALLENGES_DATA) == 25
 
-    slugs = [ch["slug"] for ch in CHALLENGES_DATA]
-    expected_slugs = [
+    slugs = {ch["slug"] for ch in CHALLENGES_DATA}
+    expected_slugs = {
         "agent-unsanitized-exec",
         "fastapi-raw-sql-injection",
         "nextjs-race-condition-useeffect",
         "agent-prompt-injection-leak",
         "asyncio-unhandled-task-gather",
-    ]
-    assert sorted(slugs) == sorted(expected_slugs)
+    }
+    assert expected_slugs.issubset(slugs)
 
 
 def test_seed_challenges_schema_and_domain_fields():
@@ -122,17 +122,17 @@ def test_idempotent_seeding(session: Session):
     """Verify that running seed_challenges multiple times does not create duplicates."""
     # First seed run
     seeded1 = seed_challenges(session)
-    assert len(seeded1) == 5
+    assert len(seeded1) == 25
 
     count1 = len(session.exec(select(Challenge)).all())
-    assert count1 == 5
+    assert count1 == 25
 
     # Second seed run (idempotent upsert)
     seeded2 = seed_challenges(session)
-    assert len(seeded2) == 5
+    assert len(seeded2) == 25
 
     count2 = len(session.exec(select(Challenge)).all())
-    assert count2 == 5
+    assert count2 == 25
 
 
 def test_seed_updates_existing_records(session: Session):
@@ -164,8 +164,8 @@ def test_seed_challenges_if_empty(session: Session):
 
     # First call: table is empty, so it seeds
     results = seed_challenges_if_empty(session)
-    assert len(results) == 5
-    assert len(session.exec(select(Challenge)).all()) == 5
+    assert len(results) == 25
+    assert len(session.exec(select(Challenge)).all()) == 25
 
     # Tamper with title
     ch = session.exec(select(Challenge)).first()
@@ -176,7 +176,7 @@ def test_seed_challenges_if_empty(session: Session):
 
     # Second call: table is NOT empty, so it skips seeding
     results2 = seed_challenges_if_empty(session)
-    assert len(results2) == 5
+    assert len(results2) == 25
     ch_reloaded = session.exec(select(Challenge).where(Challenge.id == ch.id)).first()
     assert ch_reloaded is not None
     assert ch_reloaded.title == "Do Not Overwrite"
@@ -194,7 +194,7 @@ def test_cli_seed_command():
         check=True,
     )
     assert result.returncode == 0
-    assert "Successfully seeded 5 challenges" in result.stdout
+    assert "Successfully seeded 25 challenges" in result.stdout
     assert "agent-unsanitized-exec" in result.stdout
 
 
