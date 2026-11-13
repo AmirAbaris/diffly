@@ -115,6 +115,23 @@ export interface ChallengeSolutionResponse {
   }>
 }
 
+export interface CustomChallengesListResponse {
+  items: ChallengeSummary[]
+  total: number
+  quota_limit: number
+  quota_remaining: number
+}
+
+export interface GenerateCustomChallengePayload {
+  topic: string
+  language: Language
+  difficulty: Difficulty
+}
+
+export interface CustomChallengeResponse extends ChallengeDetail {
+  is_custom?: boolean
+}
+
 export interface CategoryProgress {
   category: string
   solved: number
