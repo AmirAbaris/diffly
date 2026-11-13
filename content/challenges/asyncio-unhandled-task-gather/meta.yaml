@@ -1,0 +1,65 @@
+order: 5
+slug: asyncio-unhandled-task-gather
+title: Unhandled Concurrency Exceptions in asyncio.gather Multi-Agent Pipeline
+difficulty: medium
+category: concurrency_race
+language: python
+estimated_minutes: 10
+defect_target: Find 1 High Severity Concurrency Defect in async task orchestration
+expected_issues:
+- id: high-gather-orphaned-tasks
+  title: Orphaned Tasks and Resource Leak in asyncio.gather
+  severity: high
+  matched_lines:
+  - 28
+  - 29
+  - 30
+  matched_keywords:
+  - asyncio.gather
+  - return_exceptions
+  - task cancellation
+  - orphaned task
+  - resource leak
+  - TaskGroup
+  line_score: 0.6
+  concept_score: 0.4
+  explanation: When asyncio.gather runs without return_exceptions=True, the first
+    exception aborts the gather call immediately, leaving remaining spawned tasks
+    executing in the background with no error handling or cancellation.
+hints:
+- tier: 1
+  title: Contextual Clue
+  hint: What happens to the remaining running coroutines if `run_security_scan` throws
+    a `ConnectionError`?
+- tier: 2
+  title: Vulnerability Class
+  hint: By default, `asyncio.gather` propagates exceptions immediately and does not
+    cancel unfinished sibling tasks.
+- tier: 3
+  title: Line Pointer & Guidance
+  hint: 'Inspect line 30: `await asyncio.gather(*tasks)` should use `return_exceptions=True`
+    with result inspection, or modern `asyncio.TaskGroup` (Python 3.11+) which guarantees
+    that when one task fails, remaining tasks are cleanly cancelled.'
+canonical_review: |-
+  Senior Staff Engineer Review Critique:
+  In distributed or parallel agent architectures, partial task failure is a certainty. Using raw `asyncio.gather(*tasks)` without `return_exceptions=True` means that if any task fails, `gather` re-raises that exception immediately. Crucially, python's `asyncio.gather` does NOT cancel running sibling tasks. The 5-second `run_type_checker` task continues running as a zombie coroutine, holding open database connections or compute resources.
+
+  Recommendation:
+  In Python 3.11+, use `asyncio.TaskGroup`:
+  ```python
+  async with asyncio.TaskGroup() as tg:
+      t1 = tg.create_task(self.run_linter(repo_path))
+      t2 = tg.create_task(self.run_security_scan(repo_path))
+      t3 = tg.create_task(self.run_type_checker(repo_path))
+  ```
+  `TaskGroup` ensures that if one task raises, all other unfinished tasks in the group are automatically cancelled and awaited. Alternatively, if partial results are desired, specify `await asyncio.gather(*tasks, return_exceptions=True)` and inspect each result for `isinstance(r, Exception)`.
+recommended_fix_diff: |
+  --- a/orchestrator/pipeline.py
+  +++ b/orchestrator/pipeline.py
+  @@ -22,8 +22,7 @@
+  -    async def analyze_repo(self, path: str):
+  -        results = await asyncio.gather(*tasks)
+  +    async def analyze_repo(self, path: str):
+  +        async with asyncio.TaskGroup() as tg:
+  +            results = [tg.create_task(t) for t in self.tasks]
+           return results

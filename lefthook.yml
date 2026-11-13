@@ -3,28 +3,35 @@ pre-commit:
   jobs:
     - name: oxlint
       glob: "*.{js,jsx,ts,tsx}"
-      run: pnpm exec oxlint {staged_files}
+      exclude: "content/"
+      run: pnpm exec oxlint {files}
 
     - name: react-doctor
       glob: "*.{js,jsx,ts,tsx}"
+      exclude: "content/"
       run: pnpm exec react-doctor --staged --no-telemetry
 
     - name: prettier
       glob: "*.{js,jsx,ts,tsx,json,md,css,mjs}"
-      run: pnpm exec prettier --check {staged_files}
+      exclude: "content/"
+      run: pnpm exec prettier --check {files}
 
     - name: eslint
       glob: "*.{js,jsx,ts,tsx,mjs}"
-      run: pnpm exec eslint {staged_files}
+      exclude: "content/"
+      run: pnpm exec eslint {files}
 
     - name: ruff-lint
       glob: "*.py"
-      run: ([ -f .venv/bin/ruff ] && .venv/bin/ruff check {staged_files}) || ruff check {staged_files}
+      exclude: "content/"
+      run: ([ -f .venv/bin/ruff ] && .venv/bin/ruff check --force-exclude {files}) || ruff check --force-exclude {files}
 
     - name: ruff-format
       glob: "*.py"
-      run: ([ -f .venv/bin/ruff ] && .venv/bin/ruff format --check {staged_files}) || ruff format --check {staged_files}
+      exclude: "content/"
+      run: ([ -f .venv/bin/ruff ] && .venv/bin/ruff format --check --force-exclude {files}) || ruff format --check --force-exclude {files}
 
     - name: typecheck
       glob: "*.{ts,tsx}"
+      exclude: "content/"
       run: pnpm typecheck

@@ -1,0 +1,90 @@
+order: 3
+slug: nextjs-race-condition-useeffect
+title: Next.js React Hook Async State Race Condition
+difficulty: medium
+category: concurrency_race
+language: typescript
+estimated_minutes: 10
+defect_target: Find 1 High Severity Race Condition in asynchronous state update
+expected_issues:
+- id: high-race-useeffect-cleanup
+  title: Unsynchronized Async State Update Race Condition in useEffect
+  severity: high
+  matched_lines:
+  - 16
+  - 17
+  - 18
+  - 19
+  - 20
+  - 26
+  - 27
+  - 28
+  - 32
+  matched_keywords:
+  - race condition
+  - useEffect
+  - AbortController
+  - cleanup
+  - stale state
+  - cancellation
+  line_score: 0.6
+  concept_score: 0.4
+  explanation: The useEffect hook executes an async fetch request on challengeId change
+    without an AbortController or boolean cancellation flag. Out-of-order network
+    responses can overwrite newer state with stale challenge data.
+hints:
+- tier: 1
+  title: Contextual Clue
+  hint: Consider what happens when `challengeId` changes quickly before previous fetch
+    promises resolve.
+- tier: 2
+  title: Vulnerability Class
+  hint: This is an asynchronous race condition in React lifecycle management. Responses
+    resolving out of sequence corrupt state.
+- tier: 3
+  title: Line Pointer & Guidance
+  hint: 'Lines 16-32: Implement a cleanup return function in `useEffect` using `const
+    controller = new AbortController()` passed to `fetch(..., { signal: controller.signal
+    })`, or maintain an `isCancelled` flag to discard outdated results.'
+canonical_review: |-
+  Senior Staff Engineer Review Critique:
+  This is a recurring bug in React data fetching: network latency is variable. When a user navigates between challenge A and challenge B, request A may take 300ms while request B takes 80ms. Request B resolves and sets state for challenge B; 220ms later, request A resolves and overwrites state with challenge A's data while the UI indicates challenge B.
+
+  Recommendation:
+  Use an `AbortController` to cancel in-flight requests when the component unmounts or before the effect re-runs:
+  ```typescript
+  useEffect(() => {
+    const controller = new AbortController();
+    setLoading(true);
+    fetch(`/api/challenges/${challengeId}`, { signal: controller.signal })
+      .then(res => res.json())
+      .then(data => { setChallenge(data); setLoading(false); })
+      .catch(err => {
+        if (err.name !== 'AbortError') {
+          setError(err.message);
+          setLoading(false);
+        }
+      });
+    return () => controller.abort();
+  }, [challengeId]);
+  ```
+recommended_fix_diff: |
+  --- a/components/ChallengeViewer.tsx
+  +++ b/components/ChallengeViewer.tsx
+  @@ -15,2 +15,3 @@
+     useEffect(() => {
+  +    const controller = new AbortController();
+       setLoading(true);
+  @@ -19,3 +20,4 @@
+  -    fetch(`/api/challenges/${challengeId}`)
+  +    fetch(`/api/challenges/${challengeId}`, {
+  +      signal: controller.signal,
+  +    })
+         .then((res) => {
+  @@ -28,3 +29,5 @@
+         .catch((err: Error) => {
+  +        if (err.name === 'AbortError') return;
+           setError(err.message);
+  @@ -32,2 +35,4 @@
+  +    return () => controller.abort();
+     }, [challengeId]);
