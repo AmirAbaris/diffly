@@ -1,0 +1,56 @@
+order: 23
+slug: rust-integer-overflow-pricing
+title: Unchecked Integer Multiplication Overflow in Billing
+difficulty: hard
+category: logic_flaws
+language: rust
+estimated_minutes: 8
+defect_target: Find 1 High Severity Integer Overflow Defect in Pricing Engine
+expected_issues:
+- id: high-rust-integer-overflow
+  title: Unchecked u32 Multiplication Wrapping in Release Builds
+  severity: high
+  matched_lines:
+  - 22
+  - 23
+  - 24
+  matched_keywords:
+  - integer overflow
+  - checked_mul
+  - wrapping
+  - u32
+  - overflow
+  - arithmetic overflow
+  - cwe-190
+  line_score: 0.6
+  concept_score: 0.4
+  explanation: Multiplying `units_consumed * unit_price_micro_cents` as `u32` silently wraps in release builds when exceeding `u32::MAX` (~4.29 billion). Financial calculations must use wider integer types (`u64`/`u128`) and `checked_mul`.
+hints:
+- tier: 1
+  title: Contextual Clue
+  hint: Look at the integer width and arithmetic operator used to compute `gross_micro_cents`.
+- tier: 2
+  title: Vulnerability Class
+  hint: Integer Overflow or Wraparound (CWE-190) occurs when an arithmetic operation produces a value outside the range that can be represented with a given number of bits.
+- tier: 3
+  title: Line Pointer & Guidance
+  hint: 'Look at line 23: `let gross_micro_cents: u32 = ...`. Cast both operands to `u64` before multiplication (`(item.units_consumed as u64).checked_mul(...)`) to prevent truncation and overflow.'
+canonical_review: |-
+  Senior Staff Engineer Review Critique:
+  Executing raw arithmetic on fixed-width integers without overflow checks is a dangerous bug in billing systems (CWE-190). While Rust provides overflow panics during development (`debug` builds), release builds compile with two's complement wrapping enabled by default for performance.
+
+  At 100,000,000 micro-cents per dollar, `u32::MAX` represents only ~$42.94. Any invoice exceeding this threshold wraps around zero, invoicing enterprise customers cents instead of thousands of dollars.
+
+  Recommendation:
+  Perform all monetary calculations in 64-bit or 128-bit integers (`u64` / `u128`). Furthermore, use `checked_mul` or `saturating_mul` to explicitly handle overflow boundaries and return an error if values exceed domain limits.
+recommended_fix_diff: |
+  --- a/billing/engine.rs
+  +++ b/billing/engine.rs
+  @@ -22,2 +22,4 @@
+  -        // Bug: u32 * u32 arithmetic wraps in release mode without checked multiplication
+  -        let gross_micro_cents: u32 = item.units_consumed * item.unit_price_micro_cents;
+  +        let units = item.units_consumed as u64;
+  +        let unit_price = item.unit_price_micro_cents as u64;
+  +        let gross_micro_cents = units
+  +            .checked_mul(unit_price)
+  +            .ok_or("Calculation overflow in line item gross amount")?;

@@ -1,0 +1,53 @@
+order: 24
+slug: regex-redos-input-validation
+title: Catastrophic Backtracking ReDoS in Input Validation
+difficulty: medium
+category: performance
+language: typescript
+estimated_minutes: 6
+defect_target: Find 1 High Severity ReDoS Vulnerability in Validation Utility
+expected_issues:
+- id: high-redos-catastrophic-backtracking
+  title: Catastrophic Backtracking in Nested Quantifier Regular Expression
+  severity: high
+  matched_lines:
+  - 3
+  - 4
+  - 27
+  - 28
+  matched_keywords:
+  - redos
+  - catastrophic backtracking
+  - regular expression
+  - nested quantifiers
+  - event loop
+  - denial of service
+  - cwe-1333
+  line_score: 0.6
+  concept_score: 0.4
+  explanation: The pattern `/^([a-zA-Z0-9]+_?)+[a-zA-Z0-9]+$/` contains nested ambiguous quantifiers. Malicious input strings cause exponential backtracking (ReDoS / CWE-1333), locking the Node.js event loop.
+hints:
+- tier: 1
+  title: Contextual Clue
+  hint: Analyze the quantifier structure of `USERNAME_REGEX` on line 4.
+- tier: 2
+  title: Vulnerability Class
+  hint: Regular Expression Denial of Service (ReDoS / CWE-1333) occurs when regex engines experience exponential backtracking on crafted inputs.
+- tier: 3
+  title: Line Pointer & Guidance
+  hint: 'Look at line 4: `([a-zA-Z0-9]+_?)+`. Eliminate nested repetition by using an atomic non-overlapping pattern such as `/^[a-zA-Z0-9]+(?:_[a-zA-Z0-9]+)*$/`.'
+canonical_review: |-
+  Senior Staff Engineer Review Critique:
+  Using nested quantifiers `(...+)+` on overlapping character sets creates an exponential time complexity explosion in backtracking regex engines like V8.
+
+  Because Node.js executes application JavaScript on a single thread, calling `RegExp.test()` with a ReDoS payload completely halts the event loop for seconds or minutes. A single unauthenticated attacker sending 10 requests can take down an entire API cluster.
+
+  Recommendation:
+  Refactor the regex to be deterministic and non-backtracking: `/^[a-zA-Z0-9]+(?:_[a-zA-Z0-9]+)*$/`. Alternatively, perform input length and character validation using standard string iteration methods or linear-time regex libraries.
+recommended_fix_diff: |
+  --- a/validators/user.ts
+  +++ b/validators/user.ts
+  @@ -3,3 +3,3 @@
+   // Vulnerable regular expression with nested quantifiers causing exponential backtracking
+  -const USERNAME_REGEX = /^([a-zA-Z0-9]+_?)+[a-zA-Z0-9]+$/;
+  +const USERNAME_REGEX = /^[a-zA-Z0-9]+(?:_[a-zA-Z0-9]+)*$/;

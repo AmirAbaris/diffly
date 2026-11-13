@@ -6,7 +6,20 @@ export function EnvironmentSpecsSection({
 }: {
   challenge: ChallengeDetail
 }) {
-  const isPython = challenge.language === "python"
+  const runtimeLabel = (() => {
+    switch (challenge.language) {
+      case "python":
+        return "Python 3.12"
+      case "typescript":
+        return "Node.js 22"
+      case "go":
+        return "Go 1.23"
+      case "rust":
+        return "Rust 1.82"
+      default:
+        return challenge.language
+    }
+  })()
 
   return (
     <section
@@ -25,7 +38,7 @@ export function EnvironmentSpecsSection({
         <div className="flex flex-col gap-1 p-3">
           <span className="text-xs text-muted-foreground">Runtime</span>
           <span className="text-xs font-semibold text-foreground capitalize">
-            {isPython ? "Python 3.12" : "Node.js 22"}
+            {runtimeLabel}
           </span>
         </div>
 

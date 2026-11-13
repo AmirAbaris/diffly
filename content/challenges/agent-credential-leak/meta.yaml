@@ -1,0 +1,61 @@
+order: 6
+slug: agent-credential-leak
+title: Ambient Credential Leakage in Agent Context Window
+difficulty: medium
+category: agent_antipatterns
+language: typescript
+estimated_minutes: 7
+defect_target: Find 1 High Severity Credential Leak in Agent Context Builder
+expected_issues:
+- id: high-agent-credential-leak
+  title: Ambient Secrets and Tokens Injected into LLM Context
+  severity: high
+  matched_lines:
+  - 26
+  - 27
+  - 28
+  - 29
+  - 30
+  - 31
+  - 32
+  - 33
+  matched_keywords:
+  - process.env
+  - credential leak
+  - authorization
+  - context window
+  - secrets
+  - prompt injection
+  line_score: 0.6
+  concept_score: 0.4
+  explanation: Serializing `process.env` and incoming `authorization` headers into the agent's system prompt leaks sensitive environment secrets (API keys, database URLs) and bearer tokens to the LLM vendor, prompt injection attacks, and client responses.
+hints:
+- tier: 1
+  title: Contextual Clue
+  hint: Examine what ambient data and request headers are concatenated into the `systemPrompt` template.
+- tier: 2
+  title: Vulnerability Class
+  hint: Sensitive data exposure and credential leakage in LLM context windows allows jailbroken or manipulated models to exfiltrate infrastructure secrets.
+- tier: 3
+  title: Line Pointer & Guidance
+  hint: Look at lines 26-33. Passing `JSON.stringify(process.env)` and `req.headers.authorization` into the LLM system prompt exposes private API keys and tokens. Strip all ambient secrets and supply only safe, strictly whitelisted context variables.
+canonical_review: |-
+  Senior Staff Engineer Review Critique:
+  Serializing ambient process environment variables (`process.env`) and raw incoming authentication headers (`req.headers.authorization`) into the LLM system context is a critical security vulnerability. 
+
+  LLM context windows must be treated as untrusted, semi-public zones. LLMs are notoriously prone to prompt leakage via jailbreaking and indirect prompt injections. Furthermore, transmitting entire environment configurations sends third-party infrastructure keys, database credentials, and internal service URLs across external network boundaries to the LLM API provider.
+
+  Recommendation:
+  Completely eliminate `process.env` and raw `authorization` headers from system prompts. Only pass explicitly whitelisted, non-sensitive session metadata (e.g. verified tenant ID or support scope) required for the agent's persona.
+recommended_fix_diff: |
+  --- a/services/agent.ts
+  +++ b/services/agent.ts
+  @@ -25,9 +25,4 @@
+  -  const runtimeEnv = JSON.stringify(process.env);
+  -  const authHeader = req.headers.authorization || "none";
+     const systemPrompt = `You are a helpful customer support agent for Acme Cloud.
+   Session ID: ${sessionId}
+   User ID: ${userId}
+  -Auth Token: ${authHeader}
+  -Environment Configuration: ${runtimeEnv}
+   Answer user questions accurately while following Acme safety policies.`;

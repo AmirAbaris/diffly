@@ -1,0 +1,51 @@
+order: 13
+slug: cors-wildcard-credential-exposure
+title: CORS Wildcard Origin with Credential Exposure
+difficulty: easy
+category: security_vuln
+language: python
+estimated_minutes: 5
+defect_target: Find 1 High Severity CORS Misconfiguration in Middleware
+expected_issues:
+- id: high-cors-wildcard-credentials
+  title: Overly Permissive CORS Configuration with Wildcard and Credentials
+  severity: high
+  matched_lines:
+  - 10
+  - 11
+  - 12
+  matched_keywords:
+  - cors
+  - allow_credentials
+  - allow_origins
+  - wildcard
+  - credential exposure
+  - cwe-942
+  line_score: 0.6
+  concept_score: 0.4
+  explanation: Setting `allow_origins=["*"]` alongside `allow_credentials=True` in CORS middleware creates an insecure cross-origin policy (CWE-942). Malicious third-party sites can issue credentialed requests and exfiltrate authenticated user data.
+hints:
+- tier: 1
+  title: Contextual Clue
+  hint: Inspect the configuration options passed into `app.add_middleware(CORSMiddleware, ...)`.
+- tier: 2
+  title: Vulnerability Class
+  hint: Permissive Cross-Origin Resource Sharing (CWE-942) allows unauthorized domains to read sensitive authenticated responses.
+- tier: 3
+  title: Line Pointer & Guidance
+  hint: 'Look at lines 11-12. Wildcard origins (`"*"`) must never be paired with `allow_credentials=True`. Specify an explicit list of trusted origin domains (e.g. `allow_origins=["https://diffly.dev"]`).'
+canonical_review: |-
+  Senior Staff Engineer Review Critique:
+  Combining `allow_origins=["*"]` with `allow_credentials=True` violates web security fundamentals and modern CORS specifications. When `allow_credentials` is true, modern browsers refuse wildcard `*` origins unless reflected, or the server reflects the caller's Origin header directly. If reflected, any arbitrary site can perform credentialed requests against the endpoint and read the response.
+
+  Recommendation:
+  Explicitly define trusted, verified origins in an environment configuration whitelist (e.g. `["https://app.diffly.dev", "https://diffly.dev"]`). Never use wildcard origins for endpoints handling authenticated user sessions or credentials.
+recommended_fix_diff: |
+  --- a/api/main.py
+  +++ b/api/main.py
+  @@ -9,4 +9,4 @@
+   app.add_middleware(
+       CORSMiddleware,
+  -    allow_origins=["*"],
+  +    allow_origins=["https://app.diffly.dev"],
+       allow_credentials=True,

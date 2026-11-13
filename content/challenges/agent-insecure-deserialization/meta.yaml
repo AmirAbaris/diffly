@@ -1,0 +1,62 @@
+order: 8
+slug: agent-insecure-deserialization
+title: Insecure Deserialization in Agent State Checkpoint
+difficulty: hard
+category: agent_antipatterns
+language: python
+estimated_minutes: 8
+defect_target: Find 1 Critical Insecure Deserialization Vulnerability in State Manager
+expected_issues:
+- id: crit-agent-pickle-deserialization
+  title: Arbitrary Code Execution via Insecure pickle.loads() Deserialization
+  severity: critical
+  matched_lines:
+  - 23
+  - 24
+  - 25
+  matched_keywords:
+  - pickle
+  - pickle.loads
+  - insecure deserialization
+  - rce
+  - arbitrary code execution
+  - cwe-502
+  line_score: 0.6
+  concept_score: 0.4
+  explanation: Using Python's `pickle.loads()` to restore agent checkpoint state from external storage enables Remote Code Execution (CWE-502). Untrusted or poisoned Redis cache entries can execute arbitrary shell commands via pickle payload `__reduce__` gadgets.
+hints:
+- tier: 1
+  title: Contextual Clue
+  hint: Review how cached session state is rehydrated in `restore_checkpoint`.
+- tier: 2
+  title: Vulnerability Class
+  hint: Insecure Deserialization (CWE-502) occurs when unsafe serialization formats like Python pickle or Java serialization process untrusted data.
+- tier: 3
+  title: Line Pointer & Guidance
+  hint: 'Look at line 25: `pickle.loads(raw_bytes)`. Replace `pickle` with a secure, schema-validated serialization format like JSON (`json.loads`/`json.dumps`) or Pydantic model serialization.'
+canonical_review: |-
+  Senior Staff Engineer Review Critique:
+  Using Python's standard `pickle` library for persistence or session caching in multi-agent architectures is a critical vulnerability. The official Python documentation explicitly states that `pickle` is not secure against erroneous or maliciously constructed data.
+
+  If Redis is compromised or accessible via SSRF, an adversary can forge a base64-encoded pickle object embedding an `os.system` invocation inside `__reduce__`. When the agent worker restores this checkpoint, the payload executes immediately in the worker process.
+
+  Recommendation:
+  Eliminate `pickle` entirely. Serialize state into structured JSON or protobuf models validated by Pydantic. If complex python objects or embeddings are required, store safe primitive dictionaries and re-instantiate classes explicitly.
+recommended_fix_diff: |
+  --- a/agent/checkpoint.py
+  +++ b/agent/checkpoint.py
+  @@ -2,2 +2,2 @@
+  -import pickle
+  +import json
+   from typing import Any
+  @@ -13,2 +13,2 @@
+  -        serialized = pickle.dumps(state_data, protocol=pickle.HIGHEST_PROTOCOL)
+  -        b64_payload = base64.b64encode(serialized).decode("utf-8")
+  +        payload = json.dumps(state_data)
+  +        self.redis.set(f"agent:checkpoint:{session_id}", payload, ex=86400)
+  @@ -23,4 +23,2 @@
+  -        raw_bytes = base64.b64decode(cached)
+  -        # Rehydrate agent execution graph and conversation context
+  -        restored_state: dict[str, Any] = pickle.loads(raw_bytes)
+  -        return restored_state
+  +        return json.loads(cached)

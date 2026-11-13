@@ -1,0 +1,53 @@
+order: 14
+slug: go-channel-goroutine-leak
+title: Goroutine Leak in Unbuffered Channel Consumer
+difficulty: medium
+category: concurrency
+language: go
+estimated_minutes: 6
+defect_target: Find 1 High Severity Goroutine Leak in Async Worker
+expected_issues:
+- id: high-goroutine-leak-unbuffered
+  title: Goroutine Leak via Unbuffered Channel Write on Early Return
+  severity: high
+  matched_lines:
+  - 23
+  - 24
+  - 25
+  - 31
+  - 36
+  matched_keywords:
+  - goroutine leak
+  - unbuffered channel
+  - make(chan Result)
+  - channel buffer
+  - memory leak
+  - context cancellation
+  line_score: 0.6
+  concept_score: 0.4
+  explanation: Instantiating `ch := make(chan Result)` without a buffer causes slower mirror worker goroutines to block indefinitely when attempting to send after the caller has already returned the first response.
+hints:
+- tier: 1
+  title: Contextual Clue
+  hint: Observe what happens to all other spawned goroutines once the first result is received in `select`.
+- tier: 2
+  title: Vulnerability Class
+  hint: Goroutine leaks occur when goroutines block permanently on channel sends or receives that will never be serviced.
+- tier: 3
+  title: Line Pointer & Guidance
+  hint: 'Look at line 24: `ch := make(chan Result)`. Allocate a buffered channel sized to the number of mirrors (`ch := make(chan Result, len(mirrors))`) so senders never block even after early return.'
+canonical_review: |-
+  Senior Staff Engineer Review Critique:
+  Writing to an unbuffered channel in goroutines where the receiver may exit early is a classic Go concurrency defect. Because `select` returns as soon as the first mirror responds or `ctx.Done()` fires, `len(mirrors) - 1` goroutines remain blocked on `ch <- Result{...}` forever.
+
+  In Go, blocked goroutines are never garbage collected. Over time, this exhausts the Go runtime scheduler, leaks memory, and exhausts available file descriptors from unclosed network sockets.
+
+  Recommendation:
+  Buffer the channel to the exact number of workers: `ch := make(chan Result, len(mirrors))`. This guarantees that all spawned goroutines can send their result and terminate cleanly without blocking.
+recommended_fix_diff: |
+  --- a/worker/mirror.go
+  +++ b/worker/mirror.go
+  @@ -23,3 +23,3 @@
+   	// Unbuffered channel for receiving mirror query responses
+  -	ch := make(chan Result)
+  +	ch := make(chan Result, len(mirrors))

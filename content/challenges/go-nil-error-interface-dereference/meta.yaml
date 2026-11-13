@@ -1,0 +1,54 @@
+order: 22
+slug: go-nil-error-interface-dereference
+title: Non-Nil Error Interface Wrapping Concrete Nil Pointer
+difficulty: medium
+category: logic_flaws
+language: go
+estimated_minutes: 6
+defect_target: Find 1 High Severity Nil Interface Error Defect in Client Factory
+expected_issues:
+- id: high-go-typed-nil-error
+  title: Typed Nil Pointer Returned in Error Interface Causing Non-Nil Evaluation
+  severity: high
+  matched_lines:
+  - 19
+  - 33
+  - 34
+  - 35
+  matched_keywords:
+  - nil error
+  - error interface
+  - typed nil
+  - concrete pointer
+  - apiErr
+  - non-nil interface
+  line_score: 0.6
+  concept_score: 0.4
+  explanation: Returning a typed nil pointer `*APIError` in an `error` interface causes the interface itself to be non-nil (`(*APIError, nil) != nil`). Callers checking `if err != nil` will treat successful responses as failures.
+hints:
+- tier: 1
+  title: Contextual Clue
+  hint: Trace the value and type of `apiErr` returned by `ValidateEndpoint` on a successful HTTP 200 response.
+- tier: 2
+  title: Vulnerability Class
+  hint: In Go, an interface containing a concrete nil pointer is non-nil because its underlying type descriptor is populated.
+- tier: 3
+  title: Line Pointer & Guidance
+  hint: 'Look at line 35: `return apiErr`. When no error occurs, explicitly return `nil` rather than returning a typed variable `var apiErr *APIError`.'
+canonical_review: |-
+  Senior Staff Engineer Review Critique:
+  Returning a typed nil pointer variable in a Go `error` interface is one of Go's most notorious and subtle language traps.
+
+  In Go, an interface is implemented as a type-value pair: `(type, value)`. An interface check `err != nil` evaluates whether the interface contains *no type and no value*. Because `apiErr` has type `*APIError`, returning `apiErr` (even when it holds value `nil`) produces an interface `(*APIError, nil)`, which is non-nil! As a result, `RunHealthCheck` will report that the health check failed even when the upstream server returned HTTP 200 OK.
+
+  Recommendation:
+  Never return a concrete error pointer in an `error` interface. Always return the untyped literal `return nil` when no error has occurred.
+recommended_fix_diff: |
+  --- a/client/validator.go
+  +++ b/client/validator.go
+  @@ -33,4 +33,3 @@
+  -	// Bug: Returning a typed nil pointer (*APIError) in an interface (error)
+  -	// In Go, an interface containing (*APIError)(nil) is NOT nil!
+  -	return apiErr
+  +	return nil
+   }

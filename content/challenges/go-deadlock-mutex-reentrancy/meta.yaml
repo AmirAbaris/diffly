@@ -1,0 +1,62 @@
+order: 16
+slug: go-deadlock-mutex-reentrancy
+title: Deadlock via Mutex Lock Reentrancy
+difficulty: medium
+category: concurrency
+language: go
+estimated_minutes: 6
+defect_target: Find 1 High Severity Deadlock Bug in Concurrent Cache
+expected_issues:
+- id: high-deadlock-reentrancy
+  title: Self-Deadlock via Non-Reentrant Mutex Lock Acquisition
+  severity: high
+  matched_lines:
+  - 27
+  - 28
+  - 29
+  - 47
+  - 51
+  - 52
+  matched_keywords:
+  - deadlock
+  - mutex
+  - reentrancy
+  - sync.Mutex
+  - lock
+  - c.mu.Lock
+  - non-reentrant
+  line_score: 0.6
+  concept_score: 0.4
+  explanation: Go's `sync.Mutex` is not reentrant. Calling `c.evictOldest()` (which calls `c.mu.Lock()`) from `Set()` while already holding `c.mu.Lock()` causes an immediate permanent deadlock on the current goroutine.
+hints:
+- tier: 1
+  title: Contextual Clue
+  hint: Trace the mutex locking sequence when `Set()` invokes `evictOldest()`.
+- tier: 2
+  title: Vulnerability Class
+  hint: Deadlock occurs when a non-reentrant lock is acquired multiple times by the same goroutine.
+- tier: 3
+  title: Line Pointer & Guidance
+  hint: Look at line 28 and line 52. Either remove `c.mu.Lock()` from `evictOldest()` and document it as an internal helper that expects the lock to be held, or create an unlocked helper `evictOldestLocked()`.
+canonical_review: |-
+  Senior Staff Engineer Review Critique:
+  Attempting reentrant lock acquisition with Go's `sync.Mutex` is a fatal concurrency error. Unlike POSIX recursive mutexes or Java's `synchronized`, Go's `sync.Mutex` does not track goroutine ownership and deliberately forbids reentrancy.
+
+  When `Set` acquires `c.mu.Lock()` and subsequently invokes `c.evictOldest()`, the goroutine attempts to acquire the lock again and blocks indefinitely waiting for itself to release it. Any subsequent goroutine attempting to call `Get` or `Set` will also block, creating an application-wide hang.
+
+  Recommendation:
+  Separate the public thread-safe API from internal lock-free helpers. Rename `evictOldest` to `evictOldestLocked()` and remove internal locking calls from it, requiring callers to already hold `c.mu`.
+recommended_fix_diff: |
+  --- a/cache/lru.go
+  +++ b/cache/lru.go
+  @@ -26,4 +26,2 @@
+  -// evictOldest removes the least recently accessed item.
+  -func (c *LRUCache) evictOldest() {
+  -	c.mu.Lock()
+  -	defer c.mu.Unlock()
+  +// evictOldestLocked removes the least recently accessed item. Caller must hold c.mu.
+  +func (c *LRUCache) evictOldestLocked() {
+  @@ -51,2 +49,2 @@
+  -		// Call evictOldest while already holding c.mu
+  -		c.evictOldest()
+  +		c.evictOldestLocked()

@@ -41,12 +41,15 @@ const CATEGORIES: Array<{ label: string; value: Category | "All" }> = [
   { label: "Security", value: "Security" },
   { label: "Concurrency", value: "Concurrency" },
   { label: "Performance", value: "Performance" },
+  { label: "Logic Flaws", value: "Logic Flaws" },
 ]
 
 const LANGUAGES: Array<{ label: string; value: Language | "All" }> = [
   { label: "All Languages", value: "All" },
   { label: "Python", value: "python" },
   { label: "TypeScript", value: "typescript" },
+  { label: "Go", value: "go" },
+  { label: "Rust", value: "rust" },
 ]
 
 export function FilterBar({

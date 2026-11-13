@@ -1,0 +1,60 @@
+order: 7
+slug: agent-unbounded-recursion
+title: Unbounded Agent Tool Recursion & Cost Exhaustion
+difficulty: medium
+category: agent_antipatterns
+language: python
+estimated_minutes: 6
+defect_target: Find 1 High Severity Unbounded Loop Defect in Agent Loop
+expected_issues:
+- id: high-agent-unbounded-recursion
+  title: Unbounded ReAct Execution Loop Without Step Limits or Timeout
+  severity: high
+  matched_lines:
+  - 14
+  - 15
+  - 16
+  - 17
+  matched_keywords:
+  - while True
+  - unbounded
+  - recursion
+  - max_steps
+  - circuit breaker
+  - infinite loop
+  - cost exhaustion
+  line_score: 0.6
+  concept_score: 0.4
+  explanation: The agent executes tools in a `while True` loop without an upper bound on iterations or an execution timeout. Hallucinating or failing models can trigger runaway tool calls and rapid API billing depletion.
+hints:
+- tier: 1
+  title: Contextual Clue
+  hint: Analyze the loop control condition and termination guarantees in `execute_task`.
+- tier: 2
+  title: Vulnerability Class
+  hint: Unbounded recursion or infinite execution loops in autonomous agents cause Denial of Service (DoS) and catastrophic API token cost exhaustion.
+- tier: 3
+  title: Line Pointer & Guidance
+  hint: 'Look at line 14: `while True:`. Replace the unbounded loop with a bounded loop such as `for step in range(self.max_steps):` and raise a `RuntimeError` or return a graceful timeout if the limit is exceeded.'
+canonical_review: |-
+  Senior Staff Engineer Review Critique:
+  Allowing an autonomous agent to execute tools in an open-ended `while True:` loop without a deterministic loop counter or circuit breaker is an anti-pattern. Autonomous models are susceptible to circular reasoning loops, repeated invocation of failing tools, and prompt injection traps that command perpetual execution. In production, this can burn millions of tokens in minutes, run up substantial API bills, and block worker processes indefinitely.
+
+  Recommendation:
+  Always enforce a strict `max_steps` cap (e.g., 10 or 15 iterations) and an overall request deadline. If the limit is reached without a terminal answer, break the loop and return an informative error or partial response.
+recommended_fix_diff: |
+  --- a/agent/loop.py
+  +++ b/agent/loop.py
+  @@ -6,4 +6,5 @@
+       def __init__(self, llm_client: Any, tools: dict[str, Any]) -> None:
+           self.llm = llm_client
+           self.tools = tools
+  +        self.max_steps = 15
+           self.conversation_history: list[dict[str, str]] = []
+  @@ -13,3 +14,3 @@
+  -        while True:
+  +        for _ in range(self.max_steps):
+               response = await self.llm.generate_plan_step(
+  @@ -42,2 +43,3 @@
+                   return response.content
+  +        raise TimeoutError("Agent exceeded maximum step limit without resolving task")

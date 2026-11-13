@@ -1,0 +1,55 @@
+order: 10
+slug: ssrf-webhook-dispatcher
+title: Server-Side Request Forgery in Webhook Dispatcher
+difficulty: medium
+category: security_vuln
+language: go
+estimated_minutes: 7
+defect_target: Find 1 High Severity SSRF Vulnerability in Webhook Dispatcher
+expected_issues:
+- id: high-ssrf-webhook
+  title: Unvalidated Outbound Request Allowing Server-Side Request Forgery (SSRF)
+  severity: high
+  matched_lines:
+  - 38
+  - 39
+  - 40
+  - 46
+  - 47
+  matched_keywords:
+  - ssrf
+  - server-side request forgery
+  - metadata
+  - 169.254.169.254
+  - private ip
+  - cwe-918
+  line_score: 0.6
+  concept_score: 0.4
+  explanation: Directly dispatching HTTP requests to user-supplied URLs without resolving DNS and blocking private subnets (RFC 1918) or cloud link-local metadata services (169.254.169.254) allows Server-Side Request Forgery (CWE-918).
+hints:
+- tier: 1
+  title: Contextual Clue
+  hint: Inspect how `event.URL` is validated before `http.NewRequestWithContext` and `d.client.Do(req)` are invoked.
+- tier: 2
+  title: Vulnerability Class
+  hint: Server-Side Request Forgery (SSRF / CWE-918) occurs when an application fetches a remote resource without restricting internal IP addresses.
+- tier: 3
+  title: Line Pointer & Guidance
+  hint: Lines 38-47 directly issue requests to `event.URL`. Implement a custom `http.Transport` with a `Control` function on `net.Dialer` that resolves DNS and rejects loopback (127.0.0.1), private ranges (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16), and link-local metadata (169.254.169.254).
+canonical_review: |-
+  Senior Staff Engineer Review Critique:
+  Accepting arbitrary webhook URLs from tenant configurations and delivering HTTP requests from within internal infrastructure without SSRF defenses is a dangerous security hole (OWASP Top 10 A10:2021). 
+
+  An attacker can specify AWS/GCP instance metadata endpoints (`169.254.169.254`) or internal microservices (`http://localhost:8080/internal/metrics`, `http://10.0.0.12:6379`). Furthermore, standard URL parsing alone is vulnerable to DNS rebinding if validation occurs prior to connection establishment.
+
+  Recommendation:
+  Use a custom `net.Dialer` with a `Control` callback that validates the resolved IP address immediately before TCP handshake. Reject all loopback, unicast link-local, multicast, and private CIDR ranges.
+recommended_fix_diff: |
+  --- a/webhook/dispatcher.go
+  +++ b/webhook/dispatcher.go
+  @@ -37,3 +37,7 @@
+  +	if err := validatePublicURL(event.URL); err != nil {
+  +		return fmt.Errorf("ssrf check failed: %w", err)
+  +	}
+  +
+   	req, err := http.NewRequestWithContext(ctx, http.MethodPost, event.URL, bytes.NewReader(reqBody))
