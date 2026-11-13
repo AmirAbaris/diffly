@@ -21,7 +21,11 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty"
 import { Skeleton } from "@/components/ui/skeleton"
-import type { ChallengeSummary, Difficulty } from "@/types/challenge"
+import {
+  formatLanguageLabel,
+  type ChallengeSummary,
+  type Difficulty,
+} from "@/types/challenge"
 
 export interface CatalogGridProps {
   challenges: ChallengeSummary[]
@@ -38,7 +42,7 @@ const SKELETON_ITEMS = [
   "sk-card-6",
 ]
 
-function DifficultyBadge({ difficulty }: { difficulty: Difficulty }) {
+export function DifficultyBadge({ difficulty }: { difficulty: Difficulty }) {
   if (difficulty === "Hard") {
     return <Badge variant="destructive">Hard</Badge>
   }
@@ -48,15 +52,6 @@ function DifficultyBadge({ difficulty }: { difficulty: Difficulty }) {
   }
 
   return <Badge variant="success">Easy</Badge>
-}
-
-function formatLanguageLabel(language: string): string {
-  const norm = language.toLowerCase().trim()
-  if (norm === "python") return "Python"
-  if (norm === "typescript") return "TypeScript"
-  if (norm === "go") return "Go"
-  if (norm === "rust") return "Rust"
-  return language
 }
 
 export function CatalogSkeletonGrid() {

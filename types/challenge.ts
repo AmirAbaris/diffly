@@ -5,6 +5,34 @@ export type Category =
 
 export type Language = "python" | "typescript" | "go" | "rust"
 
+export const CHALLENGE_DIFFICULTIES: readonly Difficulty[] = [
+  "Easy",
+  "Medium",
+  "Hard",
+] as const
+
+export const CHALLENGE_LANGUAGES: ReadonlyArray<{
+  value: Language
+  label: string
+}> = [
+  { value: "python", label: "Python" },
+  { value: "typescript", label: "TypeScript" },
+  { value: "go", label: "Go" },
+  { value: "rust", label: "Rust" },
+] as const
+
+const LANGUAGE_LABEL_MAP: Record<string, string> = {
+  python: "Python",
+  typescript: "TypeScript",
+  go: "Go",
+  rust: "Rust",
+}
+
+export function formatLanguageLabel(language: string): string {
+  const norm = language.toLowerCase().trim()
+  return LANGUAGE_LABEL_MAP[norm] ?? language
+}
+
 export interface ChallengeSummary {
   id: number
   slug: string
@@ -113,6 +141,23 @@ export interface ChallengeSolutionResponse {
     keywords: string[]
     explanation: string
   }>
+}
+
+export interface CustomChallengesListResponse {
+  items: ChallengeSummary[]
+  total: number
+  quota_limit: number
+  quota_remaining: number
+}
+
+export interface GenerateCustomChallengePayload {
+  topic: string
+  language: Language
+  difficulty: Difficulty
+}
+
+export interface CustomChallengeResponse extends ChallengeDetail {
+  is_custom?: boolean
 }
 
 export interface CategoryProgress {

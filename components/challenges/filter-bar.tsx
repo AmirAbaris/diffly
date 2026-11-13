@@ -19,7 +19,13 @@ import {
 } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
-import type { Category, Difficulty, Language } from "@/types/challenge"
+import {
+  CHALLENGE_DIFFICULTIES,
+  CHALLENGE_LANGUAGES,
+  type Category,
+  type Difficulty,
+  type Language,
+} from "@/types/challenge"
 
 export interface FilterBarProps {
   difficulty: Difficulty | "All"
@@ -46,10 +52,7 @@ const CATEGORIES: Array<{ label: string; value: Category | "All" }> = [
 
 const LANGUAGES: Array<{ label: string; value: Language | "All" }> = [
   { label: "All Languages", value: "All" },
-  { label: "Python", value: "python" },
-  { label: "TypeScript", value: "typescript" },
-  { label: "Go", value: "go" },
-  { label: "Rust", value: "rust" },
+  ...CHALLENGE_LANGUAGES,
 ]
 
 export function FilterBar({
@@ -163,9 +166,11 @@ export function FilterBar({
           aria-label="Filter by difficulty"
         >
           <ToggleGroupItem value="All">All</ToggleGroupItem>
-          <ToggleGroupItem value="Easy">Easy</ToggleGroupItem>
-          <ToggleGroupItem value="Medium">Medium</ToggleGroupItem>
-          <ToggleGroupItem value="Hard">Hard</ToggleGroupItem>
+          {CHALLENGE_DIFFICULTIES.map((diff) => (
+            <ToggleGroupItem key={diff} value={diff}>
+              {diff}
+            </ToggleGroupItem>
+          ))}
         </ToggleGroup>
 
         <div className="flex items-center gap-2">
