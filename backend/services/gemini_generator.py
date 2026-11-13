@@ -22,7 +22,7 @@ from backend.models.challenge import (
 )
 
 
-DEFAULT_GEMINI_MODEL = "gemini-1.5-flash"
+DEFAULT_GEMINI_MODEL = "gemini-3.1-flash-lite"
 GEMINI_API_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
 
 

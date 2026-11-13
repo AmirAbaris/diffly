@@ -102,7 +102,7 @@ def make_mock_gemini_response(
     """Helper to build a mocked httpx.Response from Gemini."""
     url = (
         "https://generativelanguage.googleapis.com/v1beta/models/"
-        "gemini-1.5-flash:generateContent"
+        "gemini-3.1-flash-lite:generateContent"
     )
     request = httpx.Request("POST", url)
     if json_data is not None:
