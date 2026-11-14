@@ -149,3 +149,56 @@ def test_database_isolation_between_tests_part2(session: Session):
     # Verify that part1's user is NOT present due to StaticPool per-test isolation
     users = session.exec(select(User)).all()
     assert len(users) == 0
+
+
+def test_startup_guard_rejects_default_secret_in_production():
+    for kwargs in (
+        {"ENVIRONMENT": "production"},
+        {"NODE_ENV": "production"},
+        {"COOKIE_SECURE": True},
+    ):
+        with pytest.raises(RuntimeError, match="default development secret"):
+            Settings(**kwargs)
+
+
+def test_startup_guard_rejects_short_secret_in_production():
+    with pytest.raises(RuntimeError, match="at least 32 characters"):
+        Settings(ENVIRONMENT="production", JWT_SECRET_KEY="too-short-secret")
+
+    with pytest.raises(RuntimeError, match="at least 32 characters"):
+        Settings(COOKIE_SECURE=True, JWT_SECRET_KEY="   31-chars-padded-with-spaces   ")
+
+
+def test_startup_guard_allows_strong_secret_in_production_and_default_in_dev():
+    prod_settings = Settings(
+        ENVIRONMENT="production",
+        JWT_SECRET_KEY="a-very-strong-production-secret-key-32-plus-chars",
+    )
+    assert prod_settings.is_cookie_secure is True
+
+    dev_settings = Settings(ENVIRONMENT="development")
+    assert dev_settings.is_cookie_secure is False
+
+
+def test_app_lifespan_fails_fast_with_unsafe_production_secret(monkeypatch):
+    from api.index import app
+
+    monkeypatch.setattr(settings, "ENVIRONMENT", "production")
+    with pytest.raises(RuntimeError, match="Insecure JWT_SECRET_KEY"), TestClient(app):
+        pass
+
+    monkeypatch.setattr(settings, "JWT_SECRET_KEY", "short-key")
+    with pytest.raises(RuntimeError, match="at least 32 characters"), TestClient(app):
+        pass
+
+    monkeypatch.setattr(
+        settings,
+        "JWT_SECRET_KEY",
+        "valid-production-secret-with-more-than-32-characters",
+    )
+    with (
+        patch("api.index.init_db"),
+        patch("api.index.seed_challenges_if_empty"),
+        TestClient(app) as tc,
+    ):
+        assert tc is not None

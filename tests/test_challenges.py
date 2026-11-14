@@ -3,11 +3,8 @@
 from fastapi.testclient import TestClient
 from sqlmodel import Session
 
-from api.deps import get_optional_current_user
-from api.index import app
 from backend.models.challenge import Category, Difficulty, Language
 from backend.models.submission import Submission
-from backend.models.user import User
 from backend.seed.seed_data import seed_challenges
 
 
@@ -227,49 +224,30 @@ def test_list_challenges_user_completion_status_guest(
 
 
 def test_list_challenges_user_completion_status_authenticated(
-    client: TestClient, session: Session
+    session: Session, register_user, login_as
 ):
     """Authenticated user tracks completion status and highest score."""
     challenges = seed_challenges(session)
     ch1 = challenges[0]
 
-    user = User(
-        email="learner@diffly.dev",
-        username="learner",
-        hashed_password="pw",
-    )
-    session.add(user)
-    session.commit()
-    session.refresh(user)
+    user = register_user("learner")
+    auth_client = login_as("learner")
 
     sub = Submission(
         challenge_id=ch1.id,
-        user_id=user.id,
+        user_id=user["id"],
         score=95,
         comments="Great review",
     )
     session.add(sub)
     session.commit()
 
-    # Authenticate via dependency override
-    app.dependency_overrides[get_optional_current_user] = lambda: user
-    try:
-        res = client.get("/api/challenges")
-        assert res.status_code == 200
-        data = res.json()
-        item1 = next(item for item in data if item["id"] == ch1.id)
-        assert item1["is_solved"] is True
-        assert item1["best_score"] == 95
-    finally:
-        app.dependency_overrides.pop(get_optional_current_user, None)
-
-    # Authenticate via X-User-Id header fallback
-    res_header = client.get("/api/challenges", headers={"X-User-Id": str(user.id)})
-    assert res_header.status_code == 200
-    data_header = res_header.json()
-    item_header = next(item for item in data_header if item["id"] == ch1.id)
-    assert item_header["is_solved"] is True
-    assert item_header["best_score"] == 95
+    res = auth_client.get("/api/challenges")
+    assert res.status_code == 200
+    data = res.json()
+    item1 = next(item for item in data if item["id"] == ch1.id)
+    assert item1["is_solved"] is True
+    assert item1["best_score"] == 95
 
 
 def test_get_challenge_by_slug(client: TestClient, session: Session):
@@ -317,7 +295,9 @@ def test_get_challenge_by_numeric_id(client: TestClient, session: Session):
     assert "threat_model" in data
 
 
-def test_get_challenge_user_completion_status(client: TestClient, session: Session):
+def test_get_challenge_user_completion_status(
+    client: TestClient, session: Session, register_user, login_as
+):
     """GET /api/challenges/{identifier} reflects user completion status."""
     challenges = seed_challenges(session)
     ch = challenges[0]
@@ -343,33 +323,23 @@ def test_get_challenge_user_completion_status(client: TestClient, session: Sessi
     assert data["best_score"] == 90
 
     # Authenticated user test
-    user = User(
-        email="detailuser@diffly.dev",
-        username="detailuser",
-        hashed_password="pw",
-    )
-    session.add(user)
-    session.commit()
-    session.refresh(user)
+    user = register_user("detailuser")
+    auth_client = login_as("detailuser")
 
     user_sub = Submission(
         challenge_id=ch.id,
-        user_id=user.id,
+        user_id=user["id"],
         score=92,
         comments="Auth user review",
     )
     session.add(user_sub)
     session.commit()
 
-    app.dependency_overrides[get_optional_current_user] = lambda: user
-    try:
-        res_auth = client.get(f"/api/challenges/{ch.slug}")
-        assert res_auth.status_code == 200
-        data_auth = res_auth.json()
-        assert data_auth["is_solved"] is True
-        assert data_auth["best_score"] == 92
-    finally:
-        app.dependency_overrides.pop(get_optional_current_user, None)
+    res_auth = auth_client.get(f"/api/challenges/{ch.slug}")
+    assert res_auth.status_code == 200
+    data_auth = res_auth.json()
+    assert data_auth["is_solved"] is True
+    assert data_auth["best_score"] == 92
 
 
 def test_get_challenge_not_found(client: TestClient, session: Session):
@@ -460,7 +430,7 @@ def test_get_challenge_hints_not_found(client: TestClient, session: Session):
 
 
 def test_get_challenge_solution_forbidden_without_submission_or_reveal(
-    client: TestClient, session: Session
+    client: TestClient, session: Session, register_user, login_as
 ):
     """GET solution returns 403 when unattempted and reveal=false."""
     challenges = seed_challenges(session)
@@ -479,17 +449,10 @@ def test_get_challenge_solution_forbidden_without_submission_or_reveal(
     assert res_guest.status_code == 403
 
     # Authenticated user with no submissions
-    user = User(email="nosub@diffly.dev", username="nosub", hashed_password="pw")
-    session.add(user)
-    session.commit()
-    session.refresh(user)
-
-    app.dependency_overrides[get_optional_current_user] = lambda: user
-    try:
-        res_user = client.get(f"/api/challenges/{ch.slug}/solution")
-        assert res_user.status_code == 403
-    finally:
-        app.dependency_overrides.pop(get_optional_current_user, None)
+    register_user("nosub")
+    auth_client = login_as("nosub")
+    res_user = auth_client.get(f"/api/challenges/{ch.slug}/solution")
+    assert res_user.status_code == 403
 
 
 def test_get_challenge_solution_with_reveal_param(client: TestClient, session: Session):
@@ -555,46 +518,33 @@ def test_get_challenge_solution_allowed_after_guest_submission(
 
 
 def test_get_challenge_solution_allowed_after_user_submission(
-    client: TestClient, session: Session
+    session: Session, register_user, login_as
 ):
     """Authenticated user can access solution after making at least one submission."""
     challenges = seed_challenges(session)
     ch = challenges[0]
 
-    user = User(email="soluser@diffly.dev", username="soluser", hashed_password="pw")
-    session.add(user)
-    session.commit()
-    session.refresh(user)
+    user = register_user("soluser")
+    auth_client = login_as("soluser")
 
     sub = Submission(
         challenge_id=ch.id,
-        user_id=user.id,
+        user_id=user["id"],
         score=75,
         comments="Submitted user attempt",
     )
     session.add(sub)
     session.commit()
 
-    app.dependency_overrides[get_optional_current_user] = lambda: user
-    try:
-        res = client.get(f"/api/challenges/{ch.slug}/solution")
-        assert res.status_code == 200
-        assert res.json()["slug"] == ch.slug
-    finally:
-        app.dependency_overrides.pop(get_optional_current_user, None)
+    res = auth_client.get(f"/api/challenges/{ch.slug}/solution")
+    assert res.status_code == 200
+    assert res.json()["slug"] == ch.slug
 
     # Another user without submission is forbidden
-    other_user = User(email="other@diffly.dev", username="other", hashed_password="pw")
-    session.add(other_user)
-    session.commit()
-    session.refresh(other_user)
-
-    app.dependency_overrides[get_optional_current_user] = lambda: other_user
-    try:
-        res_other = client.get(f"/api/challenges/{ch.slug}/solution")
-        assert res_other.status_code == 403
-    finally:
-        app.dependency_overrides.pop(get_optional_current_user, None)
+    register_user("other")
+    other_client = login_as("other")
+    res_other = other_client.get(f"/api/challenges/{ch.slug}/solution")
+    assert res_other.status_code == 403
 
 
 def test_get_challenge_solution_by_numeric_id(client: TestClient, session: Session):
