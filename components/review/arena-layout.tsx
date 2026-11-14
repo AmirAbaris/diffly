@@ -5,6 +5,10 @@ import { ArenaCodeViewer } from "@/components/review/arena-code-viewer"
 import { ArenaCommentDrawer } from "@/components/review/arena-comment-drawer"
 import { ChallengeContextPanel } from "@/components/review/challenge-context-panel"
 import { ArenaHeader } from "@/components/review/arena-header"
+import {
+  FlaggingGuideModal,
+  FLAGGING_GUIDE_STORAGE_KEY,
+} from "@/components/review/flagging-guide-modal"
 import { ReviewResultModal } from "@/components/review/review-result-modal"
 import { SubmissionBar } from "@/components/review/submission-bar"
 import { SubmissionHistoryDrawer } from "@/components/review/submission-history-drawer"
@@ -49,14 +53,29 @@ export function ArenaLayout({ slug }: ArenaLayoutProps) {
     submissionResult,
     isResultModalOpen,
     isHistoryOpen,
+    isFlagGuideOpen,
     submittedReview,
     setMobileTab,
     setIsSubmitting,
     setSubmissionResult,
     setIsResultModalOpen,
     setIsHistoryOpen,
+    setIsFlagGuideOpen,
     setSubmittedReview,
   } = useArenaUIStore()
+
+  // Auto-open flagging guide on user's first visit to a challenge
+  React.useEffect(() => {
+    if (typeof window === "undefined") return
+    try {
+      const hasSeen = window.localStorage.getItem(FLAGGING_GUIDE_STORAGE_KEY)
+      if (!hasSeen) {
+        setIsFlagGuideOpen(true)
+      }
+    } catch {
+      // Ignore localStorage access errors
+    }
+  }, [setIsFlagGuideOpen])
 
   const { challenges } = useChallenges()
   const nextChallengeSlug = React.useMemo(() => {
@@ -222,12 +241,14 @@ export function ArenaLayout({ slug }: ArenaLayoutProps) {
               language={challenge?.language}
               flaggedLines={flaggedLines}
               onToggleLine={toggleFlaggedLine}
+              onOpenGuide={() => setIsFlagGuideOpen(true)}
             />
 
             <ArenaCommentDrawer
               flaggedLines={flaggedLines}
               onToggleLine={toggleFlaggedLine}
               onClearFlaggedLines={clearFlaggedLines}
+              onOpenFlagGuide={() => setIsFlagGuideOpen(true)}
               comment={comments}
               onChangeComment={setComments}
               onSubmitReview={handleSubmitReview}
@@ -244,6 +265,7 @@ export function ArenaLayout({ slug }: ArenaLayoutProps) {
         flaggedLines={flaggedLines}
         comments={comments}
         onResetDraft={resetDraft}
+        onOpenFlagGuide={() => setIsFlagGuideOpen(true)}
         onSubmitReview={handleSubmitReview}
         onSubmitSuccess={handleReviewSuccess}
         onViewResults={() => setIsResultModalOpen(true)}
@@ -268,6 +290,12 @@ export function ArenaLayout({ slug }: ArenaLayoutProps) {
         userComments={submittedReview?.comments ?? submissionResult?.comments}
         codeSnippet={challenge?.code_snippet}
         language={challenge?.language}
+      />
+
+      {/* Flagging Tutorial & Onboarding Guide Modal */}
+      <FlaggingGuideModal
+        open={isFlagGuideOpen}
+        onOpenChange={setIsFlagGuideOpen}
       />
 
       {/* Submission History Drawer */}

@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { X } from "lucide-react"
+import { CircleHelp, X } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
@@ -12,6 +12,7 @@ export interface ReviewCommentEditorProps {
   flaggedLines: number[]
   onToggleLine: (line: number) => void
   onClearFlaggedLines?: () => void
+  onOpenFlagGuide?: () => void
   comment: string
   onChangeComment: (comment: string) => void
   minCharacters?: number
@@ -29,6 +30,7 @@ interface FlaggedLinesStripProps {
   disabled: boolean
   onToggleLine: (line: number) => void
   onClearFlaggedLines?: () => void
+  onOpenFlagGuide?: () => void
 }
 
 function FlaggedLinesStrip({
@@ -37,6 +39,7 @@ function FlaggedLinesStrip({
   disabled,
   onToggleLine,
   onClearFlaggedLines,
+  onOpenFlagGuide,
 }: FlaggedLinesStripProps) {
   return (
     <div
@@ -69,8 +72,21 @@ function FlaggedLinesStrip({
             </Badge>
           ))
         ) : (
-          <span className="text-muted-foreground">
-            None selected. Click line numbers in code viewer to flag defects.
+          <span className="inline-flex flex-wrap items-center gap-1.5 text-muted-foreground">
+            <span>
+              None selected. Click line numbers in code viewer to flag defects.
+            </span>
+            {onOpenFlagGuide && (
+              <button
+                type="button"
+                onClick={onOpenFlagGuide}
+                className="inline-flex items-center gap-1 font-medium text-amber-600 hover:text-amber-500 hover:underline dark:text-amber-400"
+                data-testid="flag-strip-guide-button"
+              >
+                <CircleHelp className="size-3" />
+                <span>See guide</span>
+              </button>
+            )}
           </span>
         )}
       </div>
@@ -212,6 +228,7 @@ export function ReviewCommentEditor({
   flaggedLines,
   onToggleLine,
   onClearFlaggedLines,
+  onOpenFlagGuide,
   comment,
   onChangeComment,
   minCharacters = 30,
@@ -255,6 +272,7 @@ export function ReviewCommentEditor({
         disabled={disabled}
         onToggleLine={onToggleLine}
         onClearFlaggedLines={onClearFlaggedLines}
+        onOpenFlagGuide={onOpenFlagGuide}
       />
 
       <EditorToolbar

@@ -148,4 +148,58 @@ describe("CodeViewer Component", () => {
     expect(writeTextSpy).toHaveBeenCalledWith(samplePythonCode)
     expect(await screen.findByText("Copied")).toBeInTheDocument()
   })
+
+  it("renders How to flag guide button and triggers onOpenGuide callback", async () => {
+    const onOpenGuideMock = vi.fn()
+    const user = userEvent.setup()
+
+    render(
+      <CodeViewer
+        code={samplePythonCode}
+        language="python"
+        flaggedLines={[]}
+        onToggleLine={vi.fn()}
+        onOpenGuide={onOpenGuideMock}
+      />
+    )
+
+    const guideButton = await screen.findByTestId("how-to-flag-guide-button")
+    expect(guideButton).toBeInTheDocument()
+    await user.click(guideButton)
+
+    expect(onOpenGuideMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("calls onToggleLine when clicking the gutter flag button on unflagged and flagged lines", async () => {
+    const onToggleLineMock = vi.fn()
+    const user = userEvent.setup()
+
+    const { rerender } = render(
+      <CodeViewer
+        code={samplePythonCode}
+        language="python"
+        flaggedLines={[]}
+        onToggleLine={onToggleLineMock}
+      />
+    )
+
+    // Click unflagged gutter flag button for line 2
+    const flagButton = screen.getByRole("button", { name: "Flag line 2" })
+    await user.click(flagButton)
+    expect(onToggleLineMock).toHaveBeenCalledWith(2)
+
+    // Rerender as flagged and click unflag button
+    rerender(
+      <CodeViewer
+        code={samplePythonCode}
+        language="python"
+        flaggedLines={[2]}
+        onToggleLine={onToggleLineMock}
+      />
+    )
+
+    const unflagButton = screen.getByRole("button", { name: "Unflag line 2" })
+    await user.click(unflagButton)
+    expect(onToggleLineMock).toHaveBeenCalledWith(2)
+  })
 })

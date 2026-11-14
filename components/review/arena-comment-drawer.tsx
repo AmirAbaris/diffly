@@ -10,6 +10,7 @@ export interface ArenaCommentDrawerProps {
   flaggedLines: number[]
   onToggleLine: (line: number) => void
   onClearFlaggedLines: () => void
+  onOpenFlagGuide?: () => void
   comment: string
   onChangeComment: (comment: string) => void
   onSubmitReview?: () => void
@@ -20,6 +21,7 @@ export function ArenaCommentDrawer({
   flaggedLines,
   onToggleLine,
   onClearFlaggedLines,
+  onOpenFlagGuide,
   comment,
   onChangeComment,
   onSubmitReview,
@@ -70,6 +72,7 @@ export function ArenaCommentDrawer({
             flaggedLines={flaggedLines}
             onToggleLine={onToggleLine}
             onClearFlaggedLines={onClearFlaggedLines}
+            onOpenFlagGuide={onOpenFlagGuide}
             comment={comment}
             onChangeComment={onChangeComment}
             onSubmitReview={onSubmitReview}

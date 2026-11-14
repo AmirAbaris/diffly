@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Loader2 } from "lucide-react"
+import { CircleHelp, Loader2 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -23,6 +23,7 @@ export interface SubmissionBarProps {
   flaggedLines?: number[]
   comments?: string
   onResetDraft?: () => void
+  onOpenFlagGuide?: () => void
   onSubmitReview?: () => Promise<void> | void
   onSubmitSuccess?: (result: ReviewSubmissionResponse) => void
   onSubmitError?: (error: unknown) => void
@@ -111,6 +112,7 @@ export function SubmissionBar({
   flaggedLines: propFlaggedLines,
   comments: propComments,
   onResetDraft: propOnResetDraft,
+  onOpenFlagGuide,
   onSubmitReview: propOnSubmitReview,
   onSubmitSuccess,
   onSubmitError,
@@ -134,10 +136,13 @@ export function SubmissionBar({
     (s) => s.setIsResultModalOpen
   )
   const storeSetIsHistoryOpen = useArenaUIStore((s) => s.setIsHistoryOpen)
+  const storeSetIsFlagGuideOpen = useArenaUIStore((s) => s.setIsFlagGuideOpen)
 
   const handleOpenHistory = onOpenHistory ?? (() => storeSetIsHistoryOpen(true))
   const handleViewResults =
     onViewResults ?? (() => storeSetIsResultModalOpen(true))
+  const handleOpenFlagGuide =
+    onOpenFlagGuide ?? (() => storeSetIsFlagGuideOpen(true))
 
   const [internalIsSubmitting, setInternalIsSubmitting] = React.useState(false)
   const isSubmitting = propIsSubmitting ?? internalIsSubmitting
@@ -243,6 +248,21 @@ export function SubmissionBar({
             {summaryCount}
           </span>
         </div>
+
+        {!hasLines && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={handleOpenFlagGuide}
+            className="h-6 gap-1 px-1.5 text-xs text-amber-600 hover:bg-amber-500/10 hover:text-amber-500 dark:text-amber-400"
+            data-testid="submission-bar-guide-button"
+            title="Learn how to flag code lines"
+          >
+            <CircleHelp className="size-3" />
+            <span className="hidden sm:inline">How to flag?</span>
+          </Button>
+        )}
 
         {hasLines && hasComment && (
           <Badge variant="success" size="sm" className="hidden sm:inline-flex">
