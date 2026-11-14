@@ -1,7 +1,6 @@
 "use client"
 
 import * as React from "react"
-import { Check, Flag } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -43,7 +42,6 @@ export function FlaggingGuideModal({
   })
   const [gifAvailable, setGifAvailable] = React.useState(false)
 
-  // Check if user has uploaded a real GIF
   React.useEffect(() => {
     if (!gifSrc) return
 
@@ -69,9 +67,7 @@ export function FlaggingGuideModal({
           if (dontShowAgain) {
             window.localStorage.setItem(FLAGGING_GUIDE_STORAGE_KEY, "true")
           }
-        } catch {
-          // Ignore localStorage errors
-        }
+        } catch {}
       }
 
       if (isControlled) {
@@ -92,39 +88,33 @@ export function FlaggingGuideModal({
       } else {
         window.localStorage.removeItem(FLAGGING_GUIDE_STORAGE_KEY)
       }
-    } catch {
-      // Ignore localStorage errors
-    }
+    } catch {}
   }, [])
 
   return (
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
       <DialogContent
         data-testid="flagging-guide-modal"
-        className="max-h-[92vh] max-w-2xl overflow-y-auto p-5 sm:p-6"
+        className="max-h-[92vh] overflow-y-auto overscroll-contain sm:max-w-xl"
       >
-        <DialogHeader className="space-y-1.5 text-left">
-          <div className="flex items-center gap-2">
-            <span className="flex size-7 items-center justify-center rounded-md border border-amber-500/30 bg-amber-500/10 text-amber-500">
-              <Flag className="size-4 fill-amber-500 text-amber-500" />
-            </span>
-            <DialogTitle className="text-base font-semibold sm:text-lg">
-              How to Flag Code Defects
-            </DialogTitle>
-          </div>
-          <DialogDescription className="text-xs text-muted-foreground sm:text-sm">
+        <DialogHeader className="gap-1 text-left">
+          <DialogTitle className="text-base font-semibold tracking-tight">
+            How to Flag Code Defects
+          </DialogTitle>
+          <DialogDescription className="text-xs text-muted-foreground">
             Spot bugs or security flaws in the snippet, flag the affected lines,
             and submit your review comment.
           </DialogDescription>
         </DialogHeader>
 
-        {/* Media or Interactive Demonstration Container */}
-        <div className="relative mt-2 flex flex-col overflow-hidden rounded-lg border border-border bg-muted/20">
+        <div className="flex flex-col overflow-hidden rounded-lg border border-border bg-muted/20">
           {gifAvailable ? (
-            <div className="relative aspect-video w-full overflow-hidden bg-black/40">
+            <div className="relative aspect-video w-full overflow-hidden bg-muted/40">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={gifSrc}
+                width={800}
+                height={450}
                 alt="Demonstration of flagging code lines"
                 className="h-full w-full object-contain"
                 data-testid="flagging-guide-gif"
@@ -135,79 +125,78 @@ export function FlaggingGuideModal({
           )}
         </div>
 
-        {/* 3 Step Visual Guide */}
-        <div className="mt-3 grid grid-cols-1 gap-2.5 sm:grid-cols-3">
-          <div className="flex flex-col gap-1 rounded-md border border-border/70 bg-card/40 p-3">
-            <div className="flex items-center gap-2">
-              <span className="flex size-5 items-center justify-center rounded-full bg-muted text-[11px] font-semibold text-foreground">
-                1
-              </span>
-              <span className="text-xs font-semibold text-foreground">
+        <ol className="divide-y divide-border rounded-lg border border-border bg-muted/10 text-xs">
+          <li className="flex items-baseline gap-3 px-3.5 py-2.5">
+            <span className="font-mono text-muted-foreground tabular-nums">
+              01
+            </span>
+            <div className="min-w-0">
+              <span className="font-medium text-foreground">
                 Hover Any Line
               </span>
-            </div>
-            <p className="text-[11px] leading-relaxed text-muted-foreground">
-              Moving your cursor over the code reveals a ghost flag icon in the
-              left gutter.
-            </p>
-          </div>
-
-          <div className="flex flex-col gap-1 rounded-md border border-border/70 bg-card/40 p-3">
-            <div className="flex items-center gap-2">
-              <span className="flex size-5 items-center justify-center rounded-full bg-amber-500/20 text-[11px] font-semibold text-amber-600 dark:text-amber-400">
-                2
-              </span>
-              <span className="text-xs font-semibold text-foreground">
-                Click to Flag
+              <span className="text-muted-foreground">
+                {" "}
+                — Move your cursor over the code to reveal the flag button in
+                the gutter.
               </span>
             </div>
-            <p className="text-[11px] leading-relaxed text-muted-foreground">
-              Click the line number or flag icon to mark defect lines. The row
-              turns amber.
-            </p>
-          </div>
+          </li>
 
-          <div className="flex flex-col gap-1 rounded-md border border-border/70 bg-card/40 p-3">
-            <div className="flex items-center gap-2">
-              <span className="flex size-5 items-center justify-center rounded-full bg-emerald-500/20 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
-                3
+          <li className="flex items-baseline gap-3 px-3.5 py-2.5">
+            <span className="font-mono text-muted-foreground tabular-nums">
+              02
+            </span>
+            <div className="min-w-0">
+              <span className="font-medium text-foreground">Click to Flag</span>
+              <span className="text-muted-foreground">
+                {" "}
+                — Click the line number or flag icon to mark a defect line.
               </span>
-              <span className="text-xs font-semibold text-foreground">
+            </div>
+          </li>
+
+          <li className="flex items-baseline gap-3 px-3.5 py-2.5">
+            <span className="font-mono text-muted-foreground tabular-nums">
+              03
+            </span>
+            <div className="min-w-0">
+              <span className="font-medium text-foreground">
                 Explain &amp; Submit
               </span>
+              <span className="text-muted-foreground">
+                {" "}
+                — Flagged lines attach to your review draft. Write your critique
+                and submit.
+              </span>
             </div>
-            <p className="text-[11px] leading-relaxed text-muted-foreground">
-              Flagged lines attach to your review draft. Write your critique and
-              click Submit!
-            </p>
-          </div>
-        </div>
+          </li>
+        </ol>
 
-        <DialogFooter className="mt-3 flex flex-col gap-2.5 border-t border-border/70 pt-3 sm:flex-row sm:items-center sm:justify-between">
+        <DialogFooter className="flex flex-col gap-3 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between">
           <label
             htmlFor="dont-show-flag-guide-checkbox"
             className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground select-none"
           >
             <input
               id="dont-show-flag-guide-checkbox"
+              name="dontShowFlagGuide"
               type="checkbox"
               checked={dontShowAgain}
               onChange={(e) => handleDontShowAgainChange(e.target.checked)}
               className="size-3.5 rounded border-border accent-primary"
               data-testid="dont-show-guide-checkbox"
             />
-            <span>Don&apos;t show this automatically on challenge start</span>
+            <span>Don&apos;t show automatically on challenge start</span>
           </label>
 
           <Button
             type="button"
             size="sm"
             onClick={() => handleOpenChange(false)}
-            className="h-8 gap-1.5 px-4 text-xs font-medium"
+            className="h-8 px-3.5 text-xs font-medium"
             data-testid="close-guide-button"
           >
-            <Check className="size-3.5" />
-            <span>Got it, start reviewing</span>
+            <span>Start Reviewing</span>
           </Button>
         </DialogFooter>
       </DialogContent>

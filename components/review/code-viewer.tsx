@@ -125,9 +125,10 @@ export function CodeViewer({
               onClick={onOpenGuide}
               className="h-7 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground"
               title="How to flag lines guide"
+              aria-label="How to flag lines guide"
               data-testid="how-to-flag-guide-button"
             >
-              <CircleHelp className="size-3.5 text-amber-500" />
+              <CircleHelp aria-hidden="true" className="size-3.5" />
               <span className="hidden sm:inline">How to flag</span>
             </Button>
           )}
@@ -217,7 +218,7 @@ export function CodeViewer({
                                 : `Click to flag line ${line.lineNumber} for review`
                             }
                             className={cn(
-                              "inline-flex h-5 w-8 items-center justify-center rounded font-mono text-xs tabular-nums transition-colors",
+                              "inline-flex h-5 w-8 items-center justify-center rounded font-mono text-xs tabular-nums transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
                               readOnly && "cursor-default",
                               isFlagged
                                 ? "bg-amber-500 font-bold text-amber-950"
@@ -241,9 +242,12 @@ export function CodeViewer({
                               }}
                               title="Flagged for review"
                               aria-label={`Unflag line ${line.lineNumber}`}
-                              className="inline-flex items-center justify-center rounded border border-amber-500/40 bg-amber-500/20 px-1 py-0.5 text-amber-700 transition-transform active:scale-95 dark:text-amber-400"
+                              className="inline-flex items-center justify-center rounded border border-amber-500/40 bg-amber-500/20 px-1 py-0.5 text-amber-700 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none dark:text-amber-400"
                             >
-                              <Flag className="size-3 fill-amber-500 text-amber-500" />
+                              <Flag
+                                aria-hidden="true"
+                                className="size-3 fill-amber-500 text-amber-500"
+                              />
                             </button>
                           ) : !readOnly ? (
                             <button
@@ -251,9 +255,9 @@ export function CodeViewer({
                               onClick={() => onToggleLine(line.lineNumber)}
                               title={`Click to flag line ${line.lineNumber}`}
                               aria-label={`Flag line ${line.lineNumber}`}
-                              className="inline-flex items-center justify-center rounded p-0.5 text-muted-foreground/40 opacity-0 transition-opacity duration-150 group-hover:opacity-70 hover:bg-amber-500/10 hover:text-amber-500 hover:!opacity-100 active:scale-95"
+                              className="inline-flex items-center justify-center rounded p-0.5 text-muted-foreground/40 opacity-0 transition-opacity duration-150 group-hover:opacity-70 hover:bg-muted hover:text-amber-500 hover:!opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                             >
-                              <Flag className="size-3" />
+                              <Flag aria-hidden="true" className="size-3" />
                             </button>
                           ) : (
                             <span className="block w-3" />

@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { CircleHelp, X } from "lucide-react"
+import { X } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
@@ -80,11 +80,10 @@ function FlaggedLinesStrip({
               <button
                 type="button"
                 onClick={onOpenFlagGuide}
-                className="inline-flex items-center gap-1 font-medium text-amber-600 hover:text-amber-500 hover:underline dark:text-amber-400"
+                className="rounded-sm font-medium text-foreground underline underline-offset-4 transition-colors hover:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                 data-testid="flag-strip-guide-button"
               >
-                <CircleHelp className="size-3" />
-                <span>See guide</span>
+                See guide
               </button>
             )}
           </span>

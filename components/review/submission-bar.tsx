@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { CircleHelp, Loader2 } from "lucide-react"
+import { Loader2 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -253,14 +253,12 @@ export function SubmissionBar({
           <Button
             type="button"
             variant="ghost"
-            size="sm"
+            size="xs"
             onClick={handleOpenFlagGuide}
-            className="h-6 gap-1 px-1.5 text-xs text-amber-600 hover:bg-amber-500/10 hover:text-amber-500 dark:text-amber-400"
+            className="text-muted-foreground hover:text-foreground"
             data-testid="submission-bar-guide-button"
-            title="Learn how to flag code lines"
           >
-            <CircleHelp className="size-3" />
-            <span className="hidden sm:inline">How to flag?</span>
+            <span>How to flag</span>
           </Button>
         )}
 

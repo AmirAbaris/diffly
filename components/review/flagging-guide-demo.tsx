@@ -1,8 +1,9 @@
 "use client"
 
 import * as React from "react"
-import { Code2, Flag, MousePointerClick } from "lucide-react"
+import { FileCode, Flag } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
 interface DemoLine {
@@ -36,29 +37,27 @@ export function FlaggingGuideDemo() {
 
   return (
     <div
-      className="flex flex-col p-3.5 sm:p-4"
+      className="flex flex-col font-mono text-xs"
       data-testid="flagging-guide-demo"
     >
-      {/* Demo Header Bar */}
-      <div className="flex items-center justify-between border-b border-border/80 pb-2">
+      <div className="flex h-9 items-center justify-between border-b border-border bg-muted/40 px-3">
         <div className="flex items-center gap-2">
-          <Code2 className="size-3.5 text-muted-foreground" />
-          <span className="font-mono text-xs font-medium text-foreground">
-            auth_service.py
-          </span>
-          <Badge variant="outline" size="sm" className="text-[10px] uppercase">
+          <FileCode
+            aria-hidden="true"
+            className="size-3.5 text-muted-foreground"
+          />
+          <span className="font-semibold text-foreground">auth_service.py</span>
+          <Badge variant="outline" size="sm">
             Interactive Demo
           </Badge>
         </div>
-        <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
-          <MousePointerClick className="size-3 text-amber-500" />
-          <span>Click line numbers to test</span>
-        </div>
+        <span className="font-sans text-xs text-muted-foreground">
+          Click a line number to test
+        </span>
       </div>
 
-      {/* Demo Code Box */}
-      <div className="mt-2.5 overflow-x-auto rounded border border-border/70 bg-card/60 p-1 font-mono text-xs">
-        <table className="w-full border-collapse">
+      <div className="overflow-x-auto p-1">
+        <table className="w-full border-collapse font-mono text-xs leading-5">
           <tbody>
             {DEMO_LINES.map((line) => {
               const isFlagged = demoFlaggedLines.includes(line.num)
@@ -69,17 +68,16 @@ export function FlaggingGuideDemo() {
                     "group transition-colors",
                     isFlagged
                       ? "bg-amber-500/15 dark:bg-amber-500/20"
-                      : "hover:bg-muted/60"
+                      : "hover:bg-muted/50"
                   )}
                 >
-                  {/* Line Number Button */}
-                  <td className="w-10 py-1 pr-1 text-right align-middle select-none">
+                  <td className="w-10 px-2 py-0.5 text-right align-middle select-none">
                     <button
                       type="button"
                       onClick={() => toggleDemoLine(line.num)}
                       aria-label={`Demo toggle line ${line.num}`}
                       className={cn(
-                        "inline-flex h-5 w-7 items-center justify-center rounded font-mono text-[11px] tabular-nums transition-colors",
+                        "inline-flex h-5 w-7 items-center justify-center rounded font-mono text-xs tabular-nums transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
                         isFlagged
                           ? "bg-amber-500 font-bold text-amber-950"
                           : "text-muted-foreground/60 group-hover:text-foreground hover:bg-muted"
@@ -89,35 +87,38 @@ export function FlaggingGuideDemo() {
                     </button>
                   </td>
 
-                  {/* Flag Icon Slot */}
-                  <td className="w-7 py-1 text-center align-middle select-none">
+                  <td className="w-8 px-1 py-0.5 text-center align-middle select-none">
                     {isFlagged ? (
                       <button
                         type="button"
                         onClick={() => toggleDemoLine(line.num)}
                         title="Flagged line. Click to unflag."
-                        className="inline-flex items-center justify-center rounded p-0.5 text-amber-500"
+                        aria-label={`Unflag demo line ${line.num}`}
+                        className="inline-flex items-center justify-center rounded border border-amber-500/40 bg-amber-500/20 px-1 py-0.5 text-amber-700 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none dark:text-amber-400"
                       >
-                        <Flag className="size-3 fill-amber-500 text-amber-500" />
+                        <Flag
+                          aria-hidden="true"
+                          className="size-3 fill-amber-500 text-amber-500"
+                        />
                       </button>
                     ) : (
                       <button
                         type="button"
                         onClick={() => toggleDemoLine(line.num)}
                         title="Click to flag line"
-                        className="inline-flex items-center justify-center rounded p-0.5 text-muted-foreground/40 opacity-0 transition-opacity group-hover:opacity-70 hover:text-amber-500 hover:!opacity-100"
+                        aria-label={`Flag demo line ${line.num}`}
+                        className="inline-flex items-center justify-center rounded p-0.5 text-muted-foreground/40 opacity-0 transition-opacity group-hover:opacity-70 hover:text-amber-500 hover:!opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                       >
-                        <Flag className="size-3" />
+                        <Flag aria-hidden="true" className="size-3" />
                       </button>
                     )}
                   </td>
 
-                  {/* Code Content */}
                   <td
                     className={cn(
-                      "py-1 pl-1 font-mono text-[11px] leading-5 whitespace-pre",
+                      "px-2 py-0.5 font-mono text-xs leading-5 whitespace-pre",
                       line.isVulnerable
-                        ? "font-medium text-amber-600 dark:text-amber-400"
+                        ? "font-medium text-foreground"
                         : "text-muted-foreground"
                     )}
                   >
@@ -130,9 +131,8 @@ export function FlaggingGuideDemo() {
         </table>
       </div>
 
-      {/* Demo Action Strip preview */}
-      <div className="mt-2.5 flex items-center justify-between rounded border border-border/70 bg-muted/40 px-3 py-1.5 text-xs">
-        <div className="flex items-center gap-1.5">
+      <div className="flex items-center justify-between border-t border-border bg-muted/30 px-3 py-1.5 font-sans text-xs">
+        <div className="flex flex-wrap items-center gap-1.5">
           <span className="font-medium text-foreground">Flagged lines:</span>
           {demoFlaggedLines.length > 0 ? (
             demoFlaggedLines.map((num) => (
@@ -140,38 +140,26 @@ export function FlaggingGuideDemo() {
                 key={num}
                 variant="warning"
                 size="sm"
-                className="font-mono text-[10px] tabular-nums"
+                className="font-mono tabular-nums"
               >
                 L{num}
               </Badge>
             ))
           ) : (
-            <span className="text-xs text-muted-foreground italic">
-              None selected
-            </span>
+            <span className="text-muted-foreground">None selected</span>
           )}
         </div>
         {demoFlaggedLines.length > 0 && (
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="xs"
             onClick={() => setDemoFlaggedLines([])}
-            className="text-[11px] text-muted-foreground hover:text-destructive"
+            className="text-muted-foreground hover:text-destructive"
           >
             Reset demo
-          </button>
+          </Button>
         )}
-      </div>
-
-      {/* Interactive tip footer */}
-      <div className="mt-2.5 flex items-center justify-between rounded border border-border/50 bg-muted/40 px-3 py-1.5 text-[11px] text-muted-foreground">
-        <span>
-          💡 <strong className="font-medium text-foreground">Sandbox:</strong>{" "}
-          Practice clicking lines above to see how flagging feels before you
-          start.
-        </span>
-        <span className="font-mono text-[10px] text-muted-foreground/80">
-          Try lines 1–5
-        </span>
       </div>
     </div>
   )
