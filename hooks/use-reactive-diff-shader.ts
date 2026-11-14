@@ -31,7 +31,23 @@ const PREPARED_DIFF_FIELD_SHADER = prepareShader(
   "diff-field.wgsl"
 )
 
-function readInitialReducedMotion(): boolean {
+function subscribeReducedMotion(callback: () => void): () => void {
+  if (
+    typeof window === "undefined" ||
+    typeof window.matchMedia !== "function"
+  ) {
+    return () => {}
+  }
+
+  const mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)")
+  mediaQuery.addEventListener("change", callback)
+
+  return () => {
+    mediaQuery.removeEventListener("change", callback)
+  }
+}
+
+function getReducedMotionSnapshot(): boolean {
   if (
     typeof window === "undefined" ||
     typeof window.matchMedia !== "function"
@@ -40,6 +56,10 @@ function readInitialReducedMotion(): boolean {
   }
 
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches
+}
+
+function getReducedMotionServerSnapshot(): boolean {
+  return false
 }
 
 export function useReactiveDiffShader(
@@ -56,8 +76,10 @@ export function useReactiveDiffShader(
   const [gpuReady, setGpuReady] = React.useState(false)
   const [gpuFailed, setGpuFailed] = React.useState(false)
   const [userPaused, setUserPaused] = React.useState(false)
-  const [prefersReducedMotion, setPrefersReducedMotion] = React.useState(
-    readInitialReducedMotion
+  const prefersReducedMotion = React.useSyncExternalStore(
+    subscribeReducedMotion,
+    getReducedMotionSnapshot,
+    getReducedMotionServerSnapshot
   )
 
   React.useEffect(() => {
@@ -71,27 +93,6 @@ export function useReactiveDiffShader(
       }
     })
   }, [bridge])
-
-  React.useEffect(() => {
-    if (
-      typeof window === "undefined" ||
-      typeof window.matchMedia !== "function"
-    ) {
-      return
-    }
-
-    const mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)")
-
-    function handleMotionChange(event: MediaQueryListEvent) {
-      setPrefersReducedMotion(event.matches)
-    }
-
-    mediaQuery.addEventListener("change", handleMotionChange)
-
-    return () => {
-      mediaQuery.removeEventListener("change", handleMotionChange)
-    }
-  }, [])
 
   React.useEffect(() => {
     const canvas = canvasRef.current

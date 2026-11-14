@@ -161,4 +161,57 @@ describe("LandingPage & Sandbox Engine", () => {
       screen.getByTestId("sandbox-open-full-challenge-link")
     ).toHaveAttribute("href", "/challenges/fastapi-raw-sql-injection")
   })
+
+  it("defers prefers-reduced-motion evaluation until after mount to preserve SSR hydration parity", async () => {
+    const { renderToString } = await import("react-dom/server")
+    const { hydrateRoot } = await import("react-dom/client")
+    const { act } = await import("react")
+    const originalMatchMedia = window.matchMedia
+    Object.defineProperty(window, "matchMedia", {
+      writable: true,
+      value: vi.fn().mockImplementation((query: string) => ({
+        matches: query === "(prefers-reduced-motion: reduce)",
+        media: query,
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    })
+    const consoleErrorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {})
+
+    const container = document.createElement("div")
+    document.body.appendChild(container)
+    let root: ReturnType<typeof hydrateRoot> | null = null
+
+    try {
+      const ssrHtml = renderToString(<LandingPage />)
+      expect(ssrHtml).toContain("Pause shader animation")
+      container.innerHTML = ssrHtml
+
+      await act(async () => {
+        root = hydrateRoot(container, <LandingPage />)
+      })
+
+      expect(consoleErrorSpy).not.toHaveBeenCalled()
+      expect(screen.getByTestId("reactive-shader-stage")).toHaveAttribute(
+        "data-shader-status",
+        "fallback"
+      )
+    } finally {
+      await act(async () => {
+        root?.unmount()
+      })
+      container.remove()
+      consoleErrorSpy.mockRestore()
+      Object.defineProperty(window, "matchMedia", {
+        writable: true,
+        value: originalMatchMedia,
+      })
+    }
+  })
 })

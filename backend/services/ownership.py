@@ -35,12 +35,17 @@ class Actor:
             if current_user is not None and current_user.id is not None
             else None
         )
+        if user_id is not None:
+            return cls(user_id=user_id, guest_session_id=None)
+
         guest_session_id: str | None = None
         for candidate in session_candidates:
-            if candidate and candidate.strip():
-                guest_session_id = candidate.strip()
-                break
-        return cls(user_id=user_id, guest_session_id=guest_session_id)
+            if candidate:
+                cleaned = candidate.strip()
+                if 1 <= len(cleaned) <= 128:
+                    guest_session_id = cleaned
+                    break
+        return cls(user_id=None, guest_session_id=guest_session_id)
 
 
 def submission_owner_filter(actor: Actor) -> Any | None:
@@ -102,7 +107,7 @@ def claim_guest_records(
 
     Returns (claimed_submissions_count, claimed_challenges_count).
     """
-    valid_ids = {s.strip() for s in session_ids if s and s.strip()}
+    valid_ids = {s.strip() for s in session_ids if s and 1 <= len(s.strip()) <= 128}
     if not valid_ids:
         return (0, 0)
 

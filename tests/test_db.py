@@ -49,15 +49,18 @@ def test_settings_cors_origins_parsing():
 
 def test_init_db_creates_all_tables():
     test_engine = create_engine("sqlite:///:memory:")
-    with patch("backend.core.db.engine", test_engine):
-        init_db()
-        from sqlalchemy import inspect
+    try:
+        with patch("backend.core.db.engine", test_engine):
+            init_db()
+            from sqlalchemy import inspect
 
-        inspector = inspect(test_engine)
-        table_names = set(inspector.get_table_names())
-        assert "users" in table_names
-        assert "challenges" in table_names
-        assert "submissions" in table_names
+            inspector = inspect(test_engine)
+            table_names = set(inspector.get_table_names())
+            assert "users" in table_names
+            assert "challenges" in table_names
+            assert "submissions" in table_names
+    finally:
+        test_engine.dispose()
 
 
 def test_get_session_yields_session():

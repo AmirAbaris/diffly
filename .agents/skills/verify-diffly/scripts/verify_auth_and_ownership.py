@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import secrets
 import socket
 import subprocess
 import sys
@@ -124,15 +125,17 @@ class VerificationRunner:
     def build_report(self) -> dict[str, Any]:
         failed = sum(1 for item in self.steps if item["verdict"] == "FAIL")
         passed = sum(1 for item in self.steps if item["verdict"] == "PASS")
+        has_errors = failed > 0 or bool(self.failures)
         return {
             "feature": self.feature,
             "timestamp": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "base_url": self.base_url,
             "metadata": self.metadata,
-            "verdict": "PASSED" if failed == 0 else "FAILED",
+            "verdict": "FAILED" if has_errors else "PASSED",
             "total_steps": len(self.steps),
             "passed_steps": passed,
             "failed_steps": failed,
+            "errors": list(self.failures),
             "steps": self.steps,
         }
 
@@ -160,9 +163,10 @@ def temporary_production_server(db_url: str):
     env = os.environ.copy()
     env["ENVIRONMENT"] = "production"
     env["DATABASE_URL"] = db_url
+    env["JWT_SECRET_KEY"] = secrets.token_urlsafe(32)
     env["PYTHONPATH"] = str(REPO_ROOT)
 
-    proc = subprocess.Popen(
+    proc = subprocess.Popen(  # noqa: S603
         [
             resolve_uvicorn_bin(),
             "api.index:app",
@@ -728,6 +732,18 @@ def run_auth_isolation(runner: VerificationRunner) -> None:
             assertion="Deactivated user login attempt is rejected with 403",
         )
 
+        dev_x_user_res = anon.get(
+            "/api/auth/me",
+            headers={"x-user-id": str(user_a_id)},
+        )
+        runner.check_response(
+            step="dev_x_user_id_header_rejected_on_me",
+            actor="forged_x_user_id_dev",
+            response=dev_x_user_res,
+            expected_status=401,
+            assertion=("Forged x-user-id header returns 401 even in development mode"),
+        )
+
         with (
             temporary_production_server(runner.db_url) as prod_url,
             httpx.Client(base_url=prod_url, timeout=15.0) as prod_client,
@@ -902,8 +918,8 @@ def run_challenge_ownership(runner: VerificationRunner) -> None:
             step="guest_b_cannot_delete_guest_a_custom_challenge",
             actor="guest_b",
             response=gb_del_res,
-            expected_status=403,
-            assertion="Guest B gets 403 deleting Guest A custom challenge",
+            expected_status=404,
+            assertion="Guest B gets 404 deleting Guest A custom challenge",
         )
 
         reg_a_res = client_a.post(
@@ -961,7 +977,7 @@ def run_challenge_ownership(runner: VerificationRunner) -> None:
             step="old_session_cannot_delete_claimed_custom_challenge",
             actor="third_party_with_old_session",
             response=old_del_res,
-            expected_status=403,
+            expected_status=404,
             assertion="Old Guest A session ID cannot delete claimed custom challenge",
         )
 
@@ -1042,8 +1058,8 @@ def run_challenge_ownership(runner: VerificationRunner) -> None:
             step="user_b_cannot_delete_user_a_custom_challenge",
             actor="user_b",
             response=ub_del_res,
-            expected_status=403,
-            assertion="User B receives 403 deleting User A custom challenge",
+            expected_status=404,
+            assertion="User B receives 404 deleting User A custom challenge",
         )
 
         with (
@@ -1072,7 +1088,7 @@ def run_challenge_ownership(runner: VerificationRunner) -> None:
                 step="prod_x_user_id_cannot_delete_custom_challenge",
                 actor="forged_x_user_id_prod",
                 response=prod_del,
-                expected_status=403,
+                expected_status=404,
                 assertion=(
                     "Forged x-user-id in production cannot delete "
                     "User A custom challenge"
@@ -1102,7 +1118,7 @@ def run_challenge_ownership(runner: VerificationRunner) -> None:
             step="logged_out_user_a_cannot_delete_custom_challenge",
             actor="user_a_logged_out",
             response=logged_out_del,
-            expected_status=403,
+            expected_status=404,
             assertion="Logged-out User A cannot delete private custom challenge",
         )
 
