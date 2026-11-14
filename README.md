@@ -1,4 +1,4 @@
-# Diffly ⚡
+# Diffly
 
 <p align="center">
   <strong>The open-source code review training arena & evaluation platform for AI agent code and pull requests.</strong>
@@ -18,7 +18,7 @@
 
 ---
 
-## 🎯 Why Diffly?
+## Why Diffly?
 
 As AI coding agents (Claude, Codex, Devin, Cursor, GitHub Copilot) accelerate code output, the nature of code review has fundamentally changed. Reviewers no longer just look for style issues or simple syntax errors—they must spot:
 
@@ -31,39 +31,39 @@ As AI coding agents (Claude, Codex, Devin, Cursor, GitHub Copilot) accelerate co
 
 ---
 
-## ✨ Features
+## Features
 
-- **🎮 Interactive Review Arena:**
+- **Interactive Review Arena:**
   - Full-featured code viewer powered by `prism-react-renderer` with line-by-line gutter interactions.
   - In-line comment editor supporting Markdown formatting, real-time preview, and shortcut keys (`Cmd/Ctrl + Enter`).
   - Context panel with Threat Model analysis, Defect Target descriptions, and progressive tiered hints.
 
-- **🤖 Automated Evaluation Engine:**
+- **Automated Evaluation Engine:**
   - Evaluates review findings against ground-truth defect targets.
   - Calculates line-accuracy, precision, recall, and comprehensive review scores.
   - Visual Radial Score Meter and defect discovery summaries.
 
-- **🔍 Side-by-Side Comparison & Debrief:**
+- **Side-by-Side Comparison & Debrief:**
   - Post-review comparison view displaying user findings alongside canonical staff reviews.
   - Side-by-side unified code diff inspections highlighting missed vs. caught bugs.
 
-- **📚 Curated Challenge Taxonomy:**
+- **Curated Challenge Taxonomy:**
   - Real-world scenarios spanning **Agent Antipatterns**, **Security & Injection Vectors**, and **Concurrency & Async Defects**.
   - Tiered difficulty rankings (`Easy`, `Medium`, `Hard`) with estimated completion times.
 
-- **📖 Interactive API Docs (Scalar):**
+- **Interactive API Docs (Scalar):**
   - Fully interactive OpenAPI reference powered by Scalar at `/scalar`.
 
-- **🐳 Production Ready & Containerized:**
+- **Production Ready & Containerized:**
   - Optimized multi-stage Docker build with zero-downtime health probes and standalone Next.js deployment.
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
 ```mermaid
 graph TD
-    User["👤 Developer / Reviewer"]
+    User["Developer / Reviewer"]
 
     subgraph "Frontend — Next.js 16 (Port 3000)"
         AppRouter["App Router (React 19 Server & Client Components)"]
@@ -104,7 +104,7 @@ graph TD
 
 ---
 
-## 🗂️ Challenge Taxonomy
+## Challenge Taxonomy
 
 Diffly provides a growing dataset of curated challenges based on real-world pull requests and autonomous agent code patterns:
 
@@ -118,7 +118,7 @@ Diffly provides a growing dataset of curated challenges based on real-world pull
 
 ---
 
-## 🚀 Quickstart
+## Quickstart
 
 You can run Diffly using **Docker Compose** (recommended for instant setup) or directly on your machine.
 
@@ -207,7 +207,7 @@ pnpm dev:api
 
 ---
 
-## ⚙️ Environment Configuration
+## Environment Configuration
 
 | Variable                      | Default                                       | Description                                                              |
 | :---------------------------- | :-------------------------------------------- | :----------------------------------------------------------------------- |
@@ -223,7 +223,7 @@ pnpm dev:api
 
 ---
 
-## 📡 API Overview
+## API Overview
 
 Diffly features a fully documented RESTful API. Visit `/scalar` for the interactive playground.
 
@@ -241,7 +241,7 @@ Diffly features a fully documented RESTful API. Visit `/scalar` for the interact
 
 ---
 
-## 🧪 Test Suite & Code Hygiene
+## Test Suite & Code Hygiene
 
 Diffly enforces rigorous quality gates across both frontend and backend stacks:
 
@@ -267,7 +267,7 @@ pnpm format
 
 ---
 
-## 📁 Repository Structure
+## Repository Structure
 
 ```text
 diffly/
@@ -301,7 +301,7 @@ diffly/
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
 We warmly welcome contributions from the community! Whether you want to add new review challenges, enhance the evaluation engine, or improve the UI:
 
@@ -325,12 +325,12 @@ To add a challenge, add your scenario to `backend/seed/challenges.py` with:
 
 ---
 
-## 📄 License
+## License
 
 This project is open-source and available under the **[MIT License](LICENSE)**.
 
 ---
 
 <p align="center">
-  Built with ❤️ for developers and security engineers reviewing code in the age of AI agents.
+  Built for developers and security engineers reviewing code in the age of AI agents.
 </p>
