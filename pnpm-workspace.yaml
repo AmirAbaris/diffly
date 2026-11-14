@@ -1,4 +1,6 @@
 packages:
   - '.'
 allowBuilds:
+  '@vgpu/adapter-node': false
   lefthook: true
+  webgpu: false

@@ -1,18 +1,13 @@
 import type { Metadata, Viewport } from "next"
-import { Geist_Mono, Inter } from "next/font/google"
+import { GeistMono } from "geist/font/mono"
+import { GeistPixelSquare } from "geist/font/pixel"
+import { GeistSans } from "geist/font/sans"
 
 import "./globals.css"
 import { SWRProvider } from "@/components/swr-provider"
 import { ThemeProvider } from "@/components/theme-provider"
 import { Toaster } from "@/components/ui/toaster"
 import { cn } from "@/lib/utils"
-
-const inter = Inter({ subsets: ["latin"], variable: "--font-sans" })
-
-const fontMono = Geist_Mono({
-  subsets: ["latin"],
-  variable: "--font-mono",
-})
 
 export const metadata: Metadata = {
   title: {
@@ -42,9 +37,10 @@ export default function RootLayout({
       suppressHydrationWarning
       className={cn(
         "antialiased",
-        fontMono.variable,
-        "font-sans",
-        inter.variable
+        GeistSans.variable,
+        GeistMono.variable,
+        GeistPixelSquare.variable,
+        "font-sans"
       )}
     >
       <body>

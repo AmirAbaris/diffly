@@ -19,8 +19,8 @@ export function Navbar({ className }: NavbarProps) {
       <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4 sm:px-6">
         <div className="flex items-center gap-2.5">
           <Link
-            href="/challenges"
-            className="text-base font-semibold tracking-tight text-foreground transition-opacity hover:opacity-80"
+            href="/"
+            className="font-pixel text-base tracking-tight text-foreground transition-opacity hover:opacity-80"
           >
             Diffly
           </Link>
@@ -30,9 +30,12 @@ export function Navbar({ className }: NavbarProps) {
           >
             /
           </span>
-          <span className="hidden text-xs font-medium text-muted-foreground sm:inline">
+          <Link
+            href="/challenges"
+            className="text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+          >
             Code Review Arena
-          </span>
+          </Link>
         </div>
 
         <div className="flex items-center gap-2.5 sm:gap-3">

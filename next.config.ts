@@ -13,15 +13,6 @@ const nextConfig: NextConfig = {
       validationLevel: "manual-warning",
     },
   },
-  async redirects() {
-    return [
-      {
-        source: "/",
-        destination: "/challenges",
-        permanent: false,
-      },
-    ]
-  },
   async rewrites() {
     const backendUrl =
       process.env.BACKEND_URL ||
