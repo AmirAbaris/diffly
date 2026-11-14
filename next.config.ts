@@ -1,5 +1,7 @@
 import type { NextConfig } from "next"
 
+import { buildApiRewrites } from "./lib/config/api-rewrites"
+
 const nextConfig: NextConfig = {
   output: "standalone",
   agentRules: true,
@@ -14,18 +16,7 @@ const nextConfig: NextConfig = {
     },
   },
   async rewrites() {
-    const backendUrl =
-      process.env.BACKEND_URL ||
-      (process.env.NODE_ENV === "development"
-        ? "http://127.0.0.1:8000"
-        : "http://backend:8000")
-
-    return [
-      {
-        source: "/api/:path*",
-        destination: `${backendUrl.replace(/\/$/, "")}/api/:path*`,
-      },
-    ]
+    return buildApiRewrites(process.env)
   },
 }
 

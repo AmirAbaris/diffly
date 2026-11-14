@@ -8,8 +8,14 @@ from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 from sqlmodel import Session, create_engine, select
 
-from backend.core.config import Settings, settings
-from backend.core.db import get_session, init_db
+from backend.core.config import Settings, normalize_database_url, settings
+from backend.core.db import (
+    build_engine_kwargs,
+    create_db_engine,
+    get_session,
+    init_db,
+    resolve_database_config,
+)
 from backend.models import User
 
 
@@ -20,6 +26,11 @@ def test_default_settings():
     assert settings.ACCESS_TOKEN_EXPIRE_MINUTES == 10080
     assert "http://localhost:3000" in settings.CORS_ORIGINS
     assert "http://localhost:8000" in settings.CORS_ORIGINS
+    assert settings.CORS_ORIGIN_REGEX == r"^https://.*\.vercel\.app$"
+    assert settings.DB_POOL_SIZE == 5
+    assert settings.DB_MAX_OVERFLOW == 10
+    assert settings.DB_POOL_RECYCLE_SECONDS == 300
+    assert settings.DB_POOL_PRE_PING is True
 
 
 def test_settings_cors_origins_parsing():
@@ -45,6 +56,71 @@ def test_settings_cors_origins_parsing():
     # Invalid type
     with pytest.raises(ValueError, match="Invalid format for CORS_ORIGINS"):
         Settings(CORS_ORIGINS=12345)  # type: ignore[arg-type]
+
+
+def test_cors_origin_regex_validation():
+    import re
+
+    # Valid regex
+    s = Settings(CORS_ORIGIN_REGEX=r"^https://[a-z0-9-]+\.vercel\.app$")
+    assert s.CORS_ORIGIN_REGEX == r"^https://[a-z0-9-]+\.vercel\.app$"
+
+    # Invalid regex raises re.error
+    with pytest.raises(re.error):
+        Settings(CORS_ORIGIN_REGEX="[invalid(")
+
+
+def test_normalize_database_url():
+    # SQLite untouched
+    assert normalize_database_url("sqlite:///./diffly.db") == "sqlite:///./diffly.db"
+
+    # Legacy postgres:// scheme normalized to postgresql://
+    raw_pg = "postgres://user:pass@ep-cool-1234.us-east-2.aws.neon.tech/neondb"
+    normalized = normalize_database_url(raw_pg)
+    assert normalized.startswith("postgresql://")
+    assert "sslmode=require" in normalized
+
+    # Preserves existing sslmode
+    already_ssl = "postgresql://user:pass@ep-cool-1234.us-east-2.aws.neon.tech/neondb?sslmode=verify-full"
+    assert normalize_database_url(already_ssl) == already_ssl
+
+    # Standard non-neon postgres
+    local_pg = "postgresql://postgres:postgres@localhost:5432/diffly"
+    assert normalize_database_url(local_pg) == local_pg
+
+
+def test_resolve_database_config_sqlite():
+    cfg = resolve_database_config("sqlite:///./diffly.db")
+    assert cfg.driver == "sqlite"
+    assert cfg.is_neon is False
+    assert cfg.is_pooled_endpoint is False
+    assert cfg.connect_args == {"check_same_thread": False, "timeout": 30}
+    assert cfg.pool_pre_ping is False
+    assert cfg.pool_recycle is None
+
+
+def test_resolve_database_config_neon_pooled():
+    neon_url = "postgresql://user:pass@ep-bold-pooler.us-east-2.aws.neon.tech/neondb?sslmode=require"
+    cfg = resolve_database_config(neon_url)
+    assert cfg.driver == "postgresql"
+    assert cfg.is_neon is True
+    assert cfg.is_pooled_endpoint is True
+    assert cfg.pool_pre_ping is True
+    assert cfg.pool_recycle == 300
+    assert cfg.pool_size == 5
+    assert cfg.max_overflow == 10
+
+    kwargs = build_engine_kwargs(neon_url)
+    assert kwargs["pool_pre_ping"] is True
+    assert kwargs["pool_recycle"] == 300
+    assert kwargs["pool_size"] == 5
+    assert kwargs["max_overflow"] == 10
+
+
+def test_create_db_engine_sqlite():
+    test_eng = create_db_engine("sqlite:///:memory:")
+    assert test_eng.name == "sqlite"
+    test_eng.dispose()
 
 
 def test_init_db_creates_all_tables():
