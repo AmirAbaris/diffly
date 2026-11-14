@@ -5,7 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from sqlalchemy.exc import IntegrityError
-from sqlmodel import Session, col, func, or_, select
+from sqlmodel import Session, func, or_, select
 
 from api.deps import get_current_user
 from backend.core.config import settings
@@ -15,9 +15,8 @@ from backend.core.security import (
     hash_password,
     verify_password,
 )
-from backend.models.challenge import Challenge
-from backend.models.submission import Submission
 from backend.models.user import User, UserRead
+from backend.services.ownership import claim_guest_records
 
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -48,31 +47,12 @@ def claim_guest_submissions(
     session_ids: set[str],
 ) -> int:
     """Migrate guest submissions and private custom challenges to the user."""
-    valid_ids = {s.strip() for s in session_ids if s and s.strip()}
-    if not valid_ids:
-        return 0
-
-    sub_statement = select(Submission).where(
-        col(Submission.session_id).in_(valid_ids),
-        Submission.user_id.is_(None),
+    sub_count, ch_count = claim_guest_records(
+        session=session,
+        user_id=user_id,
+        session_ids=session_ids,
     )
-    unclaimed_subs = session.exec(sub_statement).all()
-    for sub in unclaimed_subs:
-        sub.user_id = user_id
-
-    challenge_statement = select(Challenge).where(
-        col(Challenge.session_id).in_(valid_ids),
-        Challenge.user_id.is_(None),
-        Challenge.is_public.is_(False),
-    )
-    unclaimed_challenges = session.exec(challenge_statement).all()
-    for challenge in unclaimed_challenges:
-        challenge.user_id = user_id
-
-    total_claimed = len(unclaimed_subs) + len(unclaimed_challenges)
-    if total_claimed > 0:
-        session.commit()
-    return total_claimed
+    return sub_count + ch_count
 
 
 def set_auth_cookie(response: Response, user: User) -> str:

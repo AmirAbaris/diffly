@@ -6,13 +6,18 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field
-from sqlmodel import Session, and_, or_, select
+from sqlmodel import Session, select
 
 from api.deps import get_current_user, get_optional_current_user
 from backend.core.db import get_session
 from backend.models.challenge import Category, Challenge
 from backend.models.submission import Submission
 from backend.models.user import User
+from backend.services.ownership import (
+    Actor,
+    claim_guest_records,
+    submission_owner_filter,
+)
 
 
 router = APIRouter(prefix="/api/user", tags=["user"])
@@ -139,26 +144,10 @@ def get_user_progress(
             categories_map[cat_name] = []
         categories_map[cat_name].append(ch)
 
-    conditions = []
-    if current_user and current_user.id is not None:
-        conditions.append(Submission.user_id == current_user.id)
+    actor = Actor.from_request(current_user, header_session_id, query_session_id)
+    owner_filter = submission_owner_filter(actor)
 
-    session_id = (
-        header_session_id.strip()
-        if header_session_id and header_session_id.strip()
-        else None
-    ) or (
-        query_session_id.strip()
-        if query_session_id and query_session_id.strip()
-        else None
-    )
-
-    if session_id:
-        conditions.append(
-            and_(Submission.session_id == session_id, Submission.user_id.is_(None))
-        )
-
-    if not conditions:
+    if owner_filter is None:
         return UserProgressResponse(
             total_challenges=total_challenges,
             total_attempted=0,
@@ -177,7 +166,7 @@ def get_user_progress(
         )
 
     submissions = session.exec(
-        select(Submission).where(or_(*conditions)).order_by(Submission.created_at.asc())
+        select(Submission).where(owner_filter).order_by(Submission.created_at.asc())
     ).all()
 
     submissions_by_challenge: dict[int, list[Submission]] = defaultdict(list)
@@ -259,7 +248,7 @@ def claim_guest_session(
         else None
     )
 
-    if not target_session_id:
+    if not target_session_id or current_user.id is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
@@ -267,31 +256,15 @@ def claim_guest_session(
             ),
         )
 
-    sub_statement = select(Submission).where(
-        Submission.session_id == target_session_id,
-        Submission.user_id.is_(None),
+    claimed_subs_count, claimed_challenges_count = claim_guest_records(
+        session=session,
+        user_id=current_user.id,
+        session_ids={target_session_id},
     )
-    unclaimed_subs = session.exec(sub_statement).all()
-    for sub in unclaimed_subs:
-        sub.user_id = current_user.id
-
-    challenge_statement = select(Challenge).where(
-        Challenge.session_id == target_session_id,
-        Challenge.user_id.is_(None),
-        Challenge.is_public.is_(False),
-    )
-    unclaimed_challenges = session.exec(challenge_statement).all()
-    for challenge in unclaimed_challenges:
-        challenge.user_id = current_user.id
-
-    claimed_subs_count = len(unclaimed_subs)
-    claimed_challenges_count = len(unclaimed_challenges)
-    if claimed_subs_count > 0 or claimed_challenges_count > 0:
-        session.commit()
 
     return ClaimSessionResponse(
         claimed_count=claimed_subs_count + claimed_challenges_count,
         claimed_challenges_count=claimed_challenges_count,
-        user_id=current_user.id or 0,
+        user_id=current_user.id,
         session_id=target_session_id,
     )
