@@ -4,6 +4,7 @@ Evaluates user code review submissions against expected defects, scoring
 line precision, keyword and concept matching, and penalizing false positives.
 """
 
+import functools
 import json
 import re
 import time
@@ -120,6 +121,16 @@ def get_tolerated_lines(
     return tolerated
 
 
+@functools.lru_cache(maxsize=1024)
+def _compile_word_pattern(kw: str) -> re.Pattern[str]:
+    return re.compile(rf"\b{re.escape(kw)}\b", re.IGNORECASE)
+
+
+@functools.lru_cache(maxsize=1024)
+def _compile_compound_pattern(kw: str) -> re.Pattern[str]:
+    return re.compile(rf"(?:\b|^){re.escape(kw)}(?:\b|$)", re.IGNORECASE)
+
+
 def is_keyword_matched(keyword: str, text: str) -> bool:
     """Check case-insensitively if a keyword or concept is present in the review text.
 
@@ -133,12 +144,10 @@ def is_keyword_matched(keyword: str, text: str) -> bool:
         return False
 
     if re.fullmatch(r"[\w]+", kw):
-        pattern = rf"\b{re.escape(kw)}\b"
-        return bool(re.search(pattern, text, re.IGNORECASE))
+        return bool(_compile_word_pattern(kw).search(text))
 
     # For terms with symbols (e.g. text(), f-string, cwe-89) or multi-word phrases
-    pattern = rf"(?:\b|^){re.escape(kw)}(?:\b|$)"
-    if re.search(pattern, text, re.IGNORECASE):
+    if _compile_compound_pattern(kw).search(text):
         return True
     return kw.lower() in text.lower()
 
@@ -158,7 +167,12 @@ def extract_expected_issues(
             except json.JSONDecodeError:
                 raw_issues = []
         if isinstance(raw_issues, list):
-            return [DefectCriterion.model_validate(item) for item in raw_issues]
+            return [
+                item
+                if isinstance(item, DefectCriterion)
+                else DefectCriterion.model_validate(item)
+                for item in raw_issues
+            ]
         return []
 
     if hasattr(challenge, "expected_issues"):
@@ -169,7 +183,12 @@ def extract_expected_issues(
             except json.JSONDecodeError:
                 raw = []
         if isinstance(raw, list):
-            return [DefectCriterion.model_validate(item) for item in raw]
+            return [
+                item
+                if isinstance(item, DefectCriterion)
+                else DefectCriterion.model_validate(item)
+                for item in raw
+            ]
 
     return []
 

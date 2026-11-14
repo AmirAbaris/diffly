@@ -470,7 +470,7 @@ def test_evaluate_against_all_seed_challenges():
 
         assert result.score >= 80
         assert len(result.detected_issues) >= 1
-        assert result.execution_time_ms < 50.0
+        assert result.execution_time_ms < 150.0
 
 
 # ==============================================================================

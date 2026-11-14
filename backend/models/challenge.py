@@ -292,18 +292,42 @@ class Challenge(ChallengeBase, table=True):
         super().__init__(**merged)
 
     def get_expected_issues(self) -> list[DefectCriterion]:
+        cached = getattr(self, "_cached_expected_issues", None)
+        raw_cached = getattr(self, "_cached_expected_issues_raw", None)
+        if cached is not None and raw_cached == self.expected_issues:
+            return cached
+
         if isinstance(self.expected_issues, list):
             data = self.expected_issues
         else:
             data = json.loads(self.expected_issues or "[]")
-        return [DefectCriterion.model_validate(item) for item in data]
+        result = [
+            item
+            if isinstance(item, DefectCriterion)
+            else DefectCriterion.model_validate(item)
+            for item in data
+        ]
+        object.__setattr__(self, "_cached_expected_issues", result)
+        object.__setattr__(self, "_cached_expected_issues_raw", self.expected_issues)
+        return result
 
     def get_hints(self) -> list[HintItem]:
+        cached = getattr(self, "_cached_hints", None)
+        raw_cached = getattr(self, "_cached_hints_raw", None)
+        if cached is not None and raw_cached == self.hints:
+            return cached
+
         if isinstance(self.hints, list):
             data = self.hints
         else:
             data = json.loads(self.hints or "[]")
-        return [HintItem.model_validate(item) for item in data]
+        result = [
+            item if isinstance(item, HintItem) else HintItem.model_validate(item)
+            for item in data
+        ]
+        object.__setattr__(self, "_cached_hints", result)
+        object.__setattr__(self, "_cached_hints_raw", self.hints)
+        return result
 
     def to_summary(
         self,
