@@ -592,10 +592,10 @@ def test_claimed_records_not_leaked_via_session_id_after_logout(
     assert anon_del.status_code == 403
 
 
-def test_x_user_id_header_rejected_in_production_and_for_inactive_users(
+def test_x_user_id_header_dev_fallback_and_production_rejection(
     client: TestClient, session: Session, monkeypatch
 ):
-    """x-user-id header is ignored in production and for inactive users."""
+    """x-user-id header works in dev for active users, ignored for inactive/prod."""
     active_user = User(
         email="produser@diffly.dev",
         username="produser",
@@ -614,6 +614,14 @@ def test_x_user_id_header_rejected_in_production_and_for_inactive_users(
     session.refresh(inactive_user)
 
     client.cookies.clear()
+
+    # Active user works in dev mode
+    res_dev = client.get(
+        "/api/auth/me",
+        headers={"x-user-id": str(active_user.id)},
+    )
+    assert res_dev.status_code == 200
+    assert res_dev.json()["id"] == active_user.id
 
     # Inactive user rejected even in dev
     res_inactive = client.get(

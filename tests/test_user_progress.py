@@ -6,20 +6,7 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session
 
 from backend.models.submission import Submission
-from backend.models.user import User
 from backend.seed.seed_data import seed_challenges
-
-
-def create_test_user(session: Session, username: str = "coder1") -> User:
-    user = User(
-        email=f"{username}@example.com",
-        username=username,
-        hashed_password="hashed_pw_secret",
-    )
-    session.add(user)
-    session.commit()
-    session.refresh(user)
-    return user
 
 
 def test_get_user_progress_empty_no_identity(client: TestClient, session: Session):
@@ -231,23 +218,23 @@ def test_claim_session_requires_auth(client: TestClient, session: Session):
     assert "detail" in res.json()
 
 
-def test_claim_session_missing_session_id(client: TestClient, session: Session):
+def test_claim_session_missing_session_id(register_user, login_as):
     """POST /api/user/claim-session without session_id returns 400."""
-    user = create_test_user(session, username="claim_tester")
+    register_user("claim_tester")
+    auth_client = login_as("claim_tester")
 
-    res = client.post(
-        "/api/user/claim-session",
-        headers={"x-user-id": str(user.id)},
-        json={},
-    )
+    res = auth_client.post("/api/user/claim-session", json={})
     assert res.status_code == 400
     assert "session_id is required" in res.json()["detail"]
 
 
-def test_claim_session_success_and_idempotence(client: TestClient, session: Session):
+def test_claim_session_success_and_idempotence(
+    session: Session, register_user, login_as
+):
     """Unclaimed guest submissions transfer to authenticated user idempotently."""
     challenges = seed_challenges(session)
-    user = create_test_user(session, username="alice_reviewer")
+    user = register_user("alice_reviewer")
+    auth_client = login_as("alice_reviewer")
 
     sub1 = Submission(
         challenge_id=challenges[0].id,
@@ -269,37 +256,32 @@ def test_claim_session_success_and_idempotence(client: TestClient, session: Sess
     session.commit()
 
     # Claim guest submissions
-    res = client.post(
+    res = auth_client.post(
         "/api/user/claim-session",
-        headers={"x-user-id": str(user.id)},
         json={"session_id": "guest-claimable-999"},
     )
     assert res.status_code == 200
     claim_data = res.json()
     assert claim_data["claimed_count"] == 2
-    assert claim_data["user_id"] == user.id
+    assert claim_data["user_id"] == user["id"]
     assert claim_data["session_id"] == "guest-claimable-999"
 
     # Verify DB rows are now linked to user
     session.refresh(sub1)
     session.refresh(sub2)
-    assert sub1.user_id == user.id
-    assert sub2.user_id == user.id
+    assert sub1.user_id == user["id"]
+    assert sub2.user_id == user["id"]
 
     # Idempotence: second claim call finds 0 unclaimed rows
-    res_repeat = client.post(
+    res_repeat = auth_client.post(
         "/api/user/claim-session",
-        headers={"x-user-id": str(user.id)},
         json={"session_id": "guest-claimable-999"},
     )
     assert res_repeat.status_code == 200
     assert res_repeat.json()["claimed_count"] == 0
 
     # User progress endpoint reflects claimed submissions
-    progress_res = client.get(
-        "/api/user/progress",
-        headers={"x-user-id": str(user.id)},
-    )
+    progress_res = auth_client.get("/api/user/progress")
     assert progress_res.status_code == 200
     user_prog = progress_res.json()
     assert user_prog["total_attempted"] == 2
@@ -307,10 +289,11 @@ def test_claim_session_success_and_idempotence(client: TestClient, session: Sess
     assert user_prog["average_score"] == 90.0
 
 
-def test_claim_session_via_header(client: TestClient, session: Session):
+def test_claim_session_via_header(session: Session, register_user, login_as):
     """Claiming also accepts session_id from X-Diffly-Session-Id header."""
     challenges = seed_challenges(session)
-    user = create_test_user(session, username="bob_reviewer")
+    user = register_user("bob_reviewer")
+    auth_client = login_as("bob_reviewer")
 
     sub = Submission(
         challenge_id=challenges[0].id,
@@ -323,30 +306,28 @@ def test_claim_session_via_header(client: TestClient, session: Session):
     session.add(sub)
     session.commit()
 
-    res = client.post(
+    res = auth_client.post(
         "/api/user/claim-session",
-        headers={
-            "x-user-id": str(user.id),
-            "X-Diffly-Session-Id": "guest-header-claim",
-        },
+        headers={"X-Diffly-Session-Id": "guest-header-claim"},
     )
     assert res.status_code == 200
     assert res.json()["claimed_count"] == 1
     assert res.json()["session_id"] == "guest-header-claim"
 
     session.refresh(sub)
-    assert sub.user_id == user.id
+    assert sub.user_id == user["id"]
 
 
 def test_user_progress_excludes_private_custom_challenges_and_claimed_session_leaks(
-    client: TestClient, session: Session
+    client: TestClient, session: Session, register_user, login_as
 ):
     """Private challenges do not inflate progress, and claimed sessions don't leak."""
     from backend.models.challenge import Category, Challenge, Difficulty, Language
 
     challenges = seed_challenges(session)
     public_total = len(challenges)
-    user = create_test_user(session, username="progress_tester")
+    user = register_user("progress_tester")
+    auth_client = login_as("progress_tester")
 
     # Create a private custom challenge
     private_ch = Challenge(
@@ -386,9 +367,8 @@ def test_user_progress_excludes_private_custom_challenges_and_claimed_session_le
     session.commit()
 
     # Claim session via /api/user/claim-session
-    claim_res = client.post(
+    claim_res = auth_client.post(
         "/api/user/claim-session",
-        headers={"x-user-id": str(user.id)},
         json={"session_id": "guest-prog-sid"},
     )
     assert claim_res.status_code == 200
@@ -396,13 +376,10 @@ def test_user_progress_excludes_private_custom_challenges_and_claimed_session_le
     assert claim_res.json()["claimed_challenges_count"] == 1
 
     session.refresh(private_ch)
-    assert private_ch.user_id == user.id
+    assert private_ch.user_id == user["id"]
 
     # Progress for authenticated user counts only public catalog challenges for mastery
-    prog_res = client.get(
-        "/api/user/progress",
-        headers={"x-user-id": str(user.id)},
-    )
+    prog_res = auth_client.get("/api/user/progress")
     assert prog_res.status_code == 200
     prog_data = prog_res.json()
     assert prog_data["total_challenges"] == public_total

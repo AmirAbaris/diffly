@@ -3,10 +3,7 @@
 from fastapi.testclient import TestClient
 from sqlmodel import Session
 
-from api.deps import get_optional_current_user
-from api.index import app
 from backend.models.submission import Submission
-from backend.models.user import User
 from backend.seed.seed_data import seed_challenges
 
 
@@ -101,35 +98,25 @@ def test_submit_review_guest_fallback_session_id(client: TestClient, session: Se
     assert saved.session_id.startswith("guest-")
 
 
-def test_submit_review_authenticated_user(client: TestClient, session: Session):
+def test_submit_review_authenticated_user(session: Session, register_user, login_as):
     """Authenticated user submission is linked to user_id."""
     challenges = seed_challenges(session)
     ch = challenges[0]
 
-    user = User(
-        email="developer@diffly.dev",
-        username="developer",
-        hashed_password="pw",
-    )
-    session.add(user)
-    session.commit()
-    session.refresh(user)
+    user = register_user("developer")
+    auth_client = login_as("developer")
 
-    app.dependency_overrides[get_optional_current_user] = lambda: user
-    try:
-        payload = {
-            "flagged_lines": [6],
-            "comments": "Use of eval() on untrusted user calculator expression.",
-        }
-        res = client.post(f"/api/challenges/{ch.slug}/review", json=payload)
-        assert res.status_code == 200
-        data = res.json()
+    payload = {
+        "flagged_lines": [6],
+        "comments": "Use of eval() on untrusted user calculator expression.",
+    }
+    res = auth_client.post(f"/api/challenges/{ch.slug}/review", json=payload)
+    assert res.status_code == 200
+    data = res.json()
 
-        saved = session.get(Submission, data["submission_id"])
-        assert saved is not None
-        assert saved.user_id == user.id
-    finally:
-        app.dependency_overrides.pop(get_optional_current_user, None)
+    saved = session.get(Submission, data["submission_id"])
+    assert saved is not None
+    assert saved.user_id == user["id"]
 
 
 def test_submit_review_supports_both_id_and_slug(client: TestClient, session: Session):
@@ -286,54 +273,44 @@ def test_get_submissions_history_guest(client: TestClient, session: Session):
 
 
 def test_get_submissions_history_authenticated_user(
-    client: TestClient, session: Session
+    session: Session, register_user, login_as
 ):
     """GET /submissions filters attempts by authenticated user_id."""
     challenges = seed_challenges(session)
     ch = challenges[0]
 
-    user = User(
-        email="historyuser@diffly.dev",
-        username="historyuser",
-        hashed_password="pw",
+    register_user("historyuser")
+    auth_client = login_as("historyuser")
+
+    # Attempt 1
+    res1 = auth_client.post(
+        f"/api/challenges/{ch.slug}/review",
+        json={
+            "flagged_lines": [2],
+            "comments": "First attempt with partial understanding.",
+        },
     )
-    session.add(user)
-    session.commit()
-    session.refresh(user)
+    assert res1.status_code == 200
 
-    app.dependency_overrides[get_optional_current_user] = lambda: user
-    try:
-        # Attempt 1
-        res1 = client.post(
-            f"/api/challenges/{ch.slug}/review",
-            json={
-                "flagged_lines": [2],
-                "comments": "First attempt with partial understanding.",
-            },
-        )
-        assert res1.status_code == 200
+    # Attempt 2
+    res2 = auth_client.post(
+        f"/api/challenges/{ch.slug}/review",
+        json={
+            "flagged_lines": [6],
+            "comments": "Second attempt with comprehensive eval explanation.",
+        },
+    )
+    assert res2.status_code == 200
 
-        # Attempt 2
-        res2 = client.post(
-            f"/api/challenges/{ch.slug}/review",
-            json={
-                "flagged_lines": [6],
-                "comments": "Second attempt with comprehensive eval explanation.",
-            },
-        )
-        assert res2.status_code == 200
+    hist_res = auth_client.get(f"/api/challenges/{ch.slug}/submissions")
+    assert hist_res.status_code == 200
+    history = hist_res.json()
 
-        hist_res = client.get(f"/api/challenges/{ch.slug}/submissions")
-        assert hist_res.status_code == 200
-        history = hist_res.json()
-
-        assert len(history) == 2
-        assert history[0]["attempt_number"] == 2
-        assert history[0]["id"] == res2.json()["submission_id"]
-        assert history[1]["attempt_number"] == 1
-        assert history[1]["id"] == res1.json()["submission_id"]
-    finally:
-        app.dependency_overrides.pop(get_optional_current_user, None)
+    assert len(history) == 2
+    assert history[0]["attempt_number"] == 2
+    assert history[0]["id"] == res2.json()["submission_id"]
+    assert history[1]["attempt_number"] == 1
+    assert history[1]["id"] == res1.json()["submission_id"]
 
 
 def test_get_submissions_history_isolation(client: TestClient, session: Session):
