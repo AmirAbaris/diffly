@@ -1,3 +1,4 @@
+import contextlib
 import json
 from typing import Any
 
@@ -5,7 +6,8 @@ from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-DEFAULT_JWT_SECRET_KEY = "diffly-dev-secret-key-change-in-production-only"
+# Dev-only fallback; rejected at startup when production/secure-cookie mode is active.
+DEFAULT_JWT_SECRET_KEY = "diffly-dev-secret-key-change-in-production-only"  # noqa: S105
 MIN_JWT_SECRET_LENGTH = 32
 
 
@@ -72,12 +74,10 @@ class Settings(BaseSettings):
             if not val:
                 return []
             if val.startswith("[") and val.endswith("]"):
-                try:
+                with contextlib.suppress(json.JSONDecodeError, ValueError):
                     parsed = json.loads(val)
                     if isinstance(parsed, list):
                         return [str(item).strip() for item in parsed]
-                except Exception:
-                    pass
             return [origin.strip() for origin in val.split(",") if origin.strip()]
         if isinstance(v, (list, tuple)):
             return [str(item).strip() for item in v]

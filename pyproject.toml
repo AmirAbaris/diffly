@@ -39,8 +39,12 @@ select = [
     "B",   # flake8-bugbear
     "UP",  # pyupgrade
     "SIM", # flake8-simplify
+    "S",   # flake8-bandit security checks
 ]
 ignore = []
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["S101", "S105", "S106"]
 
 [tool.ruff.lint.isort]
 lines-after-imports = 2
