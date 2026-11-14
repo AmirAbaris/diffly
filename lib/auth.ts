@@ -3,9 +3,10 @@
 import axios from "axios"
 import useSWR, { mutate } from "swr"
 import { apiClient } from "@/lib/axios"
+import { CUSTOM_CHALLENGES_SWR_KEY } from "@/hooks/use-custom-challenges"
 import { claimSession } from "@/hooks/use-user-progress"
 import { mutateUserStats } from "@/hooks/use-user-stats"
-import { getOrCreateGuestSessionId } from "@/lib/session"
+import { clearGuestSessionId, getOrCreateGuestSessionId } from "@/lib/session"
 
 export interface AuthUser {
   id: number
@@ -177,6 +178,7 @@ export async function apiLogout(): Promise<void> {
     // Suppress network errors during logout
   } finally {
     setStoredAuthUser(null)
+    clearGuestSessionId()
   }
 }
 
@@ -199,6 +201,7 @@ export function useAuth() {
     await boundMutate(loggedUser, false)
     await mutateUserStats()
     await mutate("/api/challenges")
+    await mutate(CUSTOM_CHALLENGES_SWR_KEY)
     return loggedUser
   }
 
@@ -207,6 +210,7 @@ export function useAuth() {
     await boundMutate(newUser, false)
     await mutateUserStats()
     await mutate("/api/challenges")
+    await mutate(CUSTOM_CHALLENGES_SWR_KEY)
     return newUser
   }
 
@@ -215,6 +219,7 @@ export function useAuth() {
     await boundMutate(null, false)
     await mutateUserStats()
     await mutate("/api/challenges")
+    await mutate(CUSTOM_CHALLENGES_SWR_KEY)
   }
 
   return {

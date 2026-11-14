@@ -48,9 +48,12 @@ def get_optional_current_user(
                 if user and user.is_active:
                     return user
 
-    user_id_header = request.headers.get("x-user-id")
-    if user_id_header and user_id_header.isdigit():
-        return session.get(User, int(user_id_header))
+    if not settings.is_cookie_secure:
+        user_id_header = request.headers.get("x-user-id")
+        if user_id_header and user_id_header.isdigit():
+            user = session.get(User, int(user_id_header))
+            if user and user.is_active:
+                return user
 
     return None
 

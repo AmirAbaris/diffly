@@ -65,7 +65,9 @@ def health_check(
 ) -> dict[str, Any]:
     uptime_seconds = max(0.0, time.time() - SERVER_START_TIME)
     try:
-        challenge_count = session.exec(select(func.count(Challenge.id))).one()
+        challenge_count = session.exec(
+            select(func.count(Challenge.id)).where(Challenge.is_public.is_(True))
+        ).one()
         db_status = "connected"
     except Exception as exc:
         db_status = f"disconnected: {exc}"

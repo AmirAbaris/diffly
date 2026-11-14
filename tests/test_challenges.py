@@ -620,3 +620,45 @@ def test_get_challenge_solution_not_found(client: TestClient, session: Session):
     res_id = client.get("/api/challenges/999999/solution?reveal=true")
     assert res_id.status_code == 404
     assert res_id.json() == {"detail": "Challenge not found"}
+
+
+def test_list_custom_challenges_includes_completion_status_and_best_score(
+    client: TestClient, session: Session
+):
+    """GET /api/challenges/custom returns is_solved and best_score."""
+    from backend.models.challenge import Challenge
+
+    custom_ch = Challenge(
+        slug="custom-solved-status-ch",
+        title="Custom Solved Status",
+        difficulty=Difficulty.EASY,
+        category=Category.SECURITY,
+        language=Language.PYTHON,
+        description="Custom challenge",
+        code_snippet="x = 1",
+        is_public=False,
+        session_id="custom-status-sid",
+    )
+    session.add(custom_ch)
+    session.commit()
+    session.refresh(custom_ch)
+
+    sub = Submission(
+        challenge_id=custom_ch.id,
+        session_id="custom-status-sid",
+        score=95,
+        comments="Solved custom challenge",
+    )
+    session.add(sub)
+    session.commit()
+
+    res = client.get(
+        "/api/challenges/custom",
+        headers={"X-Diffly-Session-Id": "custom-status-sid"},
+    )
+    assert res.status_code == 200
+    items = res.json()["items"]
+    assert len(items) == 1
+    assert items[0]["slug"] == "custom-solved-status-ch"
+    assert items[0]["is_solved"] is True
+    assert items[0]["best_score"] == 95
