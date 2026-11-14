@@ -162,21 +162,16 @@ export function FlaggingGuideDemo() {
         )}
       </div>
 
-      {/* Upload hint banner */}
-      <div className="mt-2 flex items-center justify-between rounded bg-muted/60 px-2.5 py-1 text-[10px] text-muted-foreground">
-        <span className="truncate">
-          GIF Placeholder: Place your recording at{" "}
-          <code className="rounded bg-background px-1 py-0.5 font-mono text-[10px] text-foreground">
-            public/guides/flag-line-tutorial.gif
-          </code>
+      {/* Interactive tip footer */}
+      <div className="mt-2.5 flex items-center justify-between rounded border border-border/50 bg-muted/40 px-3 py-1.5 text-[11px] text-muted-foreground">
+        <span>
+          💡 <strong className="font-medium text-foreground">Sandbox:</strong>{" "}
+          Practice clicking lines above to see how flagging feels before you
+          start.
         </span>
-        <Badge
-          variant="outline"
-          size="sm"
-          className="hidden shrink-0 text-[9px] sm:inline-flex"
-        >
-          Auto-detects GIF
-        </Badge>
+        <span className="font-mono text-[10px] text-muted-foreground/80">
+          Try lines 1–5
+        </span>
       </div>
     </div>
   )
