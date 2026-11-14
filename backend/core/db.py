@@ -1,5 +1,7 @@
 from collections.abc import Generator
+from typing import Any
 
+from sqlalchemy import event
 from sqlmodel import Session, SQLModel, create_engine
 
 from backend.core.config import settings
@@ -16,6 +18,15 @@ engine = create_engine(
     echo=False,
     connect_args=connect_args,
 )
+
+
+if settings.DATABASE_URL.startswith("sqlite"):
+
+    @event.listens_for(engine, "connect")
+    def _set_sqlite_pragma(dbapi_connection: Any, _connection_record: Any) -> None:
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
 
 
 def init_db() -> None:

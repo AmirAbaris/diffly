@@ -6,6 +6,7 @@ from sqlmodel import Field, Relationship, SQLModel
 
 
 if TYPE_CHECKING:
+    from backend.models.challenge import Challenge
     from backend.models.submission import Submission
 
 
@@ -29,6 +30,7 @@ class User(UserBase, table=True):
     updated_at: datetime = Field(default_factory=get_utc_now)
 
     submissions: list["Submission"] = Relationship(back_populates="user")
+    challenges: list["Challenge"] = Relationship(back_populates="user")
 
 
 class UserRead(UserBase):

@@ -345,8 +345,8 @@ def evaluate_review(
             execution_time_ms=elapsed,
         )
 
-    # Determine tolerated lines per defect
-    defect_tolerated: dict[str, set[int]] = {}
+    # Determine tolerated lines per defect (indexed by position to avoid ID collisions)
+    defect_tolerated: list[set[int]] = []
     all_tolerated_lines: set[int] = set()
 
     for defect in expected_issues:
@@ -355,7 +355,7 @@ def evaluate_review(
             tolerance=tolerance,
             allow_single_line_tolerance=allow_single_line_tolerance,
         )
-        defect_tolerated[defect.id] = tolerated
+        defect_tolerated.append(tolerated)
         all_tolerated_lines.update(tolerated)
 
     # Compute false positive lines (clean/unrelated lines flagged by user)
@@ -370,8 +370,8 @@ def evaluate_review(
     total_line_score = 0.0
     total_concept_score = 0.0
 
-    for defect in expected_issues:
-        tolerated = defect_tolerated[defect.id]
+    for idx, defect in enumerate(expected_issues):
+        tolerated = defect_tolerated[idx]
         matched_lines = [line_num for line_num in user_lines if line_num in tolerated]
         has_line_match = len(matched_lines) > 0
 

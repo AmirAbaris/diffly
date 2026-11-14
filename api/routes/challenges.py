@@ -2,9 +2,9 @@ import json
 from typing import Annotated, Any
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
 from pydantic import BaseModel, ConfigDict, Field
-from sqlmodel import Session, func, or_, select
+from sqlmodel import Session, and_, func, or_, select
 
 from api.deps import get_optional_current_user
 from backend.core.db import get_session
@@ -39,6 +39,64 @@ from backend.services.gemini_generator import (
 
 
 router = APIRouter(prefix="/api/challenges", tags=["challenges"])
+
+
+def _build_submission_owner_conditions(
+    user_id: int | None,
+    session_id: str | None,
+) -> list[Any]:
+    """Build SQL conditions matching user's owned or unclaimed guest submissions."""
+    conditions: list[Any] = []
+    if user_id is not None:
+        conditions.append(Submission.user_id == user_id)
+    if session_id and session_id.strip():
+        conditions.append(
+            and_(
+                Submission.session_id == session_id.strip(),
+                Submission.user_id.is_(None),
+            )
+        )
+    return conditions
+
+
+def _build_challenge_owner_conditions(
+    user_id: int | None,
+    session_id: str | None,
+) -> list[Any]:
+    """Build SQL conditions matching user's owned or unclaimed guest challenges."""
+    conditions: list[Any] = []
+    if user_id is not None:
+        conditions.append(Challenge.user_id == user_id)
+    if session_id and session_id.strip():
+        conditions.append(
+            and_(
+                Challenge.session_id == session_id.strip(),
+                Challenge.user_id.is_(None),
+            )
+        )
+    return conditions
+
+
+def _compute_best_scores_map(
+    session: Session,
+    challenges: list[Challenge],
+    user_id: int | None,
+    session_id: str | None,
+) -> dict[int, int]:
+    """Compute highest submission score per challenge for the given user/guest."""
+    conditions = _build_submission_owner_conditions(user_id, session_id)
+    best_scores_map: dict[int, int] = {}
+    if conditions and challenges:
+        challenge_ids = [ch.id for ch in challenges if ch.id is not None]
+        if challenge_ids:
+            sub_stmt = select(Submission.challenge_id, Submission.score).where(
+                Submission.challenge_id.in_(challenge_ids),
+                or_(*conditions),
+            )
+            for ch_id, score in session.exec(sub_stmt).all():
+                if ch_id not in best_scores_map or score > best_scores_map[ch_id]:
+                    best_scores_map[ch_id] = score
+    return best_scores_map
 
 
 @router.get("", response_model=list[ChallengeSummary])
@@ -86,25 +144,10 @@ def list_challenges(
         )
 
     statement = statement.order_by(Challenge.id)
-    challenges = session.exec(statement).all()
+    challenges = list(session.exec(statement).all())
 
-    # User context: compute completion status and best score per challenge
-    conditions = []
-    if current_user and current_user.id is not None:
-        conditions.append(Submission.user_id == current_user.id)
-    if session_id and session_id.strip():
-        conditions.append(Submission.session_id == session_id.strip())
-
-    best_scores_map: dict[int, int] = {}
-    if conditions and challenges:
-        challenge_ids = [ch.id for ch in challenges if ch.id is not None]
-        sub_stmt = select(Submission.challenge_id, Submission.score).where(
-            Submission.challenge_id.in_(challenge_ids),
-            or_(*conditions),
-        )
-        for ch_id, score in session.exec(sub_stmt).all():
-            if ch_id not in best_scores_map or score > best_scores_map[ch_id]:
-                best_scores_map[ch_id] = score
+    user_id = current_user.id if current_user and current_user.id is not None else None
+    best_scores_map = _compute_best_scores_map(session, challenges, user_id, session_id)
 
     return [
         ch.to_summary(
@@ -164,6 +207,7 @@ class CustomEvaluationResponse(BaseModel):
 )
 async def generate_custom_challenge_endpoint(
     payload: GenerateCustomChallengeRequest,
+    response: Response,
     session: Annotated[Session, Depends(get_session)],
     current_user: Annotated[User | None, Depends(get_optional_current_user)] = None,
     header_session_id: Annotated[
@@ -197,12 +241,11 @@ async def generate_custom_challenge_endpoint(
     if user_id is None and session_id is None:
         session_id = f"guest-{uuid4().hex[:12]}"
 
+    if session_id:
+        response.headers["X-Diffly-Session-Id"] = session_id
+
     # Enforce strict 5 custom challenges quota per user/guest
-    conditions = []
-    if user_id is not None:
-        conditions.append(Challenge.user_id == user_id)
-    if session_id is not None:
-        conditions.append(Challenge.session_id == session_id)
+    conditions = _build_challenge_owner_conditions(user_id, session_id)
 
     count_stmt = select(func.count(Challenge.id)).where(
         Challenge.is_public.is_(False),
@@ -238,6 +281,17 @@ async def generate_custom_challenge_endpoint(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=str(exc),
         ) from exc
+
+    # Re-check quota right before DB insert to guard against concurrent requests
+    latest_count = session.exec(count_stmt).one()
+    if latest_count >= 5:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Quota limit reached. You can have at most 5 custom challenges. "
+                "Please delete an existing custom challenge to create a new one."
+            ),
+        )
 
     # Ensure unique slug in DB
     base_slug = generated.slug
@@ -295,6 +349,7 @@ async def generate_custom_challenge_endpoint(
         line_count=len(new_challenge.code_snippet.splitlines()),
         total_hints=len(new_challenge.get_hints()),
         is_custom=True,
+        session_id=session_id,
     )
 
 
@@ -315,11 +370,7 @@ def list_custom_challenges(
         else None
     )
 
-    conditions = []
-    if user_id is not None:
-        conditions.append(Challenge.user_id == user_id)
-    if session_id is not None:
-        conditions.append(Challenge.session_id == session_id)
+    conditions = _build_challenge_owner_conditions(user_id, session_id)
 
     if not conditions:
         return CustomChallengesListResponse(
@@ -334,8 +385,19 @@ def list_custom_challenges(
         .where(Challenge.is_public.is_(False), or_(*conditions))
         .order_by(Challenge.created_at.desc())
     )
-    challenges = session.exec(stmt).all()
-    summaries = [ch.to_summary() for ch in challenges]
+    challenges = list(session.exec(stmt).all())
+    best_scores_map = _compute_best_scores_map(session, challenges, user_id, session_id)
+
+    summaries = [
+        ch.to_summary(
+            is_solved=(
+                best_scores_map.get(ch.id or 0) is not None
+                and best_scores_map[ch.id or 0] >= 80
+            ),
+            best_score=best_scores_map.get(ch.id or 0),
+        )
+        for ch in challenges
+    ]
     total = len(summaries)
     return CustomChallengesListResponse(
         items=summaries,
@@ -385,7 +447,9 @@ def delete_custom_challenge(
         )
 
     is_owner = (user_id is not None and challenge.user_id == user_id) or (
-        session_id is not None and challenge.session_id == session_id
+        challenge.user_id is None
+        and session_id is not None
+        and challenge.session_id == session_id
     )
     if not is_owner:
         raise HTTPException(
@@ -469,7 +533,9 @@ def get_challenge_or_404(
 
     if not challenge.is_public:
         is_owner = (user_id is not None and challenge.user_id == user_id) or (
-            session_id is not None and challenge.session_id == session_id
+            challenge.user_id is None
+            and session_id is not None
+            and challenge.session_id == session_id
         )
         if not is_owner:
             raise HTTPException(
@@ -501,11 +567,7 @@ def get_challenge(
         session_id=guest_session_id,
     )
 
-    conditions = []
-    if current_user and current_user.id is not None:
-        conditions.append(Submission.user_id == current_user.id)
-    if session_id and session_id.strip():
-        conditions.append(Submission.session_id == session_id.strip())
+    conditions = _build_submission_owner_conditions(user_id, guest_session_id)
 
     best_score: int | None = None
     if conditions and challenge.id is not None:
@@ -607,24 +669,7 @@ def get_challenge_solution(
     )
 
     if not reveal:
-        session_id = (
-            header_session_id.strip()
-            if header_session_id and header_session_id.strip()
-            else None
-        ) or (
-            query_session_id.strip()
-            if query_session_id and query_session_id.strip()
-            else None
-        )
-        user_id = (
-            current_user.id if current_user and current_user.id is not None else None
-        )
-
-        conditions = []
-        if user_id is not None:
-            conditions.append(Submission.user_id == user_id)
-        if session_id:
-            conditions.append(Submission.session_id == session_id)
+        conditions = _build_submission_owner_conditions(user_id, session_id)
 
         has_submitted = False
         if conditions and challenge.id is not None:

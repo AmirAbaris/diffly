@@ -6,7 +6,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field
-from sqlmodel import Session, or_, select
+from sqlmodel import Session, and_, or_, select
 
 from api.deps import get_current_user, get_optional_current_user
 from backend.core.db import get_session
@@ -67,6 +67,7 @@ class ClaimSessionResponse(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     claimed_count: int
+    claimed_challenges_count: int = 0
     user_id: int
     session_id: str
 
@@ -123,8 +124,11 @@ def get_user_progress(
     ] = None,
 ) -> UserProgressResponse:
     """Retrieve user or guest review progress, accuracy stats, and streak."""
-    challenges = session.exec(select(Challenge)).all()
+    challenges = session.exec(
+        select(Challenge).where(Challenge.is_public.is_(True))
+    ).all()
     total_challenges = len(challenges)
+    public_challenge_ids = {ch.id for ch in challenges if ch.id is not None}
 
     categories_map: dict[str, list[Challenge]] = {cat.value: [] for cat in Category}
     for ch in challenges:
@@ -150,7 +154,9 @@ def get_user_progress(
     )
 
     if session_id:
-        conditions.append(Submission.session_id == session_id)
+        conditions.append(
+            and_(Submission.session_id == session_id, Submission.user_id.is_(None))
+        )
 
     if not conditions:
         return UserProgressResponse(
@@ -176,7 +182,8 @@ def get_user_progress(
 
     submissions_by_challenge: dict[int, list[Submission]] = defaultdict(list)
     for sub in submissions:
-        submissions_by_challenge[sub.challenge_id].append(sub)
+        if sub.challenge_id in public_challenge_ids:
+            submissions_by_challenge[sub.challenge_id].append(sub)
 
     total_attempted = len(submissions_by_challenge)
 
@@ -241,7 +248,7 @@ def claim_guest_session(
         Header(alias="X-Diffly-Session-Id", description="Guest session identifier"),
     ] = None,
 ) -> ClaimSessionResponse:
-    """Claim anonymous guest submissions and assign them to the authenticated user."""
+    """Claim anonymous guest submissions and custom challenges for the user."""
     target_session_id = (
         payload.session_id.strip()
         if payload and payload.session_id and payload.session_id.strip()
@@ -260,20 +267,31 @@ def claim_guest_session(
             ),
         )
 
-    statement = select(Submission).where(
+    sub_statement = select(Submission).where(
         Submission.session_id == target_session_id,
         Submission.user_id.is_(None),
     )
-    unclaimed = session.exec(statement).all()
-    claimed_count = len(unclaimed)
-
-    for sub in unclaimed:
+    unclaimed_subs = session.exec(sub_statement).all()
+    for sub in unclaimed_subs:
         sub.user_id = current_user.id
 
-    session.commit()
+    challenge_statement = select(Challenge).where(
+        Challenge.session_id == target_session_id,
+        Challenge.user_id.is_(None),
+        Challenge.is_public.is_(False),
+    )
+    unclaimed_challenges = session.exec(challenge_statement).all()
+    for challenge in unclaimed_challenges:
+        challenge.user_id = current_user.id
+
+    claimed_subs_count = len(unclaimed_subs)
+    claimed_challenges_count = len(unclaimed_challenges)
+    if claimed_subs_count > 0 or claimed_challenges_count > 0:
+        session.commit()
 
     return ClaimSessionResponse(
-        claimed_count=claimed_count,
+        claimed_count=claimed_subs_count + claimed_challenges_count,
+        claimed_challenges_count=claimed_challenges_count,
         user_id=current_user.id or 0,
         session_id=target_session_id,
     )

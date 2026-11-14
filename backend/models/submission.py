@@ -16,8 +16,17 @@ def get_utc_now() -> datetime:
 class SubmissionBase(SQLModel):
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="ignore")
 
-    challenge_id: int = Field(foreign_key="challenges.id", index=True)
-    user_id: int | None = Field(default=None, foreign_key="users.id", index=True)
+    challenge_id: int = Field(
+        foreign_key="challenges.id",
+        index=True,
+        ondelete="CASCADE",
+    )
+    user_id: int | None = Field(
+        default=None,
+        foreign_key="users.id",
+        index=True,
+        ondelete="SET NULL",
+    )
     session_id: str | None = Field(default=None, index=True)
     flagged_lines: str = Field(default="[]")
     comments: str = Field(default="")

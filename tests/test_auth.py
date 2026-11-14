@@ -471,3 +471,161 @@ def test_deps_request_state_override(session: Session):
 
     resolved = get_optional_current_user(request=request, session=session)
     assert resolved is mock_user
+
+
+def test_register_and_login_claim_guest_custom_challenges(
+    client: TestClient, session: Session
+):
+    """Guest custom private challenges are migrated to user_id on signup/login."""
+    custom_ch_reg = Challenge(
+        slug="guest-custom-reg-ch",
+        title="Guest Custom Reg Challenge",
+        difficulty=Difficulty.MEDIUM,
+        category=Category.SECURITY,
+        language=Language.PYTHON,
+        description="Custom challenge created as guest",
+        code_snippet="x = 1",
+        is_public=False,
+        user_id=None,
+        session_id="guest-custom-reg-sid",
+    )
+    custom_ch_login = Challenge(
+        slug="guest-custom-login-ch",
+        title="Guest Custom Login Challenge",
+        difficulty=Difficulty.HARD,
+        category=Category.CONCURRENCY,
+        language=Language.GO,
+        description="Second custom challenge created as guest",
+        code_snippet="package main",
+        is_public=False,
+        user_id=None,
+        session_id="guest-custom-login-sid",
+    )
+    session.add_all([custom_ch_reg, custom_ch_login])
+    session.commit()
+    session.refresh(custom_ch_reg)
+    session.refresh(custom_ch_login)
+
+    # 1. Register claims custom_ch_reg
+    reg_res = client.post(
+        "/api/auth/register",
+        json={
+            "email": "custom_owner@diffly.dev",
+            "username": "custom_owner",
+            "password": "Password123!",
+            "session_id": "guest-custom-reg-sid",
+        },
+    )
+    assert reg_res.status_code == 200
+    user_id = reg_res.json()["id"]
+
+    session.refresh(custom_ch_reg)
+    assert custom_ch_reg.user_id == user_id
+
+    # 2. Login on another device (with guest-custom-login-sid) claims custom_ch_login
+    login_res = client.post(
+        "/api/auth/login",
+        json={
+            "username": "custom_owner",
+            "password": "Password123!",
+            "session_id": "guest-custom-login-sid",
+        },
+    )
+    assert login_res.status_code == 200
+    session.refresh(custom_ch_login)
+    assert custom_ch_login.user_id == user_id
+
+    # 3. User sees both custom challenges even without a session_id
+    list_res = client.get("/api/challenges/custom")
+    assert list_res.status_code == 200
+    slugs = {item["slug"] for item in list_res.json()["items"]}
+    assert slugs == {"guest-custom-reg-ch", "guest-custom-login-ch"}
+
+
+def test_claimed_records_not_leaked_via_session_id_after_logout(
+    client: TestClient, session: Session
+):
+    """Claimed user records are not leaked to logged-out requests with session_id."""
+    custom_ch = Challenge(
+        slug="private-claimed-ch",
+        title="Private Claimed Challenge",
+        difficulty=Difficulty.EASY,
+        category=Category.SECURITY,
+        language=Language.PYTHON,
+        description="Private",
+        code_snippet="x = 1",
+        is_public=False,
+        user_id=None,
+        session_id="shared-browser-sid",
+    )
+    session.add(custom_ch)
+    session.commit()
+
+    # Register & claim
+    reg_res = client.post(
+        "/api/auth/register",
+        json={
+            "email": "usera@diffly.dev",
+            "username": "usera",
+            "password": "Password123!",
+            "session_id": "shared-browser-sid",
+        },
+    )
+    assert reg_res.status_code == 200
+
+    # Logout (clear auth cookies)
+    client.post("/api/auth/logout")
+    client.cookies.clear()
+
+    # Logged-out requests with old session_id must not leak User A's challenge
+    anon_list = client.get(
+        "/api/challenges/custom",
+        headers={"X-Diffly-Session-Id": "shared-browser-sid"},
+    )
+    assert anon_list.status_code == 200
+    assert anon_list.json()["items"] == []
+
+    anon_del = client.delete(
+        "/api/challenges/custom/private-claimed-ch",
+        headers={"X-Diffly-Session-Id": "shared-browser-sid"},
+    )
+    assert anon_del.status_code == 403
+
+
+def test_x_user_id_header_rejected_in_production_and_for_inactive_users(
+    client: TestClient, session: Session, monkeypatch
+):
+    """x-user-id header is ignored in production and for inactive users."""
+    active_user = User(
+        email="produser@diffly.dev",
+        username="produser",
+        hashed_password=hash_password("Password123!"),
+        is_active=True,
+    )
+    inactive_user = User(
+        email="banned@diffly.dev",
+        username="banneduser",
+        hashed_password=hash_password("Password123!"),
+        is_active=False,
+    )
+    session.add_all([active_user, inactive_user])
+    session.commit()
+    session.refresh(active_user)
+    session.refresh(inactive_user)
+
+    client.cookies.clear()
+
+    # Inactive user rejected even in dev
+    res_inactive = client.get(
+        "/api/auth/me",
+        headers={"x-user-id": str(inactive_user.id)},
+    )
+    assert res_inactive.status_code == 401
+
+    # Active user rejected via x-user-id when ENVIRONMENT=production
+    monkeypatch.setattr(settings, "ENVIRONMENT", "production")
+    res_prod = client.get(
+        "/api/auth/me",
+        headers={"x-user-id": str(active_user.id)},
+    )
+    assert res_prod.status_code == 401

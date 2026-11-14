@@ -613,3 +613,29 @@ def test_defect_without_keywords():
     res_no_comment = evaluate_review(challenge, flagged_lines=[5], user_comments="")
     assert res_no_comment.score == 50
     assert res_no_comment.concept_score == 0.0
+
+
+def test_multi_defect_without_explicit_ids_does_not_collide():
+    """Multiple defects without explicit 'id' fields do not collide."""
+    challenge = {
+        "expected_issues": [
+            {
+                "title": "First Defect",
+                "lines": [10],
+                "keywords": ["auth"],
+            },
+            {
+                "title": "Second Defect",
+                "lines": [25],
+                "keywords": ["sql"],
+            },
+        ]
+    }
+    res = evaluate_review(
+        challenge,
+        flagged_lines=[10, 25],
+        user_comments="auth and sql defects",
+    )
+    assert res.score == 100
+    assert len(res.detected_issues) == 2
+    assert len(res.missed_issues) == 0

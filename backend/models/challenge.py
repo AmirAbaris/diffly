@@ -1,7 +1,7 @@
 import json
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 from pydantic import (
     BaseModel,
@@ -15,6 +15,7 @@ from sqlmodel import Field, Relationship, SQLModel
 
 if TYPE_CHECKING:
     from backend.models.submission import Submission
+    from backend.models.user import User
 
 
 def get_utc_now() -> datetime:
@@ -119,7 +120,10 @@ class DefectCriterion(BaseModel):
             if "matched_keywords" in d and not d.get("keywords"):
                 d["keywords"] = [str(x) for x in d["matched_keywords"]]
             if "id" not in d or d["id"] == "":
-                d["id"] = str(d.get("line", "1"))
+                fallback_line = d.get("line") or (
+                    d["lines"][0] if d.get("lines") else "1"
+                )
+                d["id"] = str(fallback_line)
             return d
         return data
 
@@ -208,7 +212,12 @@ class ChallengeBase(SQLModel):
     recommended_fix_diff: str = Field(default="")
     estimated_minutes: int = Field(default=5)
     is_public: bool = Field(default=True, index=True)
-    user_id: int | None = Field(default=None, foreign_key="users.id", index=True)
+    user_id: int | None = Field(
+        default=None,
+        foreign_key="users.id",
+        index=True,
+        ondelete="SET NULL",
+    )
     session_id: str | None = Field(default=None, index=True)
 
     @field_validator("expected_issues", mode="before")
@@ -270,7 +279,11 @@ class Challenge(ChallengeBase, table=True):
     id: int | None = Field(default=None, primary_key=True)
     created_at: datetime = Field(default_factory=get_utc_now)
 
-    submissions: list["Submission"] = Relationship(back_populates="challenge")
+    user: Optional["User"] = Relationship(back_populates="challenges")
+    submissions: list["Submission"] = Relationship(
+        back_populates="challenge",
+        cascade_delete=True,
+    )
 
     def __init__(self, **data: Any):
         base_data = {k: v for k, v in data.items() if k in ChallengeBase.model_fields}
@@ -417,6 +430,7 @@ class CustomChallengeResponse(BaseModel):
     line_count: int = 0
     total_hints: int = 0
     is_custom: bool = True
+    session_id: str | None = None
 
     @model_validator(mode="after")
     def compute_counts(self) -> "CustomChallengeResponse":

@@ -336,3 +336,86 @@ def test_claim_session_via_header(client: TestClient, session: Session):
 
     session.refresh(sub)
     assert sub.user_id == user.id
+
+
+def test_user_progress_excludes_private_custom_challenges_and_claimed_session_leaks(
+    client: TestClient, session: Session
+):
+    """Private challenges do not inflate progress, and claimed sessions don't leak."""
+    from backend.models.challenge import Category, Challenge, Difficulty, Language
+
+    challenges = seed_challenges(session)
+    public_total = len(challenges)
+    user = create_test_user(session, username="progress_tester")
+
+    # Create a private custom challenge
+    private_ch = Challenge(
+        slug="private-custom-prog-ch",
+        title="Private Custom Challenge",
+        difficulty=Difficulty.MEDIUM,
+        category=Category.SECURITY,
+        language=Language.PYTHON,
+        description="Private",
+        code_snippet="x = 1",
+        is_public=False,
+        user_id=None,
+        session_id="guest-prog-sid",
+    )
+    session.add(private_ch)
+    session.commit()
+    session.refresh(private_ch)
+
+    # Submit high score on 1 public challenge and 1 private custom challenge
+    sub_public = Submission(
+        challenge_id=challenges[0].id,
+        session_id="guest-prog-sid",
+        user_id=None,
+        score=90,
+        comments="Solved public challenge",
+        flagged_lines=[1],
+    )
+    sub_private = Submission(
+        challenge_id=private_ch.id,
+        session_id="guest-prog-sid",
+        user_id=None,
+        score=100,
+        comments="Solved private custom challenge",
+        flagged_lines=[1],
+    )
+    session.add_all([sub_public, sub_private])
+    session.commit()
+
+    # Claim session via /api/user/claim-session
+    claim_res = client.post(
+        "/api/user/claim-session",
+        headers={"x-user-id": str(user.id)},
+        json={"session_id": "guest-prog-sid"},
+    )
+    assert claim_res.status_code == 200
+    assert claim_res.json()["claimed_count"] == 3  # 2 submissions + 1 custom challenge
+    assert claim_res.json()["claimed_challenges_count"] == 1
+
+    session.refresh(private_ch)
+    assert private_ch.user_id == user.id
+
+    # Progress for authenticated user counts only public catalog challenges for mastery
+    prog_res = client.get(
+        "/api/user/progress",
+        headers={"x-user-id": str(user.id)},
+    )
+    assert prog_res.status_code == 200
+    prog_data = prog_res.json()
+    assert prog_data["total_challenges"] == public_total
+    assert prog_data["total_attempted"] == 1
+    assert prog_data["total_solved"] == 1
+    assert prog_data["average_score"] == 90.0
+    assert prog_data["streak_days"] == 1
+
+    # Logged-out visitor with old session_id does not see claimed user's progress
+    anon_prog = client.get(
+        "/api/user/progress",
+        headers={"X-Diffly-Session-Id": "guest-prog-sid"},
+    )
+    assert anon_prog.status_code == 200
+    assert anon_prog.json()["total_attempted"] == 0
+    assert anon_prog.json()["total_solved"] == 0
