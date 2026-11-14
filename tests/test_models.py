@@ -174,7 +174,7 @@ def test_models_database_persistence_and_relationships():
         session.commit()
         session.refresh(user)
 
-        # Create challenge
+        # Create challenge owned by user
         challenge = Challenge(
             slug="concurrency-race-condition",
             title="Shared State Race Condition",
@@ -185,6 +185,7 @@ def test_models_database_persistence_and_relationships():
             threat_model="Concurrent requests mutate dict without lock.",
             defect_target="Identify race condition leading to data corruption",
             code_snippet="cache[key] = value",
+            user_id=user.id,
             expected_issues=json.dumps(
                 [
                     {
@@ -231,11 +232,14 @@ def test_models_database_persistence_and_relationships():
         session.add(guest_submission)
         session.commit()
 
-        # Reload user and check relationship
+        # Reload user and check relationships
         reloaded_user = session.exec(select(User).where(User.id == user.id)).one()
         assert len(reloaded_user.submissions) == 1
         assert reloaded_user.submissions[0].id == auth_submission.id
         assert reloaded_user.submissions[0].user is reloaded_user
+        assert len(reloaded_user.challenges) == 1
+        assert reloaded_user.challenges[0].id == challenge.id
+        assert reloaded_user.challenges[0].user is reloaded_user
 
         # Reload challenge and check relationship
         reloaded_challenge = session.exec(

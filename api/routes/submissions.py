@@ -4,9 +4,9 @@ from datetime import datetime
 from typing import Annotated, Any
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, Header, Query, status
+from fastapi import APIRouter, Depends, Header, Query, Response, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlmodel import Session, or_, select
+from sqlmodel import Session, and_, or_, select
 
 from api.deps import get_optional_current_user
 from api.routes.challenges import get_challenge_or_404
@@ -65,6 +65,7 @@ class ReviewSubmissionResponse(BaseModel):
     created_at: datetime
     flagged_lines: list[int] = Field(default_factory=list)
     comments: str = ""
+    session_id: str | None = None
 
 
 class SubmissionHistoryResponse(BaseModel):
@@ -91,6 +92,7 @@ class SubmissionHistoryResponse(BaseModel):
 def submit_review(
     identifier: str,
     payload: ReviewSubmissionRequest,
+    response: Response,
     session: Annotated[Session, Depends(get_session)],
     current_user: Annotated[User | None, Depends(get_optional_current_user)] = None,
     header_session_id: Annotated[
@@ -107,6 +109,9 @@ def submit_review(
     user_id = current_user.id if current_user and current_user.id is not None else None
     if user_id is None and guest_session_id is None:
         guest_session_id = f"guest-{uuid4().hex[:12]}"
+
+    if guest_session_id:
+        response.headers["X-Diffly-Session-Id"] = guest_session_id
 
     challenge = get_challenge_or_404(
         identifier,
@@ -149,6 +154,7 @@ def submit_review(
         created_at=submission.created_at,
         flagged_lines=submission.get_flagged_lines(),
         comments=submission.comments,
+        session_id=submission.session_id,
     )
 
 
@@ -191,7 +197,9 @@ def get_submission_history(
     if user_id is not None:
         conditions.append(Submission.user_id == user_id)
     if session_id:
-        conditions.append(Submission.session_id == session_id)
+        conditions.append(
+            and_(Submission.session_id == session_id, Submission.user_id.is_(None))
+        )
 
     if not conditions:
         return []

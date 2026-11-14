@@ -4,7 +4,8 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
-from sqlmodel import Session, col, or_, select
+from sqlalchemy.exc import IntegrityError
+from sqlmodel import Session, col, func, or_, select
 
 from api.deps import get_current_user
 from backend.core.config import settings
@@ -14,6 +15,7 @@ from backend.core.security import (
     hash_password,
     verify_password,
 )
+from backend.models.challenge import Challenge
 from backend.models.submission import Submission
 from backend.models.user import User, UserRead
 
@@ -45,22 +47,32 @@ def claim_guest_submissions(
     user_id: int,
     session_ids: set[str],
 ) -> int:
-    """Migrate guest submissions from guest sessions to the authenticated user."""
+    """Migrate guest submissions and private custom challenges to the user."""
     valid_ids = {s.strip() for s in session_ids if s and s.strip()}
     if not valid_ids:
         return 0
 
-    statement = select(Submission).where(
+    sub_statement = select(Submission).where(
         col(Submission.session_id).in_(valid_ids),
         Submission.user_id.is_(None),
     )
-    unclaimed = session.exec(statement).all()
-    count = len(unclaimed)
-    if count > 0:
-        for sub in unclaimed:
-            sub.user_id = user_id
+    unclaimed_subs = session.exec(sub_statement).all()
+    for sub in unclaimed_subs:
+        sub.user_id = user_id
+
+    challenge_statement = select(Challenge).where(
+        col(Challenge.session_id).in_(valid_ids),
+        Challenge.user_id.is_(None),
+        Challenge.is_public.is_(False),
+    )
+    unclaimed_challenges = session.exec(challenge_statement).all()
+    for challenge in unclaimed_challenges:
+        challenge.user_id = user_id
+
+    total_claimed = len(unclaimed_subs) + len(unclaimed_challenges)
+    if total_claimed > 0:
         session.commit()
-    return count
+    return total_claimed
 
 
 def set_auth_cookie(response: Response, user: User) -> str:
@@ -99,12 +111,12 @@ def register(
         Header(alias="X-Diffly-Session-Id", description="Guest session identifier"),
     ] = None,
 ) -> UserRead:
-    """Register a new user account, claim guest submissions, and issue auth cookie."""
+    """Register a new user account, claim guest records, and issue auth cookie."""
     normalized_email = payload.email.lower().strip()
     clean_username = payload.username.strip()
 
     existing_email = session.exec(
-        select(User).where(User.email == normalized_email)
+        select(User).where(func.lower(User.email) == normalized_email)
     ).first()
     if existing_email:
         raise HTTPException(
@@ -113,7 +125,7 @@ def register(
         )
 
     existing_username = session.exec(
-        select(User).where(User.username == clean_username)
+        select(User).where(func.lower(User.username) == clean_username.lower())
     ).first()
     if existing_username:
         raise HTTPException(
@@ -127,7 +139,14 @@ def register(
         hashed_password=hash_password(payload.password),
     )
     session.add(user)
-    session.commit()
+    try:
+        session.commit()
+    except IntegrityError as exc:
+        session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email or username already registered",
+        ) from exc
     session.refresh(user)
 
     if user.id is not None:
@@ -156,7 +175,7 @@ def login(
         Header(alias="X-Diffly-Session-Id", description="Guest session identifier"),
     ] = None,
 ) -> UserRead:
-    """Authenticate user with email/username and password, claim guest submissions."""
+    """Authenticate user with email/username and password, claim guest records."""
     identifier = (payload.identifier or payload.username or payload.email or "").strip()
     if not identifier or not payload.password:
         raise HTTPException(
@@ -166,8 +185,8 @@ def login(
 
     statement = select(User).where(
         or_(
-            User.username == identifier,
-            User.email == identifier.lower(),
+            func.lower(User.username) == identifier.lower(),
+            func.lower(User.email) == identifier.lower(),
         )
     )
     user = session.exec(statement).first()

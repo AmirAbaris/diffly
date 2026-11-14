@@ -54,8 +54,15 @@ def seed_challenges(
             # Create candidate challenge to validate fields & serialize JSON fields
             candidate = Challenge(**challenge_dict)
 
+            if existing is not None and not existing.is_public:
+                # Preserve user's private custom challenge under a disambiguated slug
+                existing.slug = f"{slug}-custom-{existing.id or '1'}"
+                db.add(existing)
+                db.flush()
+                existing = None
+
             if existing is not None:
-                # Update existing record
+                # Update existing public record
                 existing.title = candidate.title
                 existing.difficulty = candidate.difficulty
                 existing.category = candidate.category
@@ -69,6 +76,7 @@ def seed_challenges(
                 existing.canonical_review = candidate.canonical_review
                 existing.recommended_fix_diff = candidate.recommended_fix_diff
                 existing.estimated_minutes = candidate.estimated_minutes
+                existing.is_public = True
                 db.add(existing)
                 seeded_challenges.append(existing)
                 logger.info("Updated existing challenge: %s", slug)
@@ -88,15 +96,19 @@ def seed_challenges_if_empty(
     session: Session | None = None,
     content_dir: Path | str | None = None,
 ) -> list[Challenge]:
-    """Seed challenges only if the challenges table currently contains no records."""
+    """Seed challenges only if the challenges table contains no public records."""
     try:
         with get_managed_session(session) as db:
-            first_record = db.exec(select(Challenge)).first()
+            first_record = db.exec(
+                select(Challenge).where(Challenge.is_public.is_(True))
+            ).first()
             if first_record is None:
                 logger.info("Challenges table is empty. Running initial seeding...")
                 return seed_challenges(db, content_dir=content_dir)
             logger.info("Challenges table already seeded. Skipping initial seed.")
-            return list(db.exec(select(Challenge)).all())
+            return list(
+                db.exec(select(Challenge).where(Challenge.is_public.is_(True))).all()
+            )
     except Exception as exc:
         logger.warning(
             "Notice during seed_challenges_if_empty (concurrent worker): %s", exc
