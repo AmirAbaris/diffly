@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Check, Copy, FileCode, Flag } from "lucide-react"
+import { Check, CircleHelp, Copy, FileCode, Flag } from "lucide-react"
 import { Highlight, themes, type RenderProps } from "prism-react-renderer"
 import { useTheme } from "next-themes"
 import { Badge } from "@/components/ui/badge"
@@ -13,6 +13,7 @@ export interface CodeViewerProps {
   language?: "python" | "typescript" | string
   flaggedLines: number[]
   onToggleLine: (line: number) => void
+  onOpenGuide?: () => void
   fileName?: string
   className?: string
   readOnly?: boolean
@@ -43,6 +44,7 @@ export function CodeViewer({
   language = "python",
   flaggedLines,
   onToggleLine,
+  onOpenGuide,
   fileName,
   className,
   readOnly = false,
@@ -116,6 +118,21 @@ export function CodeViewer({
         </div>
 
         <div className="flex items-center gap-2">
+          {onOpenGuide && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onOpenGuide}
+              className="h-7 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground"
+              title="How to flag lines guide"
+              aria-label="How to flag lines guide"
+              data-testid="how-to-flag-guide-button"
+            >
+              <CircleHelp aria-hidden="true" className="size-3.5" />
+              <span className="hidden sm:inline">How to flag</span>
+            </Button>
+          )}
+
           {flaggedLines.length > 0 && (
             <Badge variant="warning" size="sm" className="tabular-nums">
               {flaggedLines.length} flagged
@@ -198,14 +215,14 @@ export function CodeViewer({
                             title={
                               isFlagged
                                 ? `Line ${line.lineNumber} flagged. Click to unflag.`
-                                : "Click line to flag for review"
+                                : `Click to flag line ${line.lineNumber} for review`
                             }
                             className={cn(
-                              "inline-flex h-5 w-8 items-center justify-center rounded font-mono text-xs tabular-nums transition-colors",
+                              "inline-flex h-5 w-8 items-center justify-center rounded font-mono text-xs tabular-nums transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
                               readOnly && "cursor-default",
                               isFlagged
                                 ? "bg-amber-500 font-bold text-amber-950"
-                                : "text-muted-foreground/60 hover:bg-muted hover:text-foreground"
+                                : "text-muted-foreground/60 group-hover:text-foreground hover:bg-muted"
                             )}
                           >
                             {line.lineNumber}
@@ -215,12 +232,33 @@ export function CodeViewer({
                         {/* Marker badge indicator cell */}
                         <td className="w-10 px-1 py-0.5 text-center align-top select-none">
                           {isFlagged ? (
-                            <span
+                            <button
+                              type="button"
+                              disabled={readOnly}
+                              onClick={() => {
+                                if (!readOnly) {
+                                  onToggleLine(line.lineNumber)
+                                }
+                              }}
                               title="Flagged for review"
-                              className="inline-flex items-center justify-center rounded border border-amber-500/40 bg-amber-500/20 px-1 py-0.5 text-amber-700 dark:text-amber-400"
+                              aria-label={`Unflag line ${line.lineNumber}`}
+                              className="inline-flex items-center justify-center rounded border border-amber-500/40 bg-amber-500/20 px-1 py-0.5 text-amber-700 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none dark:text-amber-400"
                             >
-                              <Flag className="size-3 fill-amber-500 text-amber-500" />
-                            </span>
+                              <Flag
+                                aria-hidden="true"
+                                className="size-3 fill-amber-500 text-amber-500"
+                              />
+                            </button>
+                          ) : !readOnly ? (
+                            <button
+                              type="button"
+                              onClick={() => onToggleLine(line.lineNumber)}
+                              title={`Click to flag line ${line.lineNumber}`}
+                              aria-label={`Flag line ${line.lineNumber}`}
+                              className="inline-flex items-center justify-center rounded p-0.5 text-muted-foreground/40 opacity-0 transition-opacity duration-150 group-hover:opacity-70 hover:bg-muted hover:text-amber-500 hover:!opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                            >
+                              <Flag aria-hidden="true" className="size-3" />
+                            </button>
                           ) : (
                             <span className="block w-3" />
                           )}

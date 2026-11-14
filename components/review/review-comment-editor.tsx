@@ -12,6 +12,7 @@ export interface ReviewCommentEditorProps {
   flaggedLines: number[]
   onToggleLine: (line: number) => void
   onClearFlaggedLines?: () => void
+  onOpenFlagGuide?: () => void
   comment: string
   onChangeComment: (comment: string) => void
   minCharacters?: number
@@ -29,6 +30,7 @@ interface FlaggedLinesStripProps {
   disabled: boolean
   onToggleLine: (line: number) => void
   onClearFlaggedLines?: () => void
+  onOpenFlagGuide?: () => void
 }
 
 function FlaggedLinesStrip({
@@ -37,6 +39,7 @@ function FlaggedLinesStrip({
   disabled,
   onToggleLine,
   onClearFlaggedLines,
+  onOpenFlagGuide,
 }: FlaggedLinesStripProps) {
   return (
     <div
@@ -69,8 +72,20 @@ function FlaggedLinesStrip({
             </Badge>
           ))
         ) : (
-          <span className="text-muted-foreground">
-            None selected. Click line numbers in code viewer to flag defects.
+          <span className="inline-flex flex-wrap items-center gap-1.5 text-muted-foreground">
+            <span>
+              None selected. Click line numbers in code viewer to flag defects.
+            </span>
+            {onOpenFlagGuide && (
+              <button
+                type="button"
+                onClick={onOpenFlagGuide}
+                className="rounded-sm font-medium text-foreground underline underline-offset-4 transition-colors hover:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                data-testid="flag-strip-guide-button"
+              >
+                See guide
+              </button>
+            )}
           </span>
         )}
       </div>
@@ -212,6 +227,7 @@ export function ReviewCommentEditor({
   flaggedLines,
   onToggleLine,
   onClearFlaggedLines,
+  onOpenFlagGuide,
   comment,
   onChangeComment,
   minCharacters = 30,
@@ -255,6 +271,7 @@ export function ReviewCommentEditor({
         disabled={disabled}
         onToggleLine={onToggleLine}
         onClearFlaggedLines={onClearFlaggedLines}
+        onOpenFlagGuide={onOpenFlagGuide}
       />
 
       <EditorToolbar

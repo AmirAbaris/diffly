@@ -14,6 +14,7 @@ export interface ArenaUIState {
   submissionResult: ReviewSubmissionResponse | null
   isResultModalOpen: boolean
   isHistoryOpen: boolean
+  isFlagGuideOpen: boolean
   submittedReview: SubmittedReviewPayload | null
 
   setMobileTab: (tab: ArenaMobileTab) => void
@@ -21,6 +22,7 @@ export interface ArenaUIState {
   setSubmissionResult: (result: ReviewSubmissionResponse | null) => void
   setIsResultModalOpen: (open: boolean) => void
   setIsHistoryOpen: (open: boolean) => void
+  setIsFlagGuideOpen: (open: boolean) => void
   setSubmittedReview: (
     action:
       | SubmittedReviewPayload
@@ -36,6 +38,7 @@ export const useArenaUIStore = create<ArenaUIState>((set) => ({
   submissionResult: null,
   isResultModalOpen: false,
   isHistoryOpen: false,
+  isFlagGuideOpen: false,
   submittedReview: null,
 
   setMobileTab: (mobileTab) => set({ mobileTab }),
@@ -43,6 +46,7 @@ export const useArenaUIStore = create<ArenaUIState>((set) => ({
   setSubmissionResult: (submissionResult) => set({ submissionResult }),
   setIsResultModalOpen: (isResultModalOpen) => set({ isResultModalOpen }),
   setIsHistoryOpen: (isHistoryOpen) => set({ isHistoryOpen }),
+  setIsFlagGuideOpen: (isFlagGuideOpen) => set({ isFlagGuideOpen }),
   setSubmittedReview: (action) =>
     set((state) => ({
       submittedReview:
@@ -55,6 +59,7 @@ export const useArenaUIStore = create<ArenaUIState>((set) => ({
       submissionResult: null,
       isResultModalOpen: false,
       isHistoryOpen: false,
+      isFlagGuideOpen: false,
       submittedReview: null,
     }),
 }))

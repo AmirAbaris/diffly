@@ -23,6 +23,7 @@ export interface SubmissionBarProps {
   flaggedLines?: number[]
   comments?: string
   onResetDraft?: () => void
+  onOpenFlagGuide?: () => void
   onSubmitReview?: () => Promise<void> | void
   onSubmitSuccess?: (result: ReviewSubmissionResponse) => void
   onSubmitError?: (error: unknown) => void
@@ -111,6 +112,7 @@ export function SubmissionBar({
   flaggedLines: propFlaggedLines,
   comments: propComments,
   onResetDraft: propOnResetDraft,
+  onOpenFlagGuide,
   onSubmitReview: propOnSubmitReview,
   onSubmitSuccess,
   onSubmitError,
@@ -134,10 +136,13 @@ export function SubmissionBar({
     (s) => s.setIsResultModalOpen
   )
   const storeSetIsHistoryOpen = useArenaUIStore((s) => s.setIsHistoryOpen)
+  const storeSetIsFlagGuideOpen = useArenaUIStore((s) => s.setIsFlagGuideOpen)
 
   const handleOpenHistory = onOpenHistory ?? (() => storeSetIsHistoryOpen(true))
   const handleViewResults =
     onViewResults ?? (() => storeSetIsResultModalOpen(true))
+  const handleOpenFlagGuide =
+    onOpenFlagGuide ?? (() => storeSetIsFlagGuideOpen(true))
 
   const [internalIsSubmitting, setInternalIsSubmitting] = React.useState(false)
   const isSubmitting = propIsSubmitting ?? internalIsSubmitting
@@ -243,6 +248,19 @@ export function SubmissionBar({
             {summaryCount}
           </span>
         </div>
+
+        {!hasLines && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="xs"
+            onClick={handleOpenFlagGuide}
+            className="text-muted-foreground hover:text-foreground"
+            data-testid="submission-bar-guide-button"
+          >
+            <span>How to flag</span>
+          </Button>
+        )}
 
         {hasLines && hasComment && (
           <Badge variant="success" size="sm" className="hidden sm:inline-flex">
