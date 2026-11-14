@@ -30,7 +30,7 @@ def get_optional_current_user(
     request: Request,
     session: Annotated[Session, Depends(get_session)],
 ) -> User | None:
-    """Extract optional authenticated user from request state, cookies, or headers.
+    """Extract optional authenticated user from request state, cookies, or Bearer token.
 
     Returns User instance if authenticated, or None for guest requests.
     Can be overridden in tests via app.dependency_overrides.
@@ -47,13 +47,6 @@ def get_optional_current_user(
                 user = session.get(User, int(sub))
                 if user and user.is_active:
                     return user
-
-    if not settings.is_cookie_secure:
-        user_id_header = request.headers.get("x-user-id")
-        if user_id_header and user_id_header.isdigit():
-            user = session.get(User, int(user_id_header))
-            if user and user.is_active:
-                return user
 
     return None
 

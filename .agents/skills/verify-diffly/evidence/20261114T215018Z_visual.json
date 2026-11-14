@@ -1,0 +1,208 @@
+{
+  "feature": "visual-review",
+  "timestamp": "20261114T215018Z",
+  "browser": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+  "base_url": "http://localhost:3000",
+  "verdict": "CAPTURED",
+  "total_captures": 10,
+  "captures_with_findings": 5,
+  "captures": [
+    {
+      "state": "landing",
+      "viewport": "desktop",
+      "url": "http://localhost:3000/",
+      "screenshot": "20261114T215018Z_visual_landing_desktop.png",
+      "metrics": {
+        "title": "Diffly · AI Code Review Benchmark & Training Arena | Diffly",
+        "textLength": 3704,
+        "requestedWidth": 1440,
+        "scrollWidth": 1440,
+        "innerWidth": 1440,
+        "hasHorizontalOverflow": false,
+        "hasNextError": false
+      },
+      "consoleErrors": [
+        "Error: Hydration failed because the server rendered HTML didn't match the client. As a result this tree will be regenerated on the client. This can happen if a SSR-ed Client Component used:\n\n- A server/client branch `if (typeof window !== 'undefined')`.\n- Variable input such as `Date.now()` or `Math.random()` which changes each time it's called.\n- Date formatting in a user's locale which doesn't match the server.\n- External changing data without sending a snapshot of it along with the HTML.\n- Invalid HTML tag nesting.\n\nIt can also happen if the client has a browser extension installed which messes with the HTML before React loaded.\n\nhttps://react.dev/link/hydration-mismatch\n\n  ...\n    <InnerLayoutRouter url=\"/\" tree={[...]} params={{}} renderTree={{...}} segmentPath={[...]} ...>\n      <SegmentViewNode type=\"page\" pagePath=\"(catalog)/...\">\n        <SegmentTrieNode>\n        <RootPage>\n          <LandingPage>\n            <main data-testid=\"diffly-lan...\" className=\"flex flex-col\">\n              <section aria-label=\"Interactiv...\" className=\"border-b b...\">\n                <div className=\"mx-auto gr...\">\n                  <div className=\"lg:col-span-6\">\n                    <ReactiveShaderStage bridge={{...}} readout={{...}} activePhase=\"idle-scan\">\n                      <div onPointerMove={function handlePointerMove} data-testid=\"reactive-s...\" ...>\n                        <canvas>\n                        <div>\n                        <div>\n                        <div className=\"relative z...\">\n                          <div className=\"flex flex-...\">\n                            <Badge>\n                            <div className=\"flex items...\">\n                              <span>\n                              <Button type=\"button\" variant=\"outline\" size=\"icon-xs\" ...>\n                                <button\n                                  data-slot=\"button\"\n                                  data-variant=\"outline\"\n                                  data-size=\"icon-xs\"\n                                  className={\"group/button inline-flex shrink-0 items-center justify-center rounded-m...\"}\n                                  type=\"button\"\n                                  onClick={function useReactiveDiffShader.useCallback[togglePause]}\n+                                 aria-label=\"Resume shader animation\"\n-                                 aria-label=\"Pause shader animation\"\n                                  data-testid=\"shader-pause-toggle\"\n                                >\n                                  <Play className=\"size-3\" aria-hidden=\"true\">\n                                    <svg\n                                      ref={null}\n                                      xmlns=\"http://www.w3.org/2000/svg\"\n                                      width={24}\n                                      height={24}\n                                      viewBox=\"0 0 24 24\"\n                                      fill=\"none\"\n                                      stroke=\"currentColor\"\n                                      strokeWidth={2}\n                                      strokeLinecap=\"round\"\n                                      strokeLinejoin=\"round\"\n+                                     className=\"lucide lucide-play size-3\"\n-                                     className=\"lucide lucide-pause size-3\"\n                                      aria-hidden=\"true\"\n                                    >\n+                                     <path\n+                                       d=\"M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 ...\"\n+                                     >\n-                                     <rect x=\"14\" y=\"3\" width=\"5\" height=\"18\" rx=\"1\">\n                          ...\n                        ...\n                  ...\n              ...\n      ...\n\n    at throwOnHydrationMismatch (http://localhost:3000/_next/static/chunks/03ls_next_dist_compiled_react-dom_cjs_react-dom-client_development_0hh8j0of6sjp3.js:3142:56)\n    at beginWork (http://localhost:3000/_next/static/chunks/03ls_next_dist_compiled_react-dom_cjs_react-dom-client_development_0hh8j0of6sjp3.js:6616:918)\n    at runWithFiberInDEV (http://localhost:3000/_next/static/chunks/03ls_next_dist_compiled_react-dom_cjs_react-dom-client_development_0hh8j0of6sjp3.js:777:74)\n    at performUnitOfWork (http://localhost:3000/_next/static/chunks/03ls_next_dist_compiled_react-dom_cjs_react-dom-client_development_0hh8j0of6sjp3.js:9440:97)\n    at workLoopConcurrentByScheduler (http://localhost:3000/_next/static/chunks/03ls_next_dist_compiled_react-dom_cjs_react-dom-client_development_0hh8j0of6sjp3.js:9436:58)\n    at renderRootConcurrent (http://localhost:3000/_next/static/chunks/03ls_next_dist_compiled_react-dom_cjs_react-dom-client_development_0hh8j0of6sjp3.js:9419:71)\n    at performWorkOnRoot (http://localhost:3000/_next/static/chunks/03ls_next_dist_compiled_react-dom_cjs_react-dom-client_development_0hh8j0of6sjp3.js:8947:150)\n    at performWorkOnRootViaSchedulerTask (http://localhost:3000/_next/static/chunks/03ls_next_dist_compiled_react-dom_cjs_react-dom-client_development_0hh8j0of6sjp3.js:10140:9)\n    at MessagePort.performWorkUntilDeadline (http://localhost:3000/_next/static/chunks/03ls_next_dist_compiled_1sae92rxlh-7n._.js:2647:64)",
+        "Error: Hydration failed because the server rendered HTML didn't match the client. As a result this tree will be regenerated on the client. This can happen if a SSR-ed Client Component used:\n\n- A server/client branch `if (typeof window !== 'undefined')`.\n- Variable input such as `Date.now()` or `Math.random()` which changes each time it's called.\n- Date formatting in a user's locale which doesn't match the server.\n- External changing data without sending a snapshot of it along with the HTML.\n- Invalid HTML tag nesting.\n\nIt can also happen if the client has a browser extension installed which messes with the HTML before React loaded.\n\nhttps://react.dev/link/hydration-mismatch\n\n  ...\n    <InnerLayoutRouter url=\"/\" tree={[...]} params={{}} renderTree={{...}} segmentPath={[...]} ...>\n      <SegmentViewNode type=\"page\" pagePath=\"(catalog)/...\">\n        <SegmentTrieNode>\n        <RootPage>\n          <LandingPage>\n            <main data-testid=\"diffly-lan...\" className=\"flex flex-col\">\n              <section aria-label=\"Interactiv...\" className=\"border-b b...\">\n                <div className=\"mx-auto gr...\">\n                  <div className=\"lg:col-span-6\">\n                    <ReactiveShaderStage bridge={{...}} readout={{...}} activePhase=\"idle-scan\">\n                      <div onPointerMove={function handlePointerMove} data-testid=\"reactive-s...\" ...>\n                        <canvas>\n                        <div>\n                        <div>\n                        <div className=\"relative z...\">\n                          <div className=\"flex flex-...\">\n                            <Badge>\n                            <div className=\"flex items...\">\n                              <span>\n                              <Button type=\"button\" variant=\"outline\" size=\"icon-xs\" ...>\n                                <button\n                                  data-slot=\"button\"\n                                  data-variant=\"outline\"\n                                  data-size=\"icon-xs\"\n                                  className={\"group/button inline-flex shrink-0 items-center justify-center rounded-m...\"}\n                                  type=\"button\"\n                                  onClick={function useReactiveDiffShader.useCallback[togglePause]}\n+                                 aria-label=\"Resume shader animation\"\n-                                 aria-label=\"Pause shader animation\"\n                                  data-testid=\"shader-pause-toggle\"\n                                >\n                                  <Play className=\"size-3\" aria-hidden=\"true\">\n                                    <svg\n                                      ref={null}\n                                      xmlns=\"http://www.w3.org/2000/svg\"\n                                      width={24}\n                                      height={24}\n                                      viewBox=\"0 0 24 24\"\n                                      fill=\"none\"\n                                      stroke=\"currentColor\"\n                                      strokeWidth={2}\n                                      strokeLinecap=\"round\"\n                                      strokeLinejoin=\"round\"\n+                                     className=\"lucide lucide-play size-3\"\n-                                     className=\"lucide lucide-pause size-3\"\n                                      aria-hidden=\"true\"\n                                    >\n+                                     <path\n+                                       d=\"M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 ...\"\n+                                     >\n-                                     <rect x=\"14\" y=\"3\" width=\"5\" height=\"18\" rx=\"1\">\n                          ...\n                        ...\n                  ...\n              ...\n      ...\n\n    at throwOnHydrationMismatch (http://localhost:3000/_next/static/chunks/03ls_next_dist_compiled_react-dom_cjs_react-dom-client_development_0hh8j0of6sjp3.js:3142:56)\n    at beginWork (http://localhost:3000/_next/static/chunks/03ls_next_dist_compiled_react-dom_cjs_react-dom-client_development_0hh8j0of6sjp3.js:6616:918)\n    at runWithFiberInDEV (http://localhost:3000/_next/static/chunks/03ls_next_dist_compiled_react-dom_cjs_react-dom-client_development_0hh8j0of6sjp3.js:777:74)\n    at performUnitOfWork (http://localhost:3000/_next/static/chunks/03ls_next_dist_compiled_react-dom_cjs_react-dom-client_development_0hh8j0of6sjp3.js:9440:97)\n    at workLoopConcurrentByScheduler (http://localhost:3000/_next/static/chunks/03ls_next_dist_compiled_react-dom_cjs_react-dom-client_development_0hh8j0of6sjp3.js:9436:58)\n    at renderRootConcurrent (http://localhost:3000/_next/static/chunks/03ls_next_dist_compiled_react-dom_cjs_react-dom-client_development_0hh8j0of6sjp3.js:9419:71)\n    at performWorkOnRoot (http://localhost:3000/_next/static/chunks/03ls_next_dist_compiled_react-dom_cjs_react-dom-client_development_0hh8j0of6sjp3.js:8947:150)\n    at performWorkOnRootViaSchedulerTask (http://localhost:3000/_next/static/chunks/03ls_next_dist_compiled_react-dom_cjs_react-dom-client_development_0hh8j0of6sjp3.js:10140:9)\n    at MessagePort.performWorkUntilDeadline (http://localhost:3000/_next/static/chunks/03ls_next_dist_compiled_1sae92rxlh-7n._.js:2647:64)"
+      ],
+      "findings": [
+        "console_errors"
+      ],
+      "verdict": "CAPTURED"
+    },
+    {
+      "state": "challenges",
+      "viewport": "desktop",
+      "url": "http://localhost:3000/challenges",
+      "screenshot": "20261114T215018Z_visual_challenges_desktop.png",
+      "metrics": {
+        "title": "Challenges | Diffly",
+        "textLength": 10199,
+        "requestedWidth": 1440,
+        "scrollWidth": 1440,
+        "innerWidth": 1440,
+        "hasHorizontalOverflow": false,
+        "hasNextError": false
+      },
+      "consoleErrors": [],
+      "findings": [],
+      "verdict": "CAPTURED"
+    },
+    {
+      "state": "challenge_detail",
+      "viewport": "desktop",
+      "url": "http://localhost:3000/challenges/agent-unsanitized-exec",
+      "screenshot": "20261114T215018Z_visual_challenge_detail_desktop.png",
+      "metrics": {
+        "title": "Agent Unsanitized Exec - Arena | Diffly",
+        "textLength": 3057,
+        "requestedWidth": 1440,
+        "scrollWidth": 1440,
+        "innerWidth": 1440,
+        "hasHorizontalOverflow": false,
+        "hasNextError": false
+      },
+      "consoleErrors": [],
+      "findings": [],
+      "verdict": "CAPTURED"
+    },
+    {
+      "state": "auth_modal",
+      "viewport": "desktop",
+      "url": "http://localhost:3000/challenges",
+      "screenshot": "20261114T215018Z_visual_auth_modal_desktop.png",
+      "metrics": {
+        "title": "Challenges | Diffly",
+        "textLength": 10444,
+        "requestedWidth": 1440,
+        "scrollWidth": 1440,
+        "innerWidth": 1440,
+        "hasHorizontalOverflow": false,
+        "hasNextError": false
+      },
+      "consoleErrors": [],
+      "findings": [],
+      "verdict": "CAPTURED"
+    },
+    {
+      "state": "custom_modal",
+      "viewport": "desktop",
+      "url": "http://localhost:3000/challenges",
+      "screenshot": "20261114T215018Z_visual_custom_modal_desktop.png",
+      "metrics": {
+        "title": "Challenges | Diffly",
+        "textLength": 10888,
+        "requestedWidth": 1440,
+        "scrollWidth": 1440,
+        "innerWidth": 1440,
+        "hasHorizontalOverflow": false,
+        "hasNextError": false
+      },
+      "consoleErrors": [],
+      "findings": [],
+      "verdict": "CAPTURED"
+    },
+    {
+      "state": "landing",
+      "viewport": "mobile",
+      "url": "http://localhost:3000/",
+      "screenshot": "20261114T215018Z_visual_landing_mobile.png",
+      "metrics": {
+        "title": "Diffly · AI Code Review Benchmark & Training Arena | Diffly",
+        "textLength": 3649,
+        "requestedWidth": 390,
+        "scrollWidth": 408,
+        "innerWidth": 408,
+        "hasHorizontalOverflow": true,
+        "hasNextError": true
+      },
+      "consoleErrors": [
+        "Error: Hydration failed because the server rendered HTML didn't match the client. As a result this tree will be regenerated on the client. This can happen if a SSR-ed Client Component used:\n\n- A server/client branch `if (typeof window !== 'undefined')`.\n- Variable input such as `Date.now()` or `Math.random()` which changes each time it's called.\n- Date formatting in a user's locale which doesn't match the server.\n- External changing data without sending a snapshot of it along with the HTML.\n- Invalid HTML tag nesting.\n\nIt can also happen if the client has a browser extension installed which messes with the HTML before React loaded.\n\nhttps://react.dev/link/hydration-mismatch\n\n  ...\n    <InnerLayoutRouter url=\"/\" tree={[...]} params={{}} renderTree={{...}} segmentPath={[...]} ...>\n      <SegmentViewNode type=\"page\" pagePath=\"(catalog)/...\">\n        <SegmentTrieNode>\n        <RootPage>\n          <LandingPage>\n            <main data-testid=\"diffly-lan...\" className=\"flex flex-col\">\n              <section aria-label=\"Interactiv...\" className=\"border-b b...\">\n                <div className=\"mx-auto gr...\">\n                  <div className=\"lg:col-span-6\">\n                    <ReactiveShaderStage bridge={{...}} readout={{...}} activePhase=\"idle-scan\">\n                      <div onPointerMove={function handlePointerMove} data-testid=\"reactive-s...\" ...>\n                        <canvas>\n                        <div>\n                        <div>\n                        <div className=\"relative z...\">\n                          <div className=\"flex flex-...\">\n                            <Badge>\n                            <div className=\"flex items...\">\n                              <span>\n                              <Button type=\"button\" variant=\"outline\" size=\"icon-xs\" ...>\n                                <button\n                                  data-slot=\"button\"\n                                  data-variant=\"outline\"\n                                  data-size=\"icon-xs\"\n                                  className={\"group/button inline-flex shrink-0 items-center justify-center rounded-m...\"}\n                                  type=\"button\"\n                                  onClick={function useReactiveDiffShader.useCallback[togglePause]}\n+                                 aria-label=\"Resume shader animation\"\n-                                 aria-label=\"Pause shader animation\"\n                                  data-testid=\"shader-pause-toggle\"\n                                >\n                                  <Play className=\"size-3\" aria-hidden=\"true\">\n                                    <svg\n                                      ref={null}\n                                      xmlns=\"http://www.w3.org/2000/svg\"\n                                      width={24}\n                                      height={24}\n                                      viewBox=\"0 0 24 24\"\n                                      fill=\"none\"\n                                      stroke=\"currentColor\"\n                                      strokeWidth={2}\n                                      strokeLinecap=\"round\"\n                                      strokeLinejoin=\"round\"\n+                                     className=\"lucide lucide-play size-3\"\n-                                     className=\"lucide lucide-pause size-3\"\n                                      aria-hidden=\"true\"\n                                    >\n+                                     <path\n+                                       d=\"M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 ...\"\n+                                     >\n-                                     <rect x=\"14\" y=\"3\" width=\"5\" height=\"18\" rx=\"1\">\n                          ...\n                        ...\n                  ...\n              ...\n      ...\n\n    at throwOnHydrationMismatch (http://localhost:3000/_next/static/chunks/03ls_next_dist_compiled_react-dom_cjs_react-dom-client_development_0hh8j0of6sjp3.js:3142:56)\n    at beginWork (http://localhost:3000/_next/static/chunks/03ls_next_dist_compiled_react-dom_cjs_react-dom-client_development_0hh8j0of6sjp3.js:6616:918)\n    at runWithFiberInDEV (http://localhost:3000/_next/static/chunks/03ls_next_dist_compiled_react-dom_cjs_react-dom-client_development_0hh8j0of6sjp3.js:777:74)\n    at performUnitOfWork (http://localhost:3000/_next/static/chunks/03ls_next_dist_compiled_react-dom_cjs_react-dom-client_development_0hh8j0of6sjp3.js:9440:97)\n    at workLoopConcurrentByScheduler (http://localhost:3000/_next/static/chunks/03ls_next_dist_compiled_react-dom_cjs_react-dom-client_development_0hh8j0of6sjp3.js:9436:58)\n    at renderRootConcurrent (http://localhost:3000/_next/static/chunks/03ls_next_dist_compiled_react-dom_cjs_react-dom-client_development_0hh8j0of6sjp3.js:9419:71)\n    at performWorkOnRoot (http://localhost:3000/_next/static/chunks/03ls_next_dist_compiled_react-dom_cjs_react-dom-client_development_0hh8j0of6sjp3.js:8947:150)\n    at performWorkOnRootViaSchedulerTask (http://localhost:3000/_next/static/chunks/03ls_next_dist_compiled_react-dom_cjs_react-dom-client_development_0hh8j0of6sjp3.js:10140:9)\n    at MessagePort.performWorkUntilDeadline (http://localhost:3000/_next/static/chunks/03ls_next_dist_compiled_1sae92rxlh-7n._.js:2647:64)"
+      ],
+      "findings": [
+        "horizontal_overflow",
+        "next_error_overlay",
+        "console_errors"
+      ],
+      "verdict": "CAPTURED"
+    },
+    {
+      "state": "challenges",
+      "viewport": "mobile",
+      "url": "http://localhost:3000/challenges",
+      "screenshot": "20261114T215018Z_visual_challenges_mobile.png",
+      "metrics": {
+        "title": "Challenges | Diffly",
+        "textLength": 10144,
+        "requestedWidth": 390,
+        "scrollWidth": 408,
+        "innerWidth": 408,
+        "hasHorizontalOverflow": true,
+        "hasNextError": false
+      },
+      "consoleErrors": [],
+      "findings": [
+        "horizontal_overflow"
+      ],
+      "verdict": "CAPTURED"
+    },
+    {
+      "state": "challenge_detail",
+      "viewport": "mobile",
+      "url": "http://localhost:3000/challenges/agent-unsanitized-exec",
+      "screenshot": "20261114T215018Z_visual_challenge_detail_mobile.png",
+      "metrics": {
+        "title": "Agent Unsanitized Exec - Arena | Diffly",
+        "textLength": 1507,
+        "requestedWidth": 390,
+        "scrollWidth": 390,
+        "innerWidth": 390,
+        "hasHorizontalOverflow": false,
+        "hasNextError": false
+      },
+      "consoleErrors": [],
+      "findings": [],
+      "verdict": "CAPTURED"
+    },
+    {
+      "state": "auth_modal",
+      "viewport": "mobile",
+      "url": "http://localhost:3000/challenges",
+      "screenshot": "20261114T215018Z_visual_auth_modal_mobile.png",
+      "metrics": {
+        "title": "Challenges | Diffly",
+        "textLength": 10389,
+        "requestedWidth": 390,
+        "scrollWidth": 408,
+        "innerWidth": 408,
+        "hasHorizontalOverflow": true,
+        "hasNextError": false
+      },
+      "consoleErrors": [],
+      "findings": [
+        "horizontal_overflow"
+      ],
+      "verdict": "CAPTURED"
+    },
+    {
+      "state": "custom_modal",
+      "viewport": "mobile",
+      "url": "http://localhost:3000/challenges",
+      "screenshot": "20261114T215018Z_visual_custom_modal_mobile.png",
+      "metrics": {
+        "title": "Challenges | Diffly",
+        "textLength": 10833,
+        "requestedWidth": 390,
+        "scrollWidth": 408,
+        "innerWidth": 408,
+        "hasHorizontalOverflow": true,
+        "hasNextError": false
+      },
+      "consoleErrors": [],
+      "findings": [
+        "horizontal_overflow"
+      ],
+      "verdict": "CAPTURED"
+    }
+  ]
+}

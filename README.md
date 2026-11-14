@@ -1,4 +1,4 @@
-# Diffly ⚡
+# Diffly
 
 <p align="center">
   <strong>The open-source code review training arena & evaluation platform for AI agent code and pull requests.</strong>
@@ -18,7 +18,7 @@
 
 ---
 
-## 🎯 Why Diffly?
+## Why Diffly?
 
 As AI coding agents (Claude, Codex, Devin, Cursor, GitHub Copilot) accelerate code output, the nature of code review has fundamentally changed. Reviewers no longer just look for style issues or simple syntax errors—they must spot:
 
@@ -31,39 +31,39 @@ As AI coding agents (Claude, Codex, Devin, Cursor, GitHub Copilot) accelerate co
 
 ---
 
-## ✨ Features
+## Features
 
-- **🎮 Interactive Review Arena:**
+- **Interactive Review Arena:**
   - Full-featured code viewer powered by `prism-react-renderer` with line-by-line gutter interactions.
   - In-line comment editor supporting Markdown formatting, real-time preview, and shortcut keys (`Cmd/Ctrl + Enter`).
   - Context panel with Threat Model analysis, Defect Target descriptions, and progressive tiered hints.
 
-- **🤖 Automated Evaluation Engine:**
+- **Automated Evaluation Engine:**
   - Evaluates review findings against ground-truth defect targets.
   - Calculates line-accuracy, precision, recall, and comprehensive review scores.
   - Visual Radial Score Meter and defect discovery summaries.
 
-- **🔍 Side-by-Side Comparison & Debrief:**
+- **Side-by-Side Comparison & Debrief:**
   - Post-review comparison view displaying user findings alongside canonical staff reviews.
   - Side-by-side unified code diff inspections highlighting missed vs. caught bugs.
 
-- **📚 Curated Challenge Taxonomy:**
+- **Curated Challenge Taxonomy:**
   - Real-world scenarios spanning **Agent Antipatterns**, **Security & Injection Vectors**, and **Concurrency & Async Defects**.
   - Tiered difficulty rankings (`Easy`, `Medium`, `Hard`) with estimated completion times.
 
-- **📖 Interactive API Docs (Scalar):**
+- **Interactive API Docs (Scalar):**
   - Fully interactive OpenAPI reference powered by Scalar at `/scalar`.
 
-- **🐳 Production Ready & Containerized:**
+- **Production Ready & Containerized:**
   - Optimized multi-stage Docker build with zero-downtime health probes and standalone Next.js deployment.
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
 ```mermaid
 graph TD
-    User["👤 Developer / Reviewer"]
+    User["Developer / Reviewer"]
 
     subgraph "Frontend — Next.js 16 (Port 3000)"
         AppRouter["App Router (React 19 Server & Client Components)"]
@@ -104,7 +104,7 @@ graph TD
 
 ---
 
-## 🗂️ Challenge Taxonomy
+## Challenge Taxonomy
 
 Diffly provides a growing dataset of curated challenges based on real-world pull requests and autonomous agent code patterns:
 
@@ -118,7 +118,7 @@ Diffly provides a growing dataset of curated challenges based on real-world pull
 
 ---
 
-## 🚀 Quickstart
+## Quickstart
 
 You can run Diffly using **Docker Compose** (recommended for instant setup) or directly on your machine.
 
@@ -207,13 +207,13 @@ pnpm dev:api
 
 ---
 
-## ⚙️ Environment Configuration
+## Environment Configuration
 
 | Variable | Default | Description |\n| :---------------------------- | :-------------------------------------------- | :----------------------------------------------------------------------- |\n| `DATABASE_URL` | `sqlite:///./diffly.db` | SQLModel database connection string. Supports SQLite and Neon PostgreSQL. |\n| `DB_POOL_SIZE` | `5` | SQLAlchemy connection pool size for PostgreSQL. |\n| `DB_MAX_OVERFLOW` | `10` | Maximum temporary connection overflow above pool size. |\n| `DB_POOL_RECYCLE_SECONDS` | `300` | Recycle connections every 5 minutes to survive Neon scale-to-zero drops. |\n| `DB_POOL_PRE_PING` | `true` | Test connections for liveness before checkout (prevents stale EOF drops).|\n| `JWT_SECRET_KEY` | _(dev key)_ | High-entropy 256-bit token for signing JWTs (`openssl rand -hex 32`). |\n| `JWT_ALGORITHM` | `HS256` | JWT signing algorithm. |\n| `ACCESS_TOKEN_EXPIRE_MINUTES` | `10080` (7 days) | Token validity window. |\n| `COOKIE_SECURE` | `false` | Enable Secure cookie attribute (set to `true` in production with HTTPS). |\n| `CORS_ORIGINS` | `http://localhost:3000,http://127.0.0.1:3000` | Allowed cross-origin domains (comma-separated or JSON array). |\n| `CORS_ORIGIN_REGEX` | `^https://.*\\.vercel\\.app$` | Regex pattern matching dynamic Vercel preview deployment URLs. |\n| `PORT` | `8000` (API) / `3000` (Next.js) | Network port. |\n| `NODE_ENV` | `development` | Environment mode (`development`, `production`, `test`). |\n| `BACKEND_URL` | `http://localhost:8000` | Backend API URL for frontend proxying (leave unset on Vercel serverless).|\n\n---\n\n## 🚀 Deployment & Production Hosting\n\n### 1. Neon PostgreSQL Integration\nDiffly natively supports Neon serverless PostgreSQL, including PgBouncer pooled endpoints (`-pooler`) and automatic SSL enforcement (`sslmode=require`):\n\n`env\nDATABASE_URL=postgresql://neondb_owner:npg_password@ep-bold-pooler.us-east-2.aws.neon.tech/neondb?sslmode=require\nCOOKIE_SECURE=true\nNODE_ENV=production\n`\n\nTo apply database schemas and seed initial challenges against Neon:\n`bash\npython -m backend.seed.seed_data\n`\n\n### 2. Vercel Deployment (Unified Frontend & Serverless Backend)\nDiffly includes [`vercel.json`](vercel.json) pre-configured with Python serverless rewrites and production security headers (`X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`).\n\n- Connect the GitHub repository in the Vercel dashboard.\n- Set Environment Variables:\n - `DATABASE_URL`: Your pooled Neon connection string (`...-pooler.region.aws.neon.tech/neondb?sslmode=require`).\n - `JWT_SECRET_KEY`: Generated random 256-bit hex token.\n - `COOKIE_SECURE`: `true`.\n - `CORS_ORIGIN_REGEX`: `^https://.*\\.vercel\\.app$` (allows preview domains).\n - _(Optional)_ `BACKEND_URL`: Leave empty when running FastAPI natively via Vercel serverless functions, or set to your external API URL if hosting FastAPI separately.\n- Deploy with `vercel --prod` or push to your production branch. Verify `/api/health` reports `status: "healthy"` and `database: "connected"`.
 
 ---
 
-## 📡 API Overview
+## API Overview
 
 Diffly features a fully documented RESTful API. Visit `/scalar` for the interactive playground.
 
@@ -231,7 +231,7 @@ Diffly features a fully documented RESTful API. Visit `/scalar` for the interact
 
 ---
 
-## 🧪 Test Suite & Code Hygiene
+## Test Suite & Code Hygiene
 
 Diffly enforces rigorous quality gates across both frontend and backend stacks:
 
@@ -257,7 +257,7 @@ pnpm format
 
 ---
 
-## 📁 Repository Structure
+## Repository Structure
 
 ```text
 diffly/
@@ -291,7 +291,7 @@ diffly/
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
 We warmly welcome contributions from the community! Whether you want to add new review challenges, enhance the evaluation engine, or improve the UI:
 
@@ -315,12 +315,12 @@ To add a challenge, add your scenario to `backend/seed/challenges.py` with:
 
 ---
 
-## 📄 License
+## License
 
 This project is open-source and available under the **[MIT License](LICENSE)**.
 
 ---
 
 <p align="center">
-  Built with ❤️ for developers and security engineers reviewing code in the age of AI agents.
+  Built for developers and security engineers reviewing code in the age of AI agents.
 </p>

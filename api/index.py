@@ -23,6 +23,7 @@ SERVER_START_TIME = time.time()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    settings.validate_runtime_security()
     init_db()
     seed_challenges_if_empty()
     yield

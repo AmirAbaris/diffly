@@ -3,8 +3,8 @@ from typing import Annotated, Any
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
-from pydantic import BaseModel, ConfigDict, Field
-from sqlmodel import Session, and_, func, or_, select
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+from sqlmodel import Session, func, or_, select
 
 from api.deps import get_optional_current_user
 from backend.core.db import get_session
@@ -36,62 +36,32 @@ from backend.services.gemini_generator import (
     GeminiSchemaError,
     generate_custom_challenge,
 )
+from backend.services.ownership import (
+    Actor,
+    can_access_challenge,
+    challenge_owner_filter,
+    is_challenge_owner,
+    submission_owner_filter,
+)
 
 
 router = APIRouter(prefix="/api/challenges", tags=["challenges"])
 
 
-def _build_submission_owner_conditions(
-    user_id: int | None,
-    session_id: str | None,
-) -> list[Any]:
-    """Build SQL conditions matching user's owned or unclaimed guest submissions."""
-    conditions: list[Any] = []
-    if user_id is not None:
-        conditions.append(Submission.user_id == user_id)
-    if session_id and session_id.strip():
-        conditions.append(
-            and_(
-                Submission.session_id == session_id.strip(),
-                Submission.user_id.is_(None),
-            )
-        )
-    return conditions
-
-
-def _build_challenge_owner_conditions(
-    user_id: int | None,
-    session_id: str | None,
-) -> list[Any]:
-    """Build SQL conditions matching user's owned or unclaimed guest challenges."""
-    conditions: list[Any] = []
-    if user_id is not None:
-        conditions.append(Challenge.user_id == user_id)
-    if session_id and session_id.strip():
-        conditions.append(
-            and_(
-                Challenge.session_id == session_id.strip(),
-                Challenge.user_id.is_(None),
-            )
-        )
-    return conditions
-
-
 def _compute_best_scores_map(
     session: Session,
     challenges: list[Challenge],
-    user_id: int | None,
-    session_id: str | None,
+    actor: Actor,
 ) -> dict[int, int]:
-    """Compute highest submission score per challenge for the given user/guest."""
-    conditions = _build_submission_owner_conditions(user_id, session_id)
+    """Compute highest submission score per challenge for the given actor."""
+    owner_filter = submission_owner_filter(actor)
     best_scores_map: dict[int, int] = {}
-    if conditions and challenges:
+    if owner_filter is not None and challenges:
         challenge_ids = [ch.id for ch in challenges if ch.id is not None]
         if challenge_ids:
             sub_stmt = select(Submission.challenge_id, Submission.score).where(
                 Submission.challenge_id.in_(challenge_ids),
-                or_(*conditions),
+                owner_filter,
             )
             for ch_id, score in session.exec(sub_stmt).all():
                 if ch_id not in best_scores_map or score > best_scores_map[ch_id]:
@@ -146,8 +116,8 @@ def list_challenges(
     statement = statement.order_by(Challenge.id)
     challenges = list(session.exec(statement).all())
 
-    user_id = current_user.id if current_user and current_user.id is not None else None
-    best_scores_map = _compute_best_scores_map(session, challenges, user_id, session_id)
+    actor = Actor.from_request(current_user, session_id)
+    best_scores_map = _compute_best_scores_map(session, challenges, actor)
 
     return [
         ch.to_summary(
@@ -166,20 +136,32 @@ class CustomEvaluationRequest(BaseModel):
 
     expected_issues: list[DefectCriterion | dict[str, Any]] = Field(
         ...,
+        max_length=20,
         description="Expected defect criteria for grading",
     )
     code_snippet: str = Field(
         default="",
+        max_length=50000,
         description="Code snippet of the challenge",
     )
     flagged_lines: list[int] = Field(
         default_factory=list,
+        max_length=500,
         description="Line numbers flagged by reviewer as defective",
     )
     comments: str = Field(
         default="",
+        max_length=20000,
         description="User review critique explaining the defect",
     )
+
+    @field_validator("flagged_lines")
+    @classmethod
+    def validate_flagged_lines(cls, lines: list[int]) -> list[int]:
+        for line in lines:
+            if not isinstance(line, int) or line <= 0:
+                raise ValueError("Flagged lines must be valid positive integers (>= 1)")
+        return lines
 
 
 class CustomEvaluationResponse(BaseModel):
@@ -232,26 +214,19 @@ async def generate_custom_challenge_endpoint(
             ),
         )
 
-    user_id = current_user.id if current_user and current_user.id is not None else None
-    session_id = (
-        header_session_id.strip()
-        if header_session_id and header_session_id.strip()
-        else None
-    )
-    if user_id is None and session_id is None:
-        session_id = f"guest-{uuid4().hex[:12]}"
+    actor = Actor.from_request(current_user, header_session_id)
+    if actor.user_id is None and actor.guest_session_id is None:
+        actor = Actor(user_id=None, guest_session_id=f"guest-{uuid4().hex[:12]}")
 
-    if session_id:
-        response.headers["X-Diffly-Session-Id"] = session_id
+    if actor.guest_session_id:
+        response.headers["X-Diffly-Session-Id"] = actor.guest_session_id
 
-    # Enforce strict 5 custom challenges quota per user/guest
-    conditions = _build_challenge_owner_conditions(user_id, session_id)
-
+    owner_filter = challenge_owner_filter(actor)
     count_stmt = select(func.count(Challenge.id)).where(
         Challenge.is_public.is_(False),
-        or_(*conditions),
+        owner_filter,
     )
-    existing_count = session.exec(count_stmt).one()
+    existing_count = session.exec(count_stmt).one() if owner_filter is not None else 0
     if existing_count >= 5:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -283,7 +258,7 @@ async def generate_custom_challenge_endpoint(
         ) from exc
 
     # Re-check quota right before DB insert to guard against concurrent requests
-    latest_count = session.exec(count_stmt).one()
+    latest_count = session.exec(count_stmt).one() if owner_filter is not None else 0
     if latest_count >= 5:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -293,7 +268,6 @@ async def generate_custom_challenge_endpoint(
             ),
         )
 
-    # Ensure unique slug in DB
     base_slug = generated.slug
     candidate_slug = base_slug
     while (
@@ -304,7 +278,6 @@ async def generate_custom_challenge_endpoint(
     ):
         candidate_slug = f"{base_slug}-{uuid4().hex[:6]}"
 
-    # Save challenge to PostgreSQL as a private challenge
     new_challenge = Challenge(
         slug=candidate_slug,
         title=generated.title,
@@ -323,8 +296,8 @@ async def generate_custom_challenge_endpoint(
         recommended_fix_diff=generated.recommended_fix_diff,
         estimated_minutes=generated.estimated_minutes,
         is_public=False,
-        user_id=user_id,
-        session_id=session_id,
+        user_id=actor.user_id,
+        session_id=actor.guest_session_id,
     )
     session.add(new_challenge)
     session.commit()
@@ -349,7 +322,7 @@ async def generate_custom_challenge_endpoint(
         line_count=len(new_challenge.code_snippet.splitlines()),
         total_hints=len(new_challenge.get_hints()),
         is_custom=True,
-        session_id=session_id,
+        session_id=actor.guest_session_id,
     )
 
 
@@ -363,16 +336,10 @@ def list_custom_challenges(
     ] = None,
 ) -> CustomChallengesListResponse:
     """List the current user's private custom challenges and quota status."""
-    user_id = current_user.id if current_user and current_user.id is not None else None
-    session_id = (
-        header_session_id.strip()
-        if header_session_id and header_session_id.strip()
-        else None
-    )
+    actor = Actor.from_request(current_user, header_session_id)
+    owner_filter = challenge_owner_filter(actor)
 
-    conditions = _build_challenge_owner_conditions(user_id, session_id)
-
-    if not conditions:
+    if owner_filter is None:
         return CustomChallengesListResponse(
             items=[],
             total=0,
@@ -382,11 +349,11 @@ def list_custom_challenges(
 
     stmt = (
         select(Challenge)
-        .where(Challenge.is_public.is_(False), or_(*conditions))
+        .where(Challenge.is_public.is_(False), owner_filter)
         .order_by(Challenge.created_at.desc())
     )
     challenges = list(session.exec(stmt).all())
-    best_scores_map = _compute_best_scores_map(session, challenges, user_id, session_id)
+    best_scores_map = _compute_best_scores_map(session, challenges, actor)
 
     summaries = [
         ch.to_summary(
@@ -418,12 +385,7 @@ def delete_custom_challenge(
     ] = None,
 ) -> dict[str, Any]:
     """Delete a user's private custom challenge to free up quota."""
-    user_id = current_user.id if current_user and current_user.id is not None else None
-    session_id = (
-        header_session_id.strip()
-        if header_session_id and header_session_id.strip()
-        else None
-    )
+    actor = Actor.from_request(current_user, header_session_id)
 
     if identifier.isdigit():
         ch_id = int(identifier)
@@ -446,18 +408,12 @@ def delete_custom_challenge(
             detail="Cannot delete public catalog challenges",
         )
 
-    is_owner = (user_id is not None and challenge.user_id == user_id) or (
-        challenge.user_id is None
-        and session_id is not None
-        and challenge.session_id == session_id
-    )
-    if not is_owner:
+    if not is_challenge_owner(challenge, actor):
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You do not have permission to delete this challenge",
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Challenge not found",
         )
 
-    # Delete any submissions tied to this challenge
     sub_stmt = select(Submission).where(Submission.challenge_id == challenge.id)
     for sub in session.exec(sub_stmt).all():
         session.delete(sub)
@@ -512,8 +468,7 @@ def evaluate_custom_challenge_endpoint(
 def get_challenge_or_404(
     identifier: str,
     session: Session,
-    user_id: int | None = None,
-    session_id: str | None = None,
+    actor: Actor | None = None,
 ) -> Challenge:
     """Find a challenge by ID or slug, raising 404 if missing or unauthorized."""
     if identifier.isdigit():
@@ -525,23 +480,11 @@ def get_challenge_or_404(
         statement = select(Challenge).where(Challenge.slug == identifier)
 
     challenge = session.exec(statement).first()
-    if challenge is None:
+    if challenge is None or not can_access_challenge(challenge, actor or Actor()):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Challenge not found",
         )
-
-    if not challenge.is_public:
-        is_owner = (user_id is not None and challenge.user_id == user_id) or (
-            challenge.user_id is None
-            and session_id is not None
-            and challenge.session_id == session_id
-        )
-        if not is_owner:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Challenge not found",
-            )
 
     return challenge
 
@@ -557,23 +500,16 @@ def get_challenge(
     ] = None,
 ) -> ChallengeDetail:
     """Retrieve challenge detail by numeric ID or URL slug with completion status."""
-    user_id = current_user.id if current_user and current_user.id is not None else None
-    guest_session_id = session_id.strip() if session_id and session_id.strip() else None
+    actor = Actor.from_request(current_user, session_id)
+    challenge = get_challenge_or_404(identifier, session, actor=actor)
 
-    challenge = get_challenge_or_404(
-        identifier,
-        session,
-        user_id=user_id,
-        session_id=guest_session_id,
-    )
-
-    conditions = _build_submission_owner_conditions(user_id, guest_session_id)
+    owner_filter = submission_owner_filter(actor)
 
     best_score: int | None = None
-    if conditions and challenge.id is not None:
+    if owner_filter is not None and challenge.id is not None:
         sub_stmt = select(Submission.score).where(
             Submission.challenge_id == challenge.id,
-            or_(*conditions),
+            owner_filter,
         )
         scores = session.exec(sub_stmt).all()
         if scores:
@@ -603,19 +539,9 @@ def get_challenge_hints(
     ] = None,
 ) -> list[HintResponse]:
     """Retrieve progressive tiered hints for a challenge by numeric ID or URL slug."""
-    user_id = current_user.id if current_user and current_user.id is not None else None
-    guest_session_id = (
-        header_session_id.strip()
-        if header_session_id and header_session_id.strip()
-        else None
-    )
+    actor = Actor.from_request(current_user, header_session_id)
+    challenge = get_challenge_or_404(identifier, session, actor=actor)
 
-    challenge = get_challenge_or_404(
-        identifier,
-        session,
-        user_id=user_id,
-        session_id=guest_session_id,
-    )
     hints = [h.to_response() for h in challenge.get_hints()]
     hints.sort(key=lambda h: h.tier)
 
@@ -650,32 +576,17 @@ def get_challenge_solution(
 
     Requires at least one submission attempt for the challenge or explicit ?reveal=true.
     """
-    session_id = (
-        header_session_id.strip()
-        if header_session_id and header_session_id.strip()
-        else None
-    ) or (
-        query_session_id.strip()
-        if query_session_id and query_session_id.strip()
-        else None
-    )
-    user_id = current_user.id if current_user and current_user.id is not None else None
-
-    challenge = get_challenge_or_404(
-        identifier,
-        session,
-        user_id=user_id,
-        session_id=session_id,
-    )
+    actor = Actor.from_request(current_user, header_session_id, query_session_id)
+    challenge = get_challenge_or_404(identifier, session, actor=actor)
 
     if not reveal:
-        conditions = _build_submission_owner_conditions(user_id, session_id)
+        owner_filter = submission_owner_filter(actor)
 
         has_submitted = False
-        if conditions and challenge.id is not None:
+        if owner_filter is not None and challenge.id is not None:
             stmt = select(Submission.id).where(
                 Submission.challenge_id == challenge.id,
-                or_(*conditions),
+                owner_filter,
             )
             has_submitted = session.exec(stmt).first() is not None
 

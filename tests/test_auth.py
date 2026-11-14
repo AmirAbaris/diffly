@@ -589,13 +589,13 @@ def test_claimed_records_not_leaked_via_session_id_after_logout(
         "/api/challenges/custom/private-claimed-ch",
         headers={"X-Diffly-Session-Id": "shared-browser-sid"},
     )
-    assert anon_del.status_code == 403
+    assert anon_del.status_code == 404
 
 
-def test_x_user_id_header_rejected_in_production_and_for_inactive_users(
+def test_x_user_id_header_always_rejected(
     client: TestClient, session: Session, monkeypatch
 ):
-    """x-user-id header is ignored in production and for inactive users."""
+    """x-user-id header must never authenticate callers in dev or production."""
     active_user = User(
         email="produser@diffly.dev",
         username="produser",
@@ -615,7 +615,14 @@ def test_x_user_id_header_rejected_in_production_and_for_inactive_users(
 
     client.cookies.clear()
 
-    # Inactive user rejected even in dev
+    # Active user rejected via x-user-id even in development mode
+    res_dev = client.get(
+        "/api/auth/me",
+        headers={"x-user-id": str(active_user.id)},
+    )
+    assert res_dev.status_code == 401
+
+    # Inactive user rejected via x-user-id
     res_inactive = client.get(
         "/api/auth/me",
         headers={"x-user-id": str(inactive_user.id)},

@@ -10,11 +10,14 @@ services:
       - "8000:8000"
     environment:
       - DATABASE_URL=sqlite:////app/data/diffly.db
-      - JWT_SECRET_KEY=diffly-dev-secret-key-change-in-production-only
+      # Production deployments must set ENVIRONMENT=production and a >= 32-char JWT_SECRET_KEY.
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-diffly-dev-secret-key-change-in-production-only}
       - ACCESS_TOKEN_EXPIRE_MINUTES=10080
+      - COOKIE_SECURE=${COOKIE_SECURE:-false}
       - CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000,http://localhost:8000,http://127.0.0.1:8000
       - PORT=8000
-      - NODE_ENV=production
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+      - NODE_ENV=${NODE_ENV:-development}
     volumes:
       - diffly-data:/app/data
     healthcheck:

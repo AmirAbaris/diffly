@@ -1,0 +1,363 @@
+{
+  "feature": "challenge-ownership",
+  "timestamp": "2026-11-14T21:50:18Z",
+  "base_url": "http://127.0.0.1:8000",
+  "metadata": {
+    "custom_challenge_setup": "seeded_in_isolated_db",
+    "custom_challenge_slug": "verify-custom-e01f557e"
+  },
+  "verdict": "PASSED",
+  "total_steps": 29,
+  "passed_steps": 29,
+  "failed_steps": 0,
+  "steps": [
+    {
+      "step": "generate_custom_requires_gemini_key",
+      "actor": "guest_a",
+      "request": {
+        "method": "POST",
+        "path": "/api/challenges/generate-custom"
+      },
+      "expected_status": 401,
+      "actual_status": 401,
+      "verdict": "PASS",
+      "assertion": "POST /api/challenges/generate-custom rejects missing key with 401"
+    },
+    {
+      "step": "guest_a_evaluates_own_custom_challenge",
+      "actor": "guest_a",
+      "request": {
+        "method": "POST",
+        "path": "/api/challenges/verify-custom-e01f557e/review"
+      },
+      "expected_status": 200,
+      "actual_status": 200,
+      "verdict": "PASS",
+      "assertion": "Guest A evaluates own private custom challenge via /review"
+    },
+    {
+      "step": "private_custom_challenge_not_in_public_catalog",
+      "actor": "anonymous",
+      "request": {
+        "method": "GET",
+        "path": "/api/challenges"
+      },
+      "expected_status": 200,
+      "actual_status": 200,
+      "verdict": "PASS",
+      "assertion": "Private custom challenge is excluded from public /api/challenges"
+    },
+    {
+      "step": "guest_b_cannot_list_guest_a_custom_challenge",
+      "actor": "guest_b",
+      "request": {
+        "method": "GET",
+        "path": "/api/challenges/custom"
+      },
+      "expected_status": 200,
+      "actual_status": 200,
+      "verdict": "PASS",
+      "assertion": "Guest B custom challenge list excludes Guest A custom challenge"
+    },
+    {
+      "step": "guest_b_cannot_read_guest_a_custom_challenge",
+      "actor": "guest_b",
+      "request": {
+        "method": "GET",
+        "path": "/api/challenges/verify-custom-e01f557e"
+      },
+      "expected_status": 404,
+      "actual_status": 404,
+      "verdict": "PASS",
+      "assertion": "Guest B gets 404 reading Guest A custom challenge detail"
+    },
+    {
+      "step": "guest_b_cannot_evaluate_guest_a_custom_challenge",
+      "actor": "guest_b",
+      "request": {
+        "method": "POST",
+        "path": "/api/challenges/verify-custom-e01f557e/review"
+      },
+      "expected_status": 404,
+      "actual_status": 404,
+      "verdict": "PASS",
+      "assertion": "Guest B gets 404 evaluating Guest A custom challenge"
+    },
+    {
+      "step": "guest_b_cannot_delete_guest_a_custom_challenge",
+      "actor": "guest_b",
+      "request": {
+        "method": "DELETE",
+        "path": "/api/challenges/custom/verify-custom-e01f557e"
+      },
+      "expected_status": 403,
+      "actual_status": 403,
+      "verdict": "PASS",
+      "assertion": "Guest B gets 403 deleting Guest A custom challenge"
+    },
+    {
+      "step": "user_a_registers_and_claims_custom_challenge",
+      "actor": "user_a",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register"
+      },
+      "expected_status": 200,
+      "actual_status": 200,
+      "verdict": "PASS",
+      "assertion": "User A registers and claims Guest A custom challenge"
+    },
+    {
+      "step": "user_a_reads_claimed_custom_challenge",
+      "actor": "user_a",
+      "request": {
+        "method": "GET",
+        "path": "/api/challenges/verify-custom-e01f557e"
+      },
+      "expected_status": 200,
+      "actual_status": 200,
+      "verdict": "PASS",
+      "assertion": "User A reads claimed custom challenge detail via cookie auth"
+    },
+    {
+      "step": "user_a_reads_claimed_custom_challenge_submissions",
+      "actor": "user_a",
+      "request": {
+        "method": "GET",
+        "path": "/api/challenges/verify-custom-e01f557e/submissions"
+      },
+      "expected_status": 200,
+      "actual_status": 200,
+      "verdict": "PASS",
+      "assertion": "User A sees claimed submission history on custom challenge"
+    },
+    {
+      "step": "old_session_cannot_read_claimed_custom_challenge",
+      "actor": "third_party_with_old_session",
+      "request": {
+        "method": "GET",
+        "path": "/api/challenges/verify-custom-e01f557e"
+      },
+      "expected_status": 404,
+      "actual_status": 404,
+      "verdict": "PASS",
+      "assertion": "Old Guest A session ID cannot read claimed custom challenge"
+    },
+    {
+      "step": "old_session_cannot_delete_claimed_custom_challenge",
+      "actor": "third_party_with_old_session",
+      "request": {
+        "method": "DELETE",
+        "path": "/api/challenges/custom/verify-custom-e01f557e"
+      },
+      "expected_status": 403,
+      "actual_status": 403,
+      "verdict": "PASS",
+      "assertion": "Old Guest A session ID cannot delete claimed custom challenge"
+    },
+    {
+      "step": "user_b_registers",
+      "actor": "user_b",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register"
+      },
+      "expected_status": 200,
+      "actual_status": 200,
+      "verdict": "PASS",
+      "assertion": "User B registers for cross-user ownership checks"
+    },
+    {
+      "step": "user_b_cannot_list_user_a_custom_challenge",
+      "actor": "user_b",
+      "request": {
+        "method": "GET",
+        "path": "/api/challenges/custom"
+      },
+      "expected_status": 200,
+      "actual_status": 200,
+      "verdict": "PASS",
+      "assertion": "User B custom challenge list excludes User A custom challenge"
+    },
+    {
+      "step": "user_b_cannot_read_user_a_custom_challenge",
+      "actor": "user_b",
+      "request": {
+        "method": "GET",
+        "path": "/api/challenges/verify-custom-e01f557e"
+      },
+      "expected_status": 404,
+      "actual_status": 404,
+      "verdict": "PASS",
+      "assertion": "User B receives 404 reading User A custom challenge"
+    },
+    {
+      "step": "user_b_cannot_read_user_a_custom_challenge_hints",
+      "actor": "user_b",
+      "request": {
+        "method": "GET",
+        "path": "/api/challenges/verify-custom-e01f557e/hints"
+      },
+      "expected_status": 404,
+      "actual_status": 404,
+      "verdict": "PASS",
+      "assertion": "User B receives 404 reading User A custom challenge hints"
+    },
+    {
+      "step": "user_b_cannot_read_user_a_custom_challenge_solution",
+      "actor": "user_b",
+      "request": {
+        "method": "GET",
+        "path": "/api/challenges/verify-custom-e01f557e/solution?reveal=true"
+      },
+      "expected_status": 404,
+      "actual_status": 404,
+      "verdict": "PASS",
+      "assertion": "User B receives 404 reading User A custom challenge solution"
+    },
+    {
+      "step": "user_b_cannot_evaluate_user_a_custom_challenge",
+      "actor": "user_b",
+      "request": {
+        "method": "POST",
+        "path": "/api/challenges/verify-custom-e01f557e/review"
+      },
+      "expected_status": 404,
+      "actual_status": 404,
+      "verdict": "PASS",
+      "assertion": "User B receives 404 evaluating User A custom challenge"
+    },
+    {
+      "step": "user_b_cannot_read_user_a_custom_challenge_submissions",
+      "actor": "user_b",
+      "request": {
+        "method": "GET",
+        "path": "/api/challenges/verify-custom-e01f557e/submissions"
+      },
+      "expected_status": 404,
+      "actual_status": 404,
+      "verdict": "PASS",
+      "assertion": "User B receives 404 reading User A custom challenge submissions"
+    },
+    {
+      "step": "user_b_cannot_delete_user_a_custom_challenge",
+      "actor": "user_b",
+      "request": {
+        "method": "DELETE",
+        "path": "/api/challenges/custom/verify-custom-e01f557e"
+      },
+      "expected_status": 403,
+      "actual_status": 403,
+      "verdict": "PASS",
+      "assertion": "User B receives 403 deleting User A custom challenge"
+    },
+    {
+      "step": "prod_x_user_id_cannot_read_custom_challenge",
+      "actor": "forged_x_user_id_prod",
+      "request": {
+        "method": "GET",
+        "path": "/api/challenges/verify-custom-e01f557e"
+      },
+      "expected_status": 404,
+      "actual_status": 404,
+      "verdict": "PASS",
+      "assertion": "Forged x-user-id in production cannot read User A custom challenge"
+    },
+    {
+      "step": "prod_x_user_id_cannot_delete_custom_challenge",
+      "actor": "forged_x_user_id_prod",
+      "request": {
+        "method": "DELETE",
+        "path": "/api/challenges/custom/verify-custom-e01f557e"
+      },
+      "expected_status": 403,
+      "actual_status": 403,
+      "verdict": "PASS",
+      "assertion": "Forged x-user-id in production cannot delete User A custom challenge"
+    },
+    {
+      "step": "user_a_logout",
+      "actor": "user_a",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/logout"
+      },
+      "expected_status": 200,
+      "actual_status": 200,
+      "verdict": "PASS",
+      "assertion": "User A logs out"
+    },
+    {
+      "step": "logged_out_user_a_cannot_read_custom_challenge",
+      "actor": "user_a_logged_out",
+      "request": {
+        "method": "GET",
+        "path": "/api/challenges/verify-custom-e01f557e"
+      },
+      "expected_status": 404,
+      "actual_status": 404,
+      "verdict": "PASS",
+      "assertion": "Logged-out User A cannot read private custom challenge"
+    },
+    {
+      "step": "logged_out_user_a_cannot_delete_custom_challenge",
+      "actor": "user_a_logged_out",
+      "request": {
+        "method": "DELETE",
+        "path": "/api/challenges/custom/verify-custom-e01f557e"
+      },
+      "expected_status": 403,
+      "actual_status": 403,
+      "verdict": "PASS",
+      "assertion": "Logged-out User A cannot delete private custom challenge"
+    },
+    {
+      "step": "user_a_login",
+      "actor": "user_a",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login"
+      },
+      "expected_status": 200,
+      "actual_status": 200,
+      "verdict": "PASS",
+      "assertion": "User A logs back in"
+    },
+    {
+      "step": "owner_deletes_custom_challenge",
+      "actor": "user_a",
+      "request": {
+        "method": "DELETE",
+        "path": "/api/challenges/custom/verify-custom-e01f557e"
+      },
+      "expected_status": 200,
+      "actual_status": 200,
+      "verdict": "PASS",
+      "assertion": "Authenticated owner User A deletes own custom challenge"
+    },
+    {
+      "step": "deleted_custom_challenge_returns_404",
+      "actor": "user_a",
+      "request": {
+        "method": "GET",
+        "path": "/api/challenges/verify-custom-e01f557e"
+      },
+      "expected_status": 404,
+      "actual_status": 404,
+      "verdict": "PASS",
+      "assertion": "Deleted custom challenge returns 404 after deletion"
+    },
+    {
+      "step": "public_challenge_delete_forbidden",
+      "actor": "user_a",
+      "request": {
+        "method": "DELETE",
+        "path": "/api/challenges/custom/agent-unsanitized-exec"
+      },
+      "expected_status": 403,
+      "actual_status": 403,
+      "verdict": "PASS",
+      "assertion": "Deleting a public catalog challenge is forbidden with 403"
+    }
+  ]
+}

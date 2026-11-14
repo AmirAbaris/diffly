@@ -402,7 +402,7 @@ def test_cannot_delete_another_users_custom_challenge(
     client: TestClient,
     session: Session,
 ):
-    """Attempting to delete another user's private challenge returns 403."""
+    """Attempting to delete another user's private challenge returns 404."""
     other_ch = Challenge(
         slug="other-user-private-ch",
         title="Other Private",
@@ -422,8 +422,8 @@ def test_cannot_delete_another_users_custom_challenge(
         f"/api/challenges/custom/{other_ch.slug}",
         headers={"X-Diffly-Session-Id": "attacker-session"},
     )
-    assert res.status_code == 403
-    assert "permission" in res.json()["detail"].lower()
+    assert res.status_code == 404
+    assert "not found" in res.json()["detail"].lower()
 
 
 def test_unauthorized_user_cannot_view_private_challenge(

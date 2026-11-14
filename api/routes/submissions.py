@@ -6,7 +6,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Header, Query, Response, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlmodel import Session, and_, or_, select
+from sqlmodel import Session, select
 
 from api.deps import get_optional_current_user
 from api.routes.challenges import get_challenge_or_404
@@ -14,6 +14,7 @@ from backend.core.db import get_session
 from backend.models.submission import Submission
 from backend.models.user import User
 from backend.services.evaluation_service import evaluate_review
+from backend.services.ownership import Actor, submission_owner_filter
 
 
 router = APIRouter(prefix="/api/challenges", tags=["submissions"])
@@ -100,25 +101,14 @@ def submit_review(
         Header(alias="X-Diffly-Session-Id", description="Guest session identifier"),
     ] = None,
 ) -> ReviewSubmissionResponse:
-    guest_session_id: str | None = None
-    if header_session_id and header_session_id.strip():
-        guest_session_id = header_session_id.strip()
-    elif payload.session_id and payload.session_id.strip():
-        guest_session_id = payload.session_id.strip()
+    actor = Actor.from_request(current_user, header_session_id, payload.session_id)
+    if actor.user_id is None and actor.guest_session_id is None:
+        actor = Actor(user_id=None, guest_session_id=f"guest-{uuid4().hex[:12]}")
 
-    user_id = current_user.id if current_user and current_user.id is not None else None
-    if user_id is None and guest_session_id is None:
-        guest_session_id = f"guest-{uuid4().hex[:12]}"
+    if actor.guest_session_id:
+        response.headers["X-Diffly-Session-Id"] = actor.guest_session_id
 
-    if guest_session_id:
-        response.headers["X-Diffly-Session-Id"] = guest_session_id
-
-    challenge = get_challenge_or_404(
-        identifier,
-        session,
-        user_id=user_id,
-        session_id=guest_session_id,
-    )
+    challenge = get_challenge_or_404(identifier, session, actor=actor)
 
     eval_result = evaluate_review(
         challenge=challenge,
@@ -131,8 +121,8 @@ def submit_review(
 
     submission = Submission(
         challenge_id=challenge.id,
-        user_id=user_id,
-        session_id=guest_session_id,
+        user_id=actor.user_id,
+        session_id=actor.guest_session_id,
         flagged_lines=payload.flagged_lines,
         comments=payload.comments,
         score=eval_result.score,
@@ -175,40 +165,18 @@ def get_submission_history(
         Query(alias="session_id", description="Guest session query parameter"),
     ] = None,
 ) -> list[SubmissionHistoryResponse]:
-    user_id = current_user.id if current_user and current_user.id is not None else None
-    session_id = (
-        header_session_id.strip()
-        if header_session_id and header_session_id.strip()
-        else None
-    ) or (
-        query_session_id.strip()
-        if query_session_id and query_session_id.strip()
-        else None
-    )
+    actor = Actor.from_request(current_user, header_session_id, query_session_id)
+    challenge = get_challenge_or_404(identifier, session, actor=actor)
 
-    challenge = get_challenge_or_404(
-        identifier,
-        session,
-        user_id=user_id,
-        session_id=session_id,
-    )
-
-    conditions = []
-    if user_id is not None:
-        conditions.append(Submission.user_id == user_id)
-    if session_id:
-        conditions.append(
-            and_(Submission.session_id == session_id, Submission.user_id.is_(None))
-        )
-
-    if not conditions:
+    owner_filter = submission_owner_filter(actor)
+    if owner_filter is None:
         return []
 
     statement = (
         select(Submission)
         .where(
             Submission.challenge_id == challenge.id,
-            or_(*conditions),
+            owner_filter,
         )
         .order_by(Submission.created_at.asc(), Submission.id.asc())
     )

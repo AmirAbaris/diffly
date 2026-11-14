@@ -37,7 +37,7 @@ export function CustomChallengeButton({
         type="button"
         onClick={() => openModal("manage")}
         className={cn(
-          "inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium tabular-nums transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+          "inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium tabular-nums transition-colors focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none",
           isQuotaFull
             ? "border-amber-500/30 bg-amber-500/10 text-amber-700 hover:bg-amber-500/15 dark:border-amber-500/30 dark:bg-amber-500/15 dark:text-amber-400"
             : "border-border bg-muted/20 text-muted-foreground hover:bg-muted/50 hover:text-foreground"
