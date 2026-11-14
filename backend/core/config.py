@@ -1,8 +1,12 @@
 import json
 from typing import Any
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+DEFAULT_JWT_SECRET_KEY = "diffly-dev-secret-key-change-in-production-only"
+MIN_JWT_SECRET_LENGTH = 32
 
 
 class Settings(BaseSettings):
@@ -14,7 +18,7 @@ class Settings(BaseSettings):
     )
 
     DATABASE_URL: str = "sqlite:///./diffly.db"
-    JWT_SECRET_KEY: str = "diffly-dev-secret-key-change-in-production-only"
+    JWT_SECRET_KEY: str = DEFAULT_JWT_SECRET_KEY
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 10080  # 7 days
     AUTH_COOKIE_NAME: str = "diffly_access_token"
@@ -37,6 +41,28 @@ class Settings(BaseSettings):
             self.ENVIRONMENT.lower() == "production"
             or self.NODE_ENV.lower() == "production"
         )
+
+    def validate_runtime_security(self) -> None:
+        """Fail fast when production/secure-cookie mode uses an unsafe JWT secret."""
+        if not self.is_cookie_secure:
+            return
+        secret = self.JWT_SECRET_KEY.strip()
+        if secret == DEFAULT_JWT_SECRET_KEY:
+            raise RuntimeError(
+                "Insecure JWT_SECRET_KEY: default development secret cannot be used "
+                "when ENVIRONMENT=production, NODE_ENV=production, or "
+                "COOKIE_SECURE=true."
+            )
+        if len(secret) < MIN_JWT_SECRET_LENGTH:
+            raise RuntimeError(
+                f"Insecure JWT_SECRET_KEY: secret must be at least "
+                f"{MIN_JWT_SECRET_LENGTH} characters in production/secure-cookie mode."
+            )
+
+    @model_validator(mode="after")
+    def _check_runtime_security(self) -> "Settings":
+        self.validate_runtime_security()
+        return self
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
