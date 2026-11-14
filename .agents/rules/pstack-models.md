@@ -20,4 +20,4 @@ arena runners: pro, flash
 arena cross-judge pool: pro, flash
 swarm workers: flash
 architect runners: pro, flash
-interrogate reviewers: pro, flash
+interrogate reviewers: pro, pro
