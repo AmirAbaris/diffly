@@ -3,7 +3,7 @@ from typing import Annotated, Any
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlmodel import Session, func, or_, select
 
 from api.deps import get_optional_current_user
@@ -136,20 +136,32 @@ class CustomEvaluationRequest(BaseModel):
 
     expected_issues: list[DefectCriterion | dict[str, Any]] = Field(
         ...,
+        max_length=20,
         description="Expected defect criteria for grading",
     )
     code_snippet: str = Field(
         default="",
+        max_length=50000,
         description="Code snippet of the challenge",
     )
     flagged_lines: list[int] = Field(
         default_factory=list,
+        max_length=500,
         description="Line numbers flagged by reviewer as defective",
     )
     comments: str = Field(
         default="",
+        max_length=20000,
         description="User review critique explaining the defect",
     )
+
+    @field_validator("flagged_lines")
+    @classmethod
+    def validate_flagged_lines(cls, lines: list[int]) -> list[int]:
+        for line in lines:
+            if not isinstance(line, int) or line <= 0:
+                raise ValueError("Flagged lines must be valid positive integers (>= 1)")
+        return lines
 
 
 class CustomEvaluationResponse(BaseModel):
@@ -398,8 +410,8 @@ def delete_custom_challenge(
 
     if not is_challenge_owner(challenge, actor):
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You do not have permission to delete this challenge",
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Challenge not found",
         )
 
     sub_stmt = select(Submission).where(Submission.challenge_id == challenge.id)

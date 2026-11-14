@@ -42,7 +42,7 @@ export function NavStats({ className, compactOnMobile = true }: NavStatsProps) {
         data-testid="nav-stats-loading"
         className={cn("flex items-center", className)}
       >
-        <Skeleton className="h-8 w-44 rounded-md sm:w-60" />
+        <Skeleton className="h-8 w-28 rounded-md sm:w-60" />
       </div>
     )
   }
@@ -57,7 +57,7 @@ export function NavStats({ className, compactOnMobile = true }: NavStatsProps) {
           data-testid="nav-stats-trigger"
           aria-label="View performance metrics and category mastery"
           className={cn(
-            "group inline-flex h-8 items-center gap-2 rounded-md border border-border bg-muted/20 pr-2 pl-2.5 text-xs transition-colors hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none sm:gap-2.5 sm:pr-2.5 sm:pl-3",
+            "group inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-muted/20 pr-1.5 pl-2 text-xs transition-colors hover:bg-muted/50 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none sm:gap-2.5 sm:pr-2.5 sm:pl-3",
             className
           )}
         >

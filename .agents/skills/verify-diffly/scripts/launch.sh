@@ -13,8 +13,6 @@ resolve_bin() {
         echo "$REPO_ROOT/.venv/bin/$name"
     elif [ -x "$COMMON_ROOT/.venv/bin/$name" ]; then
         echo "$COMMON_ROOT/.venv/bin/$name"
-    elif [ -x "/Users/amirabaris/Documents/diffly/.venv/bin/$name" ]; then
-        echo "/Users/amirabaris/Documents/diffly/.venv/bin/$name"
     elif command -v "$name" >/dev/null 2>&1; then
         command -v "$name"
     else

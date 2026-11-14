@@ -182,27 +182,22 @@ async function captureState(client, viewport, spec, outPath) {
   })
   client.events = []
   await client.send("Page.navigate", { url: spec.url })
-  if (
-    !(await waitForCondition(
-      client,
-      `document.readyState === "complete" && (${spec.readyExpr})`,
-      30000
-    ))
-  ) {
-    throw new Error(`Timed out on ${spec.name} (${spec.url})`)
-  }
+  const readyOk = await waitForCondition(
+    client,
+    `document.readyState === "complete" && (${spec.readyExpr})`,
+    30000
+  )
+  if (!readyOk) throw new Error(`Timed out on ${spec.name} (${spec.url})`)
   await client.evaluate(
     "document.fonts ? document.fonts.ready.then(() => true) : true"
   )
   await sleep(600)
 
   if (spec.actionExpr) {
-    if (!(await client.evaluate(spec.actionExpr))) {
+    if (!(await client.evaluate(spec.actionExpr)))
       throw new Error(`Interaction failed for ${spec.name} (${viewport.name})`)
-    }
-    if (!(await waitForCondition(client, spec.postExpr, 10000))) {
+    if (!(await waitForCondition(client, spec.postExpr, 10000)))
       throw new Error(`Post-action missing for ${spec.name} (${viewport.name})`)
-    }
     await sleep(350)
   }
 
@@ -242,16 +237,20 @@ async function captureState(client, viewport, spec, outPath) {
         .join(" ")
     })
 
-  const findings = []
-  if (metrics.hasHorizontalOverflow) findings.push("horizontal_overflow")
-  if (metrics.hasNextError) findings.push("next_error_overlay")
-  if (consoleErrors.length > 0) findings.push("console_errors")
+  const findings = [
+    metrics.hasHorizontalOverflow && "horizontal_overflow",
+    metrics.hasNextError && "next_error_overlay",
+    consoleErrors.length > 0 && "console_errors",
+  ].filter(Boolean)
 
   const shot = await client.send("Page.captureScreenshot", {
     format: "png",
     captureBeyondViewport: !spec.viewportOnly,
   })
   fs.writeFileSync(outPath, Buffer.from(shot.data, "base64"))
+  const verdict =
+    metrics.textLength > 40 && findings.length === 0 ? "CAPTURED" : "FAILED"
+
   return {
     state: spec.name,
     viewport: viewport.name,
@@ -260,7 +259,7 @@ async function captureState(client, viewport, spec, outPath) {
     metrics,
     consoleErrors,
     findings,
-    verdict: metrics.textLength > 40 ? "CAPTURED" : "FAILED",
+    verdict,
   }
 }
 
@@ -330,21 +329,22 @@ async function main() {
     )
 
     const failed = captures.filter((c) => c.verdict !== "CAPTURED")
+    const withFindings = captures.filter((c) => c.findings.length > 0)
     const manifestPath = path.join(evidenceDir, `${timestamp}_visual.json`)
+    const allClean = failed.length === 0 && withFindings.length === 0
     const manifest = {
       feature: "visual-review",
       timestamp,
       browser: chromeBin,
       base_url: baseUrl,
-      verdict: failed.length === 0 ? "CAPTURED" : "FAILED",
+      verdict: allClean ? "CAPTURED" : "FAILED",
       total_captures: captures.length,
-      captures_with_findings: captures.filter((c) => c.findings.length > 0)
-        .length,
+      captures_with_findings: withFindings.length,
       captures,
     }
     fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + "\n")
     process.stdout.write(`Visual manifest recorded to ${manifestPath}\n`)
-    if (failed.length > 0) process.exitCode = 1
+    if (!allClean) process.exitCode = 1
   } finally {
     if (client) client.close()
     if (
@@ -352,18 +352,15 @@ async function main() {
       chromeProc.exitCode === null &&
       chromeProc.signalCode === null
     ) {
-      const exited = new Promise((resolve) => {
+      await new Promise((resolve) => {
         chromeProc.once("exit", resolve)
         setTimeout(resolve, 2000)
+        chromeProc.kill("SIGKILL")
       })
-      chromeProc.kill("SIGKILL")
-      await exited
     }
     try {
       fs.rmSync(userDataDir, { recursive: true, force: true })
-    } catch {
-      // Ignore delayed temp-dir handle release on exit.
-    }
+    } catch {}
   }
 }
 

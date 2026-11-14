@@ -72,20 +72,20 @@ MATRIX: dict[tuple[str, str], dict[str, dict[str, int]]] = {
     },
     ("DELETE", "/api/challenges/custom/{identifier}"): {
         "user_a_private": {
-            "anonymous": 403,
-            "guest_a": 403,
-            "guest_b": 403,
+            "anonymous": 404,
+            "guest_a": 404,
+            "guest_b": 404,
             "user_a": 200,
-            "user_b": 403,
-            "inactive": 403,
+            "user_b": 404,
+            "inactive": 404,
         },
         "guest_a_private": {
-            "anonymous": 403,
+            "anonymous": 404,
             "guest_a": 200,
-            "guest_b": 403,
-            "user_a": 403,
-            "user_b": 403,
-            "inactive": 403,
+            "guest_b": 404,
+            "user_a": 404,
+            "user_b": 404,
+            "inactive": 404,
         },
     },
     ("GET", "/api/challenges/{identifier}"): {
@@ -656,7 +656,7 @@ def test_authorization_matrix_enforcement(
                 f"/api/challenges/custom/{guest_a_private.slug}",
                 headers=stale_headers,
             ).status_code
-            == 403
+            == 404
         )
         assert (
             ac.get(
@@ -766,5 +766,75 @@ def test_generate_custom_challenge_owner_isolation(
                 other_client.delete(
                     f"/api/challenges/custom/{created_slug}", headers=other_headers
                 ).status_code
-                == 403
+                == 404
             )
+
+
+def test_authenticated_actor_ignores_unclaimed_guest_session_header(
+    session: Session,
+    client_factory: Callable[[], TestClient],
+    register_user: Callable[..., dict[str, Any]],
+    login_as: Callable[..., TestClient],
+):
+    """Authenticated users must not access unclaimed guest records via header."""
+    actors, meta = _make_actors(session, client_factory, register_user, login_as)
+    _, _, guest_a_private = _seed_matrix_resources(
+        session, meta["user_a"]["id"], meta["guest_a_sid"]
+    )
+    guest_private_slug = guest_a_private.slug
+    guest_headers = {"X-Diffly-Session-Id": meta["guest_a_sid"]}
+
+    user_b_client, _ = actors["user_b"]
+    assert (
+        user_b_client.get("/api/challenges/custom", headers=guest_headers).json()[
+            "items"
+        ]
+        == []
+    )
+    assert (
+        user_b_client.get(
+            f"/api/challenges/{guest_private_slug}", headers=guest_headers
+        ).status_code
+        == 404
+    )
+    assert (
+        user_b_client.delete(
+            f"/api/challenges/custom/{guest_private_slug}", headers=guest_headers
+        ).status_code
+        == 404
+    )
+
+
+def test_evaluate_custom_rejects_invalid_and_oversized_payloads(client: TestClient):
+    """POST /api/challenges/evaluate-custom enforces bounds and line validation."""
+    base_issue = [
+        {
+            "id": "i1",
+            "title": "Test",
+            "severity": "high",
+            "matched_lines": [1],
+            "matched_keywords": ["test"],
+            "explanation": "test",
+        }
+    ]
+    bad_line_res = client.post(
+        "/api/challenges/evaluate-custom",
+        json={
+            "expected_issues": base_issue,
+            "code_snippet": "x = 1",
+            "flagged_lines": [0],
+            "comments": "Invalid zero line",
+        },
+    )
+    assert bad_line_res.status_code == 422
+
+    oversized_res = client.post(
+        "/api/challenges/evaluate-custom",
+        json={
+            "expected_issues": base_issue,
+            "code_snippet": "x" * 50001,
+            "flagged_lines": [1],
+            "comments": "Too large",
+        },
+    )
+    assert oversized_res.status_code == 422

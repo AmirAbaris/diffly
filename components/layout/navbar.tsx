@@ -16,11 +16,11 @@ export function Navbar({ className }: NavbarProps) {
       data-testid="navbar"
       className={cn("w-full shrink-0 bg-background", className)}
     >
-      <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4 sm:px-6">
-        <div className="flex items-center gap-2.5">
+      <div className="mx-auto flex h-14 max-w-6xl items-center justify-between gap-2 px-4 sm:px-6">
+        <div className="flex min-w-0 items-center gap-2 sm:gap-2.5">
           <Link
             href="/"
-            className="font-pixel text-base tracking-tight text-foreground transition-opacity hover:opacity-80"
+            className="shrink-0 font-pixel text-base tracking-tight text-foreground transition-opacity hover:opacity-80"
           >
             Diffly
           </Link>
@@ -32,13 +32,14 @@ export function Navbar({ className }: NavbarProps) {
           </span>
           <Link
             href="/challenges"
-            className="text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+            className="truncate text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
           >
-            Code Review Arena
+            <span className="sm:hidden">Arena</span>
+            <span className="hidden sm:inline">Code Review Arena</span>
           </Link>
         </div>
 
-        <div className="flex items-center gap-2.5 sm:gap-3">
+        <div className="flex shrink-0 items-center gap-2 sm:gap-3">
           <NavStats />
           <div className="hidden h-4 w-px bg-border sm:block" />
           <UserNav />

@@ -7,7 +7,7 @@ Custom challenge ownership keeps private generated challenges visible, reviewabl
 - `private-catalog-isolation` excludes `is_public=false` custom challenges from `GET /api/challenges` and scopes `GET /api/challenges/custom` to the owner.
 - `read-and-solution-gate` returns `404` on `/api/challenges/{slug}`, `/hints`, `/solution`, and `/submissions` for any non-owner.
 - `evaluation-gate` returns `404` when a non-owner attempts `POST /api/challenges/{slug}/review` on someone else's custom challenge.
-- `delete-owner-enforcement` returns `403` when a non-owner attempts `DELETE /api/challenges/custom/{slug}` or anyone attempts to delete a public catalog challenge, and `200` for the authenticated owner.
+- `delete-owner-enforcement` returns `404` when a non-owner attempts `DELETE /api/challenges/custom/{slug}` on a private challenge, `403` when anyone attempts to delete a public catalog challenge, and `200` for the authenticated owner.
 
 ## How to get to it (user POV)
 
@@ -23,11 +23,11 @@ Preconditions:
 - `.agents/skills/verify-diffly/scripts/doctor.sh` passes and `.pids/backend.port` and `.pids/backend.db_url` exist.
 
 - **Drive full custom challenge ownership suite.** Run `.agents/skills/verify-diffly/scripts/drive.sh challenge-ownership`. Exit code is `0` and JSON evidence is written to `evidence/<TIMESTAMP>_challenge-ownership.json` with `"verdict": "PASSED"`.
-- **Guest ownership and isolation.** Verify `POST /api/challenges/generate-custom` without `X-Gemini-Key` returns `401`. Provision Guest A's private custom challenge, verify Guest A evaluates it (`200`), verify public `/api/challenges` excludes it, and verify Guest B gets `404` on detail/review and `403` on delete.
-- **Claim and cross-user lock.** Register User A with Guest A's `X-Diffly-Session-Id`, confirm User A reads detail and submission history via cookie auth, confirm the old session ID returns `404` on read and `403` on delete, and confirm User B gets `404` on detail, hints, solution, review evaluation, and submissions, plus `403` on delete.
-- **Production header rejection, logout, and owner delete.** Confirm forged `x-user-id` under `ENVIRONMENT=production` gets `404` on read and `403` on delete; confirm User A loses access after `/api/auth/logout`, regains access on `/api/auth/login`, deletes the custom challenge (`200`), observes `404` afterward, and gets `403` when deleting a public challenge.
+- **Guest ownership and isolation.** Verify `POST /api/challenges/generate-custom` without `X-Gemini-Key` returns `401`. Provision Guest A's private custom challenge, verify Guest A evaluates it (`200`), verify public `/api/challenges` excludes it, and verify Guest B gets `404` on detail, review, and delete.
+- **Claim and cross-user lock.** Register User A with Guest A's `X-Diffly-Session-Id`, confirm User A reads detail and submission history via cookie auth, confirm the old session ID returns `404` on read and delete, and confirm User B gets `404` on detail, hints, solution, review evaluation, submissions, and delete.
+- **Production header rejection, logout, and owner delete.** Confirm forged `x-user-id` under `ENVIRONMENT=production` gets `404` on read and delete; confirm User A loses access after `/api/auth/logout`, regains access on `/api/auth/login`, deletes the custom challenge (`200`), observes `404` afterward, and gets `403` when deleting a public challenge.
 
 ## Gotchas
 
 - `POST /api/challenges/generate-custom` calls Google Gemini externally; when `GEMINI_API_KEY` is unset, the verification script provisions the private challenge row in the isolated throwaway SQLite DB and records that mode in the evidence JSON.
-- Non-owners receive `404` (not `403`) on `GET /api/challenges/{slug}`, `/hints`, `/solution`, `/submissions`, and `POST /review` to avoid leaking the existence of private custom challenges, whereas `DELETE /api/challenges/custom/{slug}` returns `403`.
+- Non-owners receive `404` (not `403`) on `GET /api/challenges/{slug}`, `/hints`, `/solution`, `/submissions`, `POST /review`, and `DELETE /api/challenges/custom/{slug}` to avoid leaking the existence of private custom challenges, whereas deleting a public catalog challenge returns `403`.

@@ -110,7 +110,7 @@ export function UserNav({ className, onOpenStats }: UserNavProps) {
               type="button"
               data-testid="user-nav-trigger"
               aria-label={`Open account menu for @${user.username}`}
-              className="inline-flex h-8 items-center gap-2 rounded-md border border-border bg-muted/20 py-1 pr-2.5 pl-1.5 text-xs transition-colors hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+              className="inline-flex h-8 items-center gap-2 rounded-md border border-border bg-muted/20 py-1 pr-2.5 pl-1.5 text-xs transition-colors hover:bg-muted/50 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
             >
               <Avatar className="size-5 border border-border">
                 {user.avatar_url && (
@@ -161,7 +161,10 @@ export function UserNav({ className, onOpenStats }: UserNavProps) {
                   })
                 }}
               >
-                <UserIcon className="size-3.5 text-muted-foreground" />
+                <UserIcon
+                  aria-hidden="true"
+                  className="size-3.5 text-muted-foreground"
+                />
                 <span>Profile</span>
               </DropdownMenuItem>
 
@@ -180,7 +183,10 @@ export function UserNav({ className, onOpenStats }: UserNavProps) {
                   }
                 }}
               >
-                <BarChart3 className="size-3.5 text-muted-foreground" />
+                <BarChart3
+                  aria-hidden="true"
+                  className="size-3.5 text-muted-foreground"
+                />
                 <span>Stats</span>
               </DropdownMenuItem>
 
@@ -195,7 +201,10 @@ export function UserNav({ className, onOpenStats }: UserNavProps) {
                   })
                 }}
               >
-                <Settings className="size-3.5 text-muted-foreground" />
+                <Settings
+                  aria-hidden="true"
+                  className="size-3.5 text-muted-foreground"
+                />
                 <span>Settings</span>
               </DropdownMenuItem>
             </DropdownMenuGroup>
@@ -208,7 +217,7 @@ export function UserNav({ className, onOpenStats }: UserNavProps) {
               data-testid="user-menu-signout"
               onClick={handleSignOut}
             >
-              <LogOut className="size-3.5" />
+              <LogOut aria-hidden="true" className="size-3.5" />
               <span>Sign Out</span>
             </DropdownMenuItem>
           </DropdownMenuContent>

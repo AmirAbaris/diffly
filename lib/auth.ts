@@ -129,6 +129,7 @@ export async function apiLogin(
       } catch {
         // Session claim is automatically completed server-side by /api/auth/login
       }
+      clearGuestSessionId()
     }
     return user
   } catch (err) {
@@ -160,6 +161,7 @@ export async function apiRegister(
       } catch {
         // Session claim is automatically completed server-side by /api/auth/register
       }
+      clearGuestSessionId()
     }
     return user
   } catch (err) {
