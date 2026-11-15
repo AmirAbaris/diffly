@@ -15,6 +15,7 @@ from backend.core.db import (
     get_session,
     init_db,
     resolve_database_config,
+    resolve_sqlalchemy_url,
 )
 from backend.models import User
 
@@ -123,6 +124,43 @@ def test_create_db_engine_sqlite():
     test_eng.dispose()
 
 
+def test_resolve_sqlalchemy_url():
+    pg_url = "postgresql://user:pass@localhost:5432/diffly"
+
+    # psycopg absent + psycopg2 present -> rewrites postgresql:// to postgresql+psycopg2://
+    with patch(
+        "importlib.util.find_spec",
+        side_effect=lambda name: MagicMock() if name == "psycopg2" else None,
+    ):
+        assert (
+            resolve_sqlalchemy_url(pg_url)
+            == "postgresql+psycopg2://user:pass@localhost:5432/diffly"
+        )
+
+    # psycopg present -> keeps postgresql://
+    with patch(
+        "importlib.util.find_spec",
+        side_effect=lambda name: MagicMock() if name == "psycopg" else None,
+    ):
+        assert resolve_sqlalchemy_url(pg_url) == pg_url
+
+    # Explicit +driver URL -> unchanged
+    asyncpg_url = "postgresql+asyncpg://user:pass@localhost:5432/diffly"
+    with patch(
+        "importlib.util.find_spec",
+        side_effect=lambda name: MagicMock() if name == "psycopg2" else None,
+    ):
+        assert resolve_sqlalchemy_url(asyncpg_url) == asyncpg_url
+
+    # SQLite URL -> unchanged
+    sqlite_url = "sqlite:///./diffly.db"
+    with patch(
+        "importlib.util.find_spec",
+        side_effect=lambda name: MagicMock() if name == "psycopg2" else None,
+    ):
+        assert resolve_sqlalchemy_url(sqlite_url) == sqlite_url
+
+
 def test_init_db_creates_all_tables():
     test_engine = create_engine("sqlite:///:memory:")
     try:
@@ -137,6 +175,23 @@ def test_init_db_creates_all_tables():
             assert "submissions" in table_names
     finally:
         test_engine.dispose()
+
+
+def test_init_db_tolerates_duplicate_key_and_raises_unrelated_errors():
+    with patch(
+        "backend.core.db.SQLModel.metadata.create_all",
+        side_effect=RuntimeError("duplicate key value violates unique constraint"),
+    ):
+        init_db()
+
+    with (
+        patch(
+            "backend.core.db.SQLModel.metadata.create_all",
+            side_effect=RuntimeError("connection refused"),
+        ),
+        pytest.raises(RuntimeError, match="connection refused"),
+    ):
+        init_db()
 
 
 def test_get_session_yields_session():
