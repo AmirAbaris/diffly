@@ -55,7 +55,8 @@ export function NavStats({ className, compactOnMobile = true }: NavStatsProps) {
         <button
           type="button"
           data-testid="nav-stats-trigger"
-          aria-label="View performance metrics and category mastery"
+          aria-label={`Solved ${animatedSolved}/${totalChallenges}, Accuracy ${animatedScore}%, Streak ${animatedStreak} ${streakUnit}. View performance metrics and category mastery.`}
+          title="View performance metrics and category mastery"
           className={cn(
             "group inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-muted/20 pr-1.5 pl-2 text-xs transition-colors hover:bg-muted/50 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none sm:gap-2.5 sm:pr-2.5 sm:pl-3",
             className
