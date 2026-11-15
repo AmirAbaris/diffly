@@ -33,6 +33,11 @@ app = FastAPI(
     title="Diffly API",
     description="API for Diffly developer code review platform",
     version="0.1.0",
+    license_info={"name": "MIT", "url": "https://opensource.org/licenses/MIT"},
+    contact={
+        "name": "Diffly Maintainers",
+        "url": "https://github.com/AmirAbaris/diffly/issues",
+    },
     lifespan=lifespan,
 )
 

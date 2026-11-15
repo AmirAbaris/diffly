@@ -8,8 +8,8 @@ from backend.seed.seed_data import seed_challenges, seed_challenges_if_empty
 
 
 def test_seed_dataset_contains_all_curated_challenges():
-    """Verify that CHALLENGES_DATA has at least 20-25 challenges with MVP slugs."""
-    assert len(CHALLENGES_DATA) == 25
+    """Verify that CHALLENGES_DATA has at least 25 challenges with MVP slugs."""
+    assert len(CHALLENGES_DATA) >= 25
 
     slugs = {ch["slug"] for ch in CHALLENGES_DATA}
     expected_slugs = {
@@ -120,19 +120,19 @@ def test_seed_challenges_specific_metadata():
 
 def test_idempotent_seeding(session: Session):
     """Verify that running seed_challenges multiple times does not create duplicates."""
-    # First seed run
+    expected_count = len(CHALLENGES_DATA)
+
     seeded1 = seed_challenges(session)
-    assert len(seeded1) == 25
+    assert len(seeded1) == expected_count
 
     count1 = len(session.exec(select(Challenge)).all())
-    assert count1 == 25
+    assert count1 == expected_count
 
-    # Second seed run (idempotent upsert)
     seeded2 = seed_challenges(session)
-    assert len(seeded2) == 25
+    assert len(seeded2) == expected_count
 
     count2 = len(session.exec(select(Challenge)).all())
-    assert count2 == 25
+    assert count2 == expected_count
 
 
 def test_seed_updates_existing_records(session: Session):
@@ -160,23 +160,21 @@ def test_seed_updates_existing_records(session: Session):
 
 def test_seed_challenges_if_empty(session: Session):
     """Verify seed_challenges_if_empty only runs when table has 0 records."""
+    expected_count = len(CHALLENGES_DATA)
     assert len(session.exec(select(Challenge)).all()) == 0
 
-    # First call: table is empty, so it seeds
     results = seed_challenges_if_empty(session)
-    assert len(results) == 25
-    assert len(session.exec(select(Challenge)).all()) == 25
+    assert len(results) == expected_count
+    assert len(session.exec(select(Challenge)).all()) == expected_count
 
-    # Tamper with title
     ch = session.exec(select(Challenge)).first()
     assert ch is not None
     ch.title = "Do Not Overwrite"
     session.add(ch)
     session.commit()
 
-    # Second call: table is NOT empty, so it skips seeding
     results2 = seed_challenges_if_empty(session)
-    assert len(results2) == 25
+    assert len(results2) == expected_count
     ch_reloaded = session.exec(select(Challenge).where(Challenge.id == ch.id)).first()
     assert ch_reloaded is not None
     assert ch_reloaded.title == "Do Not Overwrite"
@@ -194,7 +192,7 @@ def test_cli_seed_command():
         check=True,
     )
     assert result.returncode == 0
-    assert "Successfully seeded 25 challenges" in result.stdout
+    assert f"Successfully seeded {len(CHALLENGES_DATA)} challenges" in result.stdout
     assert "agent-unsanitized-exec" in result.stdout
 
 
@@ -208,7 +206,7 @@ def test_content_as_code_bundle_structure():
     assert challenges_dir.is_dir(), "content/challenges/ directory must exist"
 
     slugs = [d.name for d in challenges_dir.iterdir() if d.is_dir()]
-    assert len(slugs) >= 5
+    assert len(slugs) >= 25
 
     for slug in slugs:
         bundle_path = challenges_dir / slug
@@ -217,7 +215,6 @@ def test_content_as_code_bundle_structure():
         assert meta_file.is_file(), f"Missing meta.yaml in {slug}"
         assert desc_file.is_file(), f"Missing description.md in {slug}"
 
-        # Find native snippet file
         snippets = [
             f
             for f in bundle_path.iterdir()
@@ -225,8 +222,9 @@ def test_content_as_code_bundle_structure():
             and f.suffix in [".py", ".ts", ".go", ".rs"]
         ]
         assert len(snippets) == 1, f"Expected 1 native snippet file in {slug}"
+        snippet_lines = snippets[0].read_text(encoding="utf-8").splitlines()
+        assert len(snippet_lines) > 0, f"Empty snippet file in {slug}"
 
-        # Validate meta.yaml deserializes to dict
         with open(meta_file, encoding="utf-8") as f:
             meta = yaml.safe_load(f)
         assert isinstance(meta, dict)
@@ -235,6 +233,39 @@ def test_content_as_code_bundle_structure():
         assert "category" in meta
         assert "language" in meta
         assert "expected_issues" in meta
+
+        Difficulty(meta["difficulty"])
+        Category(meta["category"])
+        Language(meta["language"])
+
+        expected_issues = meta["expected_issues"]
+        assert isinstance(expected_issues, list) and len(expected_issues) >= 1
+        for issue in expected_issues:
+            lines = (
+                issue["matched_lines"]
+                if "matched_lines" in issue
+                else issue.get("lines", [])
+            )
+            assert isinstance(lines, list) and len(lines) >= 1, (
+                f"Expected non-empty lines in {slug} issue {issue.get('id')}"
+            )
+            for line_num in lines:
+                assert (
+                    isinstance(line_num, int)
+                    and not isinstance(line_num, bool)
+                    and 1 <= line_num <= len(snippet_lines)
+                ), f"Line {line_num} out of bounds (1..{len(snippet_lines)}) in {slug}"
+
+        hints = meta.get("hints", [])
+        assert isinstance(hints, list)
+        assert [h.get("tier") for h in hints] == [1, 2, 3], (
+            f"Expected hint tiers [1, 2, 3] in {slug}"
+        )
+
+        recommended_fix_diff = meta.get("recommended_fix_diff", "")
+        assert isinstance(recommended_fix_diff, str) and "@@" in recommended_fix_diff, (
+            f"Expected unified diff hunk '@@' in {slug}"
+        )
 
 
 def test_snippets_are_clean_native_code_files():

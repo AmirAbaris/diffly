@@ -5,7 +5,17 @@ from sqlmodel import Session
 
 from backend.models.challenge import Category, Difficulty, Language
 from backend.models.submission import Submission
+from backend.seed.challenges import CHALLENGES_DATA
 from backend.seed.seed_data import seed_challenges
+
+
+def _matches_search(challenge: dict, query: str) -> bool:
+    needle = query.strip().lower()
+    return (
+        needle in challenge["title"].lower()
+        or needle in challenge["description"].lower()
+        or needle in challenge["slug"].lower()
+    )
 
 
 def test_list_challenges_returns_challenge_summaries(
@@ -17,7 +27,8 @@ def test_list_challenges_returns_challenge_summaries(
     response = client.get("/api/challenges")
     assert response.status_code == 200
     data = response.json()
-    assert len(data) == 25
+    assert len(data) >= 25
+    assert len(data) == len(CHALLENGES_DATA)
 
     slugs = {item["slug"] for item in data}
     expected_sample_slugs = {
@@ -57,24 +68,33 @@ def test_list_challenges_filter_by_difficulty(client: TestClient, session: Sessi
     """Filter challenges by difficulty query parameter."""
     seed_challenges(session)
 
-    # Easy
+    expected_easy = sum(
+        1 for ch in CHALLENGES_DATA if ch["difficulty"] == Difficulty.EASY
+    )
+    expected_med = sum(
+        1 for ch in CHALLENGES_DATA if ch["difficulty"] == Difficulty.MEDIUM
+    )
+    expected_hard = sum(
+        1 for ch in CHALLENGES_DATA if ch["difficulty"] == Difficulty.HARD
+    )
+
     res = client.get("/api/challenges?difficulty=Easy")
     assert res.status_code == 200
     easy_items = res.json()
-    assert len(easy_items) == 7
+    assert len(easy_items) == expected_easy
     assert all(item["difficulty"] == "Easy" for item in easy_items)
 
-    # Medium
     res_med = client.get("/api/challenges?difficulty=Medium")
     assert res_med.status_code == 200
     med_items = res_med.json()
-    assert len(med_items) == 14
+    assert len(med_items) == expected_med
+    assert all(item["difficulty"] == "Medium" for item in med_items)
 
-    # Hard
     res_hard = client.get("/api/challenges?difficulty=Hard")
     assert res_hard.status_code == 200
     hard_items = res_hard.json()
-    assert len(hard_items) == 4
+    assert len(hard_items) == expected_hard
+    assert all(item["difficulty"] == "Hard" for item in hard_items)
     assert any(item["slug"] == "agent-prompt-injection-leak" for item in hard_items)
 
 
@@ -82,10 +102,14 @@ def test_list_challenges_filter_by_category(client: TestClient, session: Session
     """Filter challenges by category query parameter."""
     seed_challenges(session)
 
+    expected_concurrency = sum(
+        1 for ch in CHALLENGES_DATA if ch["category"] == Category.CONCURRENCY
+    )
+
     res = client.get("/api/challenges?category=Concurrency")
     assert res.status_code == 200
     concurrency_items = res.json()
-    assert len(concurrency_items) == 5
+    assert len(concurrency_items) == expected_concurrency
     slugs = {item["slug"] for item in concurrency_items}
     expected_slugs = {
         "nextjs-race-condition-useeffect",
@@ -98,68 +122,104 @@ def test_list_challenges_filter_by_language(client: TestClient, session: Session
     """Filter challenges by language query parameter."""
     seed_challenges(session)
 
+    expected_ts = sum(
+        1 for ch in CHALLENGES_DATA if ch["language"] == Language.TYPESCRIPT
+    )
+    expected_py = sum(1 for ch in CHALLENGES_DATA if ch["language"] == Language.PYTHON)
+    expected_go = sum(1 for ch in CHALLENGES_DATA if ch["language"] == Language.GO)
+    expected_rs = sum(1 for ch in CHALLENGES_DATA if ch["language"] == Language.RUST)
+
     res = client.get("/api/challenges?language=typescript")
     assert res.status_code == 200
     ts_items = res.json()
-    assert len(ts_items) == 8
+    assert len(ts_items) == expected_ts
     assert any(item["slug"] == "nextjs-race-condition-useeffect" for item in ts_items)
 
     res_py = client.get("/api/challenges?language=python")
     assert res_py.status_code == 200
-    assert len(res_py.json()) == 10
+    assert len(res_py.json()) == expected_py
 
     res_go = client.get("/api/challenges?language=go")
     assert res_go.status_code == 200
-    assert len(res_go.json()) == 5
+    assert len(res_go.json()) == expected_go
 
     res_rs = client.get("/api/challenges?language=rust")
     assert res_rs.status_code == 200
-    assert len(res_rs.json()) == 2
+    assert len(res_rs.json()) == expected_rs
 
 
 def test_list_challenges_filter_by_search(client: TestClient, session: Session):
     """Search challenges by keyword."""
     seed_challenges(session)
 
+    expected_slugs = {
+        ch["slug"] for ch in CHALLENGES_DATA if _matches_search(ch, "injection")
+    }
     res = client.get("/api/challenges?search=injection")
     assert res.status_code == 200
     items = res.json()
-    assert len(items) == 2
+    assert len(items) == len(expected_slugs)
     slugs = {item["slug"] for item in items}
-    assert slugs == {"fastapi-raw-sql-injection", "agent-prompt-injection-leak"}
+    assert slugs == expected_slugs
+    assert {
+        "fastapi-raw-sql-injection",
+        "agent-prompt-injection-leak",
+    }.issubset(slugs)
 
 
 def test_list_challenges_filter_combinations(client: TestClient, session: Session):
     """Verify multiple filter combinations applied together."""
     seed_challenges(session)
 
-    # Easy + Python
+    expected_easy_py = sum(
+        1
+        for ch in CHALLENGES_DATA
+        if ch["difficulty"] == Difficulty.EASY and ch["language"] == Language.PYTHON
+    )
     res = client.get("/api/challenges?difficulty=Easy&language=python")
     assert res.status_code == 200
     items = res.json()
-    assert len(items) == 5
+    assert len(items) == expected_easy_py
     assert all(
         item["difficulty"] == "Easy" and item["language"] == "python" for item in items
     )
 
-    # Concurrency + TypeScript
+    expected_conc_ts = sum(
+        1
+        for ch in CHALLENGES_DATA
+        if ch["category"] == Category.CONCURRENCY
+        and ch["language"] == Language.TYPESCRIPT
+    )
     res = client.get("/api/challenges?category=Concurrency&language=typescript")
     assert res.status_code == 200
     items = res.json()
-    assert len(items) == 2
+    assert len(items) == expected_conc_ts
     assert "nextjs-race-condition-useeffect" in {item["slug"] for item in items}
 
-    # Search + Difficulty
+    expected_inj_hard_slugs = {
+        ch["slug"]
+        for ch in CHALLENGES_DATA
+        if ch["difficulty"] == Difficulty.HARD and _matches_search(ch, "injection")
+    }
     res = client.get("/api/challenges?search=injection&difficulty=Hard")
     assert res.status_code == 200
     items = res.json()
-    assert len(items) == 1
-    assert items[0]["slug"] == "agent-prompt-injection-leak"
+    assert len(items) == len(expected_inj_hard_slugs)
+    assert {item["slug"] for item in items} == expected_inj_hard_slugs
+    assert "agent-prompt-injection-leak" in {item["slug"] for item in items}
 
-    # Combination with no matching results
+    expected_easy_rust = sum(
+        1
+        for ch in CHALLENGES_DATA
+        if ch["difficulty"] == Difficulty.EASY and ch["language"] == Language.RUST
+    )
     res_empty = client.get("/api/challenges?difficulty=Easy&language=rust")
     assert res_empty.status_code == 200
-    assert res_empty.json() == []
+    assert len(res_empty.json()) == expected_easy_rust
+
+    res_none = client.get("/api/challenges?search=no-such-challenge-xyz-999")
+    assert res_none.status_code == 200
+    assert res_none.json() == []
 
 
 def test_list_challenges_user_completion_status_guest(

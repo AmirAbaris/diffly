@@ -1,9 +1,28 @@
 {
   "name": "diffly",
   "version": "0.1.0",
+  "description": "Open-source code review training arena and evaluation platform for AI agent code and pull requests.",
   "type": "module",
   "license": "MIT",
   "private": true,
+  "author": "Amir Abaris",
+  "packageManager": "pnpm@11.5.1",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AmirAbaris/diffly.git"
+  },
+  "homepage": "https://diffly-sigma.vercel.app",
+  "bugs": {
+    "url": "https://github.com/AmirAbaris/diffly/issues"
+  },
+  "keywords": [
+    "code-review",
+    "security",
+    "ai-agents",
+    "nextjs",
+    "fastapi",
+    "training"
+  ],
   "engines": {
     "node": ">=22.0.0"
   },
