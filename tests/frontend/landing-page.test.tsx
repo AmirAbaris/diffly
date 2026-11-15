@@ -214,4 +214,22 @@ describe("LandingPage & Sandbox Engine", () => {
       })
     }
   })
+
+  it("renders the taxonomy specification cards with responsive container layout and metrics badges", () => {
+    render(<LandingPage />)
+
+    expect(screen.getByTestId("landing-taxonomy-section")).toBeInTheDocument()
+    expect(
+      screen.getByText("DEFECT_TAXONOMY // BENCHMARK_SPECIFICATION")
+    ).toBeInTheDocument()
+
+    expect(screen.getByText("01 // AGENT_ANTIPATTERNS")).toBeInTheDocument()
+    expect(screen.getByText("Python · TypeScript · Go")).toBeInTheDocument()
+
+    expect(screen.getByText("02 // CONCURRENCY_HAZARDS")).toBeInTheDocument()
+    expect(screen.getByText("React 19 · FastAPI · Redis")).toBeInTheDocument()
+
+    expect(screen.getByText("03 // SECURITY_BOUNDARIES")).toBeInTheDocument()
+    expect(screen.getByText("SQLModel · JWT · Next.js")).toBeInTheDocument()
+  })
 })

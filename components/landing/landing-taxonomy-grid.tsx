@@ -100,14 +100,17 @@ export function LandingTaxonomyGrid() {
           return (
             <article
               key={item.code}
-              className="flex flex-col justify-between border-r border-b border-border bg-card/30 p-6"
+              className="@container flex min-w-0 flex-col justify-between border-r border-b border-border bg-card/30 p-5 lg:p-6"
             >
               <div className="flex flex-col gap-4">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-mono text-[11px] text-muted-foreground">
+                <div className="flex flex-col gap-2 @md:flex-row @md:items-center @md:justify-between">
+                  <span className="font-mono text-[11px] whitespace-nowrap text-muted-foreground">
                     {item.code}
                   </span>
-                  <Badge variant="outline" className="font-mono text-[10px]">
+                  <Badge
+                    variant="outline"
+                    className="w-fit font-mono text-[10px]"
+                  >
                     {item.metrics}
                   </Badge>
                 </div>
