@@ -35,15 +35,14 @@ function Toast({ className, variant = "default", ...props }: ToastProps) {
     <ToastPrimitive.Root
       data-slot="toast"
       className={cn(
-        "group pointer-events-auto relative flex w-full items-start justify-between space-x-3 overflow-hidden rounded-xl border p-4 pr-9 shadow-xl backdrop-blur-md transition-all duration-200",
+        "group pointer-events-auto relative flex w-full items-start justify-between space-x-3 overflow-hidden rounded-xl border p-4 pr-9 shadow-lg backdrop-blur-md transition-[opacity,transform] duration-200 motion-reduce:transition-none",
         "data-[swipe=cancel]:translate-x-0 data-[swipe=end]:translate-x-[var(--radix-toast-swipe-end-x)] data-[swipe=move]:translate-x-[var(--radix-toast-swipe-move-x)] data-[swipe=move]:transition-none",
         "data-[state=closed]:animate-out data-[state=closed]:fade-out-80 data-[state=closed]:slide-out-to-right-full data-[state=open]:animate-in data-[state=open]:slide-in-from-bottom-full data-[swipe=end]:animate-out sm:data-[state=open]:slide-in-from-bottom-full",
-        variant === "default" &&
-          "border-border bg-card/95 text-foreground shadow-lg",
+        variant === "default" && "border-border bg-card/95 text-foreground",
         variant === "destructive" &&
-          "border-destructive/40 bg-zinc-950/95 text-destructive shadow-lg dark:border-destructive/50",
+          "border-destructive/40 bg-card/95 text-destructive dark:border-destructive/50",
         variant === "success" &&
-          "border-emerald-500/40 bg-zinc-950/95 text-foreground shadow-lg dark:border-emerald-500/40",
+          "border-emerald-500/40 bg-card/95 text-foreground",
         className
       )}
       {...props}
@@ -58,7 +57,7 @@ function ToastAction({
   return (
     <ToastPrimitive.Action
       className={cn(
-        "inline-flex h-7 shrink-0 items-center justify-center rounded-md border border-border bg-transparent px-2.5 text-xs font-medium transition-colors hover:bg-muted focus:ring-1 focus:ring-ring focus:outline-none disabled:pointer-events-none disabled:opacity-50",
+        "inline-flex h-7 shrink-0 items-center justify-center rounded-md border border-border bg-transparent px-2.5 text-xs font-medium transition-colors hover:bg-muted focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50",
         className
       )}
       {...props}
@@ -73,14 +72,14 @@ function ToastClose({
   return (
     <ToastPrimitive.Close
       className={cn(
-        "absolute top-2 right-2 rounded-md p-1 text-foreground/50 opacity-0 transition-opacity group-hover:opacity-100 hover:text-foreground focus:opacity-100 focus:ring-1 focus:outline-none",
+        "absolute top-2 right-2 rounded-md p-1 text-foreground/50 opacity-70 transition-opacity group-hover:opacity-100 hover:text-foreground focus-visible:opacity-100 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none sm:opacity-0",
         className
       )}
       toast-close=""
       aria-label="Close notification"
       {...props}
     >
-      <X className="size-3.5" />
+      <X aria-hidden="true" className="size-3.5" />
     </ToastPrimitive.Close>
   )
 }
