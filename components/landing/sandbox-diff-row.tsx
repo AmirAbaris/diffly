@@ -69,14 +69,14 @@ export function SandboxDiffRow({
           getRowSurfaceClass(line.kind, isFlagged, hasDefect)
         )}
       >
-        <span className="flex w-10 shrink-0 items-center justify-end border-r border-border/60 px-2 py-2 text-[11px] text-muted-foreground/70 tabular-nums select-none">
+        <span className="flex w-10 shrink-0 items-center justify-end border-r border-border/60 px-2 py-2 text-[11px] text-zinc-600 tabular-nums select-none dark:text-zinc-400">
           {line.oldLineNumber ?? ""}
         </span>
-        <span className="flex w-10 shrink-0 items-center justify-end border-r border-border/60 px-2 py-2 text-[11px] text-muted-foreground/70 tabular-nums select-none">
+        <span className="flex w-10 shrink-0 items-center justify-end border-r border-border/60 px-2 py-2 text-[11px] text-zinc-600 tabular-nums select-none dark:text-zinc-400">
           {line.newLineNumber ?? ""}
         </span>
         <span className="flex w-9 shrink-0 items-center justify-center gap-0.5 py-2 text-[11px] select-none">
-          <span className="text-muted-foreground/70 group-hover:text-foreground">
+          <span className="text-zinc-600 group-hover:text-foreground dark:text-zinc-400">
             {LINE_PREFIX_MAP[line.kind]}
           </span>
           {isFlagged ? (

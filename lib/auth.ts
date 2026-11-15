@@ -89,6 +89,13 @@ export function getAuthErrorMessage(
 }
 
 export async function fetchCurrentUser(): Promise<AuthUser | null> {
+  // If no auth user was previously stored on this client, avoid making an
+  // unauthenticated request to /api/auth/me that logs a 401 console error.
+  const stored = getStoredAuthUser()
+  if (!stored) {
+    return null
+  }
+
   try {
     const response = await apiClient.get<AuthUser>(AUTH_USER_SWR_KEY)
     if (response.data) {
@@ -106,7 +113,7 @@ export async function fetchCurrentUser(): Promise<AuthUser | null> {
   }
 
   // Check fallback local client session (e.g. offline)
-  return getStoredAuthUser()
+  return stored
 }
 
 export async function apiLogin(
