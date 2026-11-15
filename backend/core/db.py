@@ -1,3 +1,4 @@
+import importlib.util
 from collections.abc import Generator
 from dataclasses import dataclass
 from typing import Any
@@ -95,10 +96,20 @@ def _register_sqlite_listeners(target_engine: Engine) -> None:
         cursor.close()
 
 
+def resolve_sqlalchemy_url(url: str) -> str:
+    if (
+        url.startswith("postgresql://")
+        and importlib.util.find_spec("psycopg") is None
+        and importlib.util.find_spec("psycopg2") is not None
+    ):
+        return "postgresql+psycopg2://" + url[len("postgresql://") :]
+    return url
+
+
 def create_db_engine(source: Settings | str | None = None) -> Engine:
     config = resolve_database_config(source)
     kwargs = build_engine_kwargs(source)
-    new_engine = create_engine(config.url, **kwargs)
+    new_engine = create_engine(resolve_sqlalchemy_url(config.url), **kwargs)
 
     if config.driver == "sqlite":
         _register_sqlite_listeners(new_engine)
@@ -116,7 +127,11 @@ def init_db() -> None:
         SQLModel.metadata.create_all(engine)
     except Exception as exc:
         err_msg = str(exc).lower()
-        if "already exists" in err_msg or "locked" in err_msg:
+        if (
+            "already exists" in err_msg
+            or "locked" in err_msg
+            or "duplicate key" in err_msg
+        ):
             pass
         else:
             raise
