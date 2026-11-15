@@ -44,3 +44,11 @@ def test_scalar_docs_endpoint(client: TestClient):
     assert response.status_code == 200
     assert "text/html" in response.headers.get("content-type", "")
     assert "scalar" in response.text.lower()
+
+
+def test_openapi_license_metadata(client: TestClient):
+    response = client.get("/openapi.json")
+    assert response.status_code == 200
+    info = response.json()["info"]
+    assert info["license"]["name"] == "MIT"
+    assert info["license"]["url"] == "https://opensource.org/licenses/MIT"

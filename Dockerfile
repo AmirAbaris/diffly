@@ -97,6 +97,7 @@ RUN mkdir -p /app/data && chown -R diffly:diffly /app
 
 COPY --chown=diffly:diffly api /app/api
 COPY --chown=diffly:diffly backend /app/backend
+COPY --chown=diffly:diffly content /app/content
 COPY --chown=diffly:diffly pyproject.toml /app/pyproject.toml
 
 USER diffly
