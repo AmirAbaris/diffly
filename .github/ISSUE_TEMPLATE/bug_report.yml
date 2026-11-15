@@ -1,0 +1,75 @@
+name: Bug report
+description: Report a defect in the Diffly web app, API, evaluator, or challenge loader.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: State what broke and which page, endpoint, or command is affected.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: List the exact steps needed to reproduce the bug.
+      placeholder: |
+        1. Start the app with `pnpm dev`
+        2. Open `/challenges/agent-unsanitized-exec`
+        3. Submit a review flagging line 28
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: State what should happen instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: State what happened when you followed the steps above.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: runtime
+    attributes:
+      label: Runtime environment
+      options:
+        - Local
+        - Docker
+        - Vercel
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment details
+      description: Include OS, Node.js version, Python version, and database backend if relevant.
+      placeholder: |
+        OS: macOS 15.3
+        Node.js: 22.x
+        Python: 3.11.x
+        Database: SQLite / PostgreSQL
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Paste stack traces, browser console errors, or terminal output with secrets removed.
+      render: shell
+    validations:
+      required: false

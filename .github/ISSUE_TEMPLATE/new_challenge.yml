@@ -1,0 +1,69 @@
+name: Propose a new challenge
+description: Pitch a new Content-as-Code code review challenge for Diffly.
+title: "[Challenge]: "
+labels:
+  - challenge
+body:
+  - type: input
+    id: title
+    attributes:
+      label: Challenge title
+      description: Short title for the code review scenario.
+      placeholder: Unsanitized Shell Arguments in Tool Runner
+    validations:
+      required: true
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: Category
+      description: Select the canonical category from `backend/models/challenge.py`.
+      options:
+        - Agent Antipaths
+        - Security
+        - Concurrency
+        - Performance
+        - Logic Flaws
+    validations:
+      required: true
+
+  - type: dropdown
+    id: difficulty
+    attributes:
+      label: Difficulty
+      description: Select the target review difficulty.
+      options:
+        - Easy
+        - Medium
+        - Hard
+    validations:
+      required: true
+
+  - type: dropdown
+    id: language
+    attributes:
+      label: Language
+      description: Select the snippet language supported by `Language`.
+      options:
+        - python
+        - typescript
+        - go
+        - rust
+    validations:
+      required: true
+
+  - type: textarea
+    id: defect_summary
+    attributes:
+      label: Defect summary
+      description: Summarize the buggy code pattern and why it passes naive review.
+    validations:
+      required: true
+
+  - type: textarea
+    id: threat_model
+    attributes:
+      label: Threat model and educational takeaway
+      description: Explain how the defect is exploited or triggered and what the reviewer should learn to catch.
+    validations:
+      required: true
