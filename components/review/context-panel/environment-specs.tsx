@@ -16,6 +16,8 @@ export function EnvironmentSpecsSection({
         return "Go 1.23"
       case "rust":
         return "Rust 1.82"
+      case "java":
+        return "Java 21"
       default:
         return challenge.language
     }

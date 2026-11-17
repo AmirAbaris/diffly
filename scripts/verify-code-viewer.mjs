@@ -1,6 +1,9 @@
 import assert from "node:assert/strict"
 import { Prism } from "prism-react-renderer"
 
+globalThis.Prism = Prism
+await import("prismjs/components/prism-java.js")
+
 process.stdout.write(
   "==> Verifying Syntax Highlighting and Code Viewer Logic...\n"
 )
@@ -45,6 +48,29 @@ assert(
   "TypeScript tokenizer must recognize 'export' and 'interface' keywords"
 )
 process.stdout.write("✓ TypeScript syntax tokenization verified\n")
+
+// 3. Verify Java Tokenization
+const javaSnippet = `public class UserController {
+    // Evaluate user expression safely
+    public String greet(String name) {
+        return "Hello " + name;
+    }
+}`
+
+assert(Prism.languages.java, "Prism Java grammar must be registered")
+const javaTokens = Prism.tokenize(javaSnippet, Prism.languages.java)
+assert(javaTokens.length > 5, "Java code should produce structured tokens")
+const hasPublicKeyword = javaTokens.some(
+  (t) => typeof t === "object" && t.type === "keyword" && t.content === "public"
+)
+const hasClassKeyword = javaTokens.some(
+  (t) => typeof t === "object" && t.type === "keyword" && t.content === "class"
+)
+assert(hasPublicKeyword, "Java tokenizer must recognize 'public' keyword")
+assert(hasClassKeyword, "Java tokenizer must recognize 'class' keyword")
+process.stdout.write(
+  "✓ Java syntax tokenization verified (keywords: public, class)\n"
+)
 
 // 3. Verify Line Splitting & 1-Indexed Line Numbers
 const lines = pythonSnippet.split("\n")

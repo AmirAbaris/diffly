@@ -60,6 +60,7 @@ const EXAMPLE_TOPICS = [
   "Next.js Server Actions CSRF",
   "Go mutex deadlock in concurrent cache",
   "Rust memory safety in unsafe block",
+  "Spring Boot SpEL injection or IDOR",
 ] as const
 
 function QuotaLimitBanner({ onManage }: { onManage: () => void }) {

@@ -6,11 +6,12 @@ import { Highlight, themes, type RenderProps } from "prism-react-renderer"
 import { useTheme } from "next-themes"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Prism } from "@/lib/prism-languages"
 import { cn } from "@/lib/utils"
 
 export interface CodeViewerProps {
   code: string
-  language?: "python" | "typescript" | string
+  language?: "python" | "typescript" | "java" | string
   flaggedLines: number[]
   onToggleLine: (line: number) => void
   onOpenGuide?: () => void
@@ -63,6 +64,7 @@ export function CodeViewer({
     if (lang === "jsx") return "jsx"
     if (lang === "go") return "go"
     if (lang === "rust" || lang === "rs") return "rust"
+    if (lang === "java") return "java"
     return "python"
   }, [language])
 
@@ -74,7 +76,9 @@ export function CodeViewer({
         ? "solution.go"
         : normalizedLanguage === "rust"
           ? "solution.rs"
-          : "solution.ts")
+          : normalizedLanguage === "java"
+            ? "Solution.java"
+            : "solution.ts")
 
   const flaggedSet = React.useMemo(() => new Set(flaggedLines), [flaggedLines])
 
@@ -103,7 +107,10 @@ export function CodeViewer({
       {/* File bar header */}
       <div className="flex h-10 shrink-0 items-center justify-between border-b border-border bg-muted/40 px-3">
         <div className="flex items-center gap-2">
-          <FileCode className="size-4 text-muted-foreground" />
+          <FileCode
+            aria-hidden="true"
+            className="size-4 text-muted-foreground"
+          />
           <span className="font-semibold text-foreground">
             {resolvedFileName}
           </span>
@@ -148,12 +155,15 @@ export function CodeViewer({
           >
             {copied ? (
               <>
-                <Check className="size-3.5 text-emerald-500" />
+                <Check
+                  aria-hidden="true"
+                  className="size-3.5 text-emerald-500"
+                />
                 <span>Copied</span>
               </>
             ) : (
               <>
-                <Copy className="size-3.5" />
+                <Copy aria-hidden="true" className="size-3.5" />
                 <span>Copy</span>
               </>
             )}
@@ -164,6 +174,7 @@ export function CodeViewer({
       {/* Code container with syntax highlighting and line flagging */}
       <div className="overflow-x-auto p-1">
         <Highlight
+          prism={Prism}
           theme={currentTheme}
           code={code || ""}
           language={normalizedLanguage}

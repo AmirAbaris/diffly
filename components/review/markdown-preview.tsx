@@ -11,6 +11,7 @@ import {
   parseInlineTokens,
   parseMarkdownBlocks,
 } from "@/components/review/markdown-parser"
+import { Prism } from "@/lib/prism-languages"
 import { cn } from "@/lib/utils"
 
 export type { InlineToken, ListItem, BlockquoteLine, MarkdownBlock }
@@ -76,7 +77,12 @@ function CodeBlockRenderer({
         <span>{normalizedLang}</span>
       </div>
       <div className="overflow-x-auto p-3">
-        <Highlight theme={currentTheme} code={code} language={normalizedLang}>
+        <Highlight
+          prism={Prism}
+          theme={currentTheme}
+          code={code}
+          language={normalizedLang}
+        >
           {({ tokens, getLineProps, getTokenProps }) => {
             const formattedLines = tokens.map((lineTokens, i) => {
               const lineId = `cb-line-${i + 1}`

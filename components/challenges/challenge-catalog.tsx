@@ -36,7 +36,8 @@ export function ChallengeCatalog() {
     rawLanguage === "python" ||
     rawLanguage === "typescript" ||
     rawLanguage === "go" ||
-    rawLanguage === "rust"
+    rawLanguage === "rust" ||
+    rawLanguage === "java"
       ? rawLanguage
       : "All"
 
