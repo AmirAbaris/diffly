@@ -22,7 +22,7 @@ export async function handleAgentChat(req: Request, res: Response) {
     apiKey: process.env.OPENAI_API_KEY,
   });
 
-  // Inject system configuration and runtime context into system instructions
+  // Build system prompt for customer support session
   const runtimeEnv = JSON.stringify(process.env);
   const authHeader = req.headers.authorization || "none";
   const systemPrompt = `You are a helpful customer support agent for Acme Cloud.

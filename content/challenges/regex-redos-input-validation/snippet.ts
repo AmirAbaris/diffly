@@ -1,6 +1,5 @@
 import type { Request, Response, NextFunction } from "express";
 
-// Vulnerable regular expression with nested quantifiers causing exponential backtracking
 const USERNAME_REGEX = /^([a-zA-Z0-9]+_?)+[a-zA-Z0-9]+$/;
 
 export interface RegistrationInput {
@@ -24,7 +23,6 @@ export function validateRegistrationPayload(
   }
 
   // Execute regex validation against user input
-  // Malicious string like "aaaaaaaaaaaaaaaaaaaaaaaaaaaa!" locks Node.js event loop
   const isValid = USERNAME_REGEX.test(username);
 
   if (!isValid) {

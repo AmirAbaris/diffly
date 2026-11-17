@@ -11,7 +11,6 @@ class DocumentAuditAgent:
 
     def audit_doc(self, title: str, content: str) -> str:
         """Analyze untrusted document and return review."""
-        # Defect: Untrusted input concatenated into prompt
         prompt = f"Tools: {self.tools}\nDoc: {title}\n{content}"
         response = self.client.chat.completions.create(
             model="gpt-4o",

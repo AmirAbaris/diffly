@@ -11,12 +11,11 @@ expected_issues:
   title: Iterative Database Queries Inside Loop (N+1 Query Problem)
   severity: medium
   matched_lines:
-  - 18
+  - 17
   - 19
   - 20
-  - 21
+  - 23
   - 24
-  - 25
   matched_keywords:
   - n+1 query
   - waterfall
@@ -37,7 +36,7 @@ hints:
   hint: The N+1 query problem causes severe database performance degradation by issuing multiple sequential queries instead of a batch fetch.
 - tier: 3
   title: Line Pointer & Guidance
-  hint: 'Look at lines 18-26. Avoid calling `self.session.exec()` inside the loop. Eager load `profile` and `role` relationships using `options(selectinload(...))` or fetch all IDs in bulk using `where(UserProfile.user_id.in_(user_ids))`.'
+  hint: 'Look at lines 17-25. Avoid calling `self.session.exec()` inside the loop. Eager load `profile` and `role` relationships using `options(selectinload(...))` or fetch all IDs in bulk using `where(UserProfile.user_id.in_(user_ids))`.'
 canonical_review: |-
   Senior Staff Engineer Review Critique:
   Executing individual database queries inside a `for` loop is a quintessential database anti-pattern (the N+1 query problem). Each iteration incurs network latency, serialization overhead, and database connection locking.
@@ -49,7 +48,7 @@ canonical_review: |-
 recommended_fix_diff: |
   --- a/serializers/org.py
   +++ b/serializers/org.py
-  @@ -13,7 +13,12 @@
+  @@ -13,6 +13,11 @@
            members = self.session.exec(stmt).all()
    
   +        user_ids = [m.user_id for m in members]
@@ -59,7 +58,6 @@ recommended_fix_diff: |
   +
            roster: list[dict[str, Any]] = []
   -
-  -        # Defect: N+1 query waterfall inside loop executing queries per member
            for member in members:
   -            profile_stmt = select(UserProfile).where(UserProfile.user_id == member.user_id)
   -            profile = self.session.exec(profile_stmt).first()

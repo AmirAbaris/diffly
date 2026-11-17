@@ -60,7 +60,7 @@ recommended_fix_diff: |
   -    return res.status(400).json({ error: "Insufficient balance" });
   -  }
   -
-  -  // Asynchronous audit logging outside atomic boundary
+  -  // Record transfer initiation in audit log
   -  await notifyAuditLog({
   +  await prisma.$transaction(async (tx) => {
   +    const updatedSender = await tx.wallet.updateMany({

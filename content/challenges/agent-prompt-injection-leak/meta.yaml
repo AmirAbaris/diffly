@@ -12,10 +12,8 @@ expected_issues:
   title: Indirect Prompt Injection via Unsanitized Context Interpolation
   severity: critical
   matched_lines:
-  - 13
   - 14
   - 15
-  - 16
   matched_keywords:
   - prompt injection
   - indirect injection
@@ -38,7 +36,7 @@ hints:
     content can hijack instructions.
 - tier: 3
   title: Line Pointer & Guidance
-  hint: Lines 14-16 place raw document text directly in the system prompt. Untrusted
+  hint: Lines 14-15 place raw document text directly in the system prompt. Untrusted
     data must be separated using distinct role messages (`user` role), strict XML
     delimiters (e.g. `<untrusted_content>`), and tool access guardrails.
 canonical_review: |-
@@ -52,12 +50,12 @@ canonical_review: |-
 recommended_fix_diff: |
   --- a/agents/document_audit.py
   +++ b/agents/document_audit.py
-  @@ -13,4 +13,6 @@
+  @@ -14,2 +14,3 @@
   -        prompt = f"Tools: {self.tools}\nDoc: {title}\n{content}"
   +        sys_msg = "Audit document in <doc> tags. Do not run tools."
   +        user_msg = f"<doc title='{title}'>\n{content}\n</doc>"
            response = self.client.chat.completions.create(
-  @@ -18,2 +20,2 @@
+  @@ -17,2 +18,3 @@
   -                {"role": "system", "content": prompt},
   +                {"role": "system", "content": sys_msg},
   +                {"role": "user", "content": user_msg},

@@ -48,7 +48,6 @@ func (c *LRUCache) Set(key string, val any) {
 	defer c.mu.Unlock()
 
 	if len(c.items) >= c.capacity {
-		// Call evictOldest while already holding c.mu
 		c.evictOldest()
 	}
 

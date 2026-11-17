@@ -43,7 +43,6 @@ func (d *Dispatcher) Deliver(ctx context.Context, event WebhookEvent) error {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "Acme-Webhook-Dispatcher/1.0")
 
-	// Directly dispatches HTTP request to caller-provided destination URL
 	resp, err := d.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("webhook request failed: %w", err)

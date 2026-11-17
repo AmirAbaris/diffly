@@ -14,7 +14,6 @@ expected_issues:
   - 16
   - 17
   - 18
-  - 19
   matched_keywords:
   - sql injection
   - f-string
@@ -38,7 +37,7 @@ hints:
     introducing SQL injection (CWE-89).
 - tier: 3
   title: Line Pointer & Guidance
-  hint: 'Lines 16-19 construct the query with `f"... ''%{q}%''"`. Instead, use SQL
+  hint: 'Lines 16-18 construct the query with `f"... ''%{q}%''"`. Instead, use SQL
     parameter placeholders `:pattern` and pass `params={"pattern": f"%{q}%"}` to `session.execute()`.'
 canonical_review: |-
   Senior Staff Engineer Review Critique:

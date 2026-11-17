@@ -31,7 +31,6 @@ export function verifyUserSession(req: Request, res: Response, next: NextFunctio
     if (alg === "none" || !alg) {
       verifiedPayload = decodedHeader.payload as AuthTokenPayload;
     } else {
-      // Verify token signature against the public key without enforcing RS256 algorithm
       verifiedPayload = jwt.verify(token, PUBLIC_KEY) as AuthTokenPayload;
     }
 

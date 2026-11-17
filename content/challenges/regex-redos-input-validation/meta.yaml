@@ -12,9 +12,7 @@ expected_issues:
   severity: high
   matched_lines:
   - 3
-  - 4
-  - 27
-  - 28
+  - 26
   matched_keywords:
   - redos
   - catastrophic backtracking
@@ -29,13 +27,13 @@ expected_issues:
 hints:
 - tier: 1
   title: Contextual Clue
-  hint: Analyze the quantifier structure of `USERNAME_REGEX` on line 4.
+  hint: Analyze the quantifier structure of `USERNAME_REGEX` on line 3.
 - tier: 2
   title: Vulnerability Class
   hint: Regular Expression Denial of Service (ReDoS / CWE-1333) occurs when regex engines experience exponential backtracking on crafted inputs.
 - tier: 3
   title: Line Pointer & Guidance
-  hint: 'Look at line 4: `([a-zA-Z0-9]+_?)+`. Eliminate nested repetition by using an atomic non-overlapping pattern such as `/^[a-zA-Z0-9]+(?:_[a-zA-Z0-9]+)*$/`.'
+  hint: 'Look at line 3: `([a-zA-Z0-9]+_?)+`. Eliminate nested repetition by using an atomic non-overlapping pattern such as `/^[a-zA-Z0-9]+(?:_[a-zA-Z0-9]+)*$/`.'
 canonical_review: |-
   Senior Staff Engineer Review Critique:
   Using nested quantifiers `(...+)+` on overlapping character sets creates an exponential time complexity explosion in backtracking regex engines like V8.
@@ -47,7 +45,6 @@ canonical_review: |-
 recommended_fix_diff: |
   --- a/validators/user.ts
   +++ b/validators/user.ts
-  @@ -3,3 +3,3 @@
-   // Vulnerable regular expression with nested quantifiers causing exponential backtracking
+  @@ -2,3 +2,3 @@
   -const USERNAME_REGEX = /^([a-zA-Z0-9]+_?)+[a-zA-Z0-9]+$/;
   +const USERNAME_REGEX = /^[a-zA-Z0-9]+(?:_[a-zA-Z0-9]+)*$/;

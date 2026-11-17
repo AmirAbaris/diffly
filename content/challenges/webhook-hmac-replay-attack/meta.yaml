@@ -15,7 +15,6 @@ expected_issues:
   - 28
   - 29
   - 30
-  - 31
   matched_keywords:
   - replay attack
   - timestamp
@@ -36,7 +35,7 @@ hints:
   hint: Replay attacks (CWE-294) occur when signed messages lack timestamp expiration or nonce freshness guarantees.
 - tier: 3
   title: Line Pointer & Guidance
-  hint: 'Look at lines 16 and 29-31. Verify that `abs(time.time() - float(x_webhook_timestamp)) <= 300` and construct the HMAC signature over `f"{x_webhook_timestamp}.".encode() + raw_body`.'
+  hint: 'Look at lines 16 and 28-30. Verify that `abs(time.time() - float(x_webhook_timestamp)) <= 300` and construct the HMAC signature over `f"{x_webhook_timestamp}.".encode() + raw_body`.'
 canonical_review: |-
   Senior Staff Engineer Review Critique:
   Verifying the HMAC of a webhook payload without enforcing timestamp freshness creates an immediate replay vulnerability (CWE-294). 

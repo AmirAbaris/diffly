@@ -19,7 +19,6 @@ impl BillingEngine {
             return Ok(0);
         }
 
-        // Bug: u32 * u32 arithmetic wraps in release mode without checked multiplication
         let gross_micro_cents: u32 = item.units_consumed * item.unit_price_micro_cents;
 
         // Apply discount basis points

@@ -16,7 +16,7 @@ func (e *APIError) Error() string {
 
 // ValidateEndpoint checks service availability. Returns an error if unreachable.
 func ValidateEndpoint(url string) error {
-	var apiErr *APIError // Concrete pointer initialized to nil
+	var apiErr *APIError
 
 	resp, err := http.Get(url)
 	if err != nil {
@@ -30,15 +30,12 @@ func ValidateEndpoint(url string) error {
 		return apiErr
 	}
 
-	// Bug: Returning a typed nil pointer (*APIError) in an interface (error)
-	// In Go, an interface containing (*APIError)(nil) is NOT nil!
 	return apiErr
 }
 
 func RunHealthCheck(url string) string {
 	err := ValidateEndpoint(url)
 	if err != nil {
-		// Evaluates to true even on successful HTTP 200 response!
 		return fmt.Sprintf("Health check failed: %v", err)
 	}
 	return "Health check passed: service is online"

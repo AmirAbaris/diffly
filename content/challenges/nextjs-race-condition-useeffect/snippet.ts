@@ -20,7 +20,6 @@ export function ChallengeViewer(
     setLoading(true);
     setError(null);
 
-    // Defect: Missing AbortController or active flag cleanup
     fetch(`/api/challenges/${challengeId}`)
       .then((res) => {
         if (!res.ok) {
@@ -29,7 +28,6 @@ export function ChallengeViewer(
         return res.json();
       })
       .then((data: ChallengeData) => {
-        // Stale response can overwrite newer challenge selection
         setChallenge(data);
         setLoading(false);
       })

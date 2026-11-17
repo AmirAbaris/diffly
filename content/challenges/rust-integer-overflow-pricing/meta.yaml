@@ -13,7 +13,6 @@ expected_issues:
   matched_lines:
   - 22
   - 23
-  - 24
   matched_keywords:
   - integer overflow
   - checked_mul
@@ -34,7 +33,7 @@ hints:
   hint: Integer Overflow or Wraparound (CWE-190) occurs when an arithmetic operation produces a value outside the range that can be represented with a given number of bits.
 - tier: 3
   title: Line Pointer & Guidance
-  hint: 'Look at line 23: `let gross_micro_cents: u32 = ...`. Cast both operands to `u64` before multiplication (`(item.units_consumed as u64).checked_mul(...)`) to prevent truncation and overflow.'
+  hint: 'Look at line 22: `let gross_micro_cents: u32 = ...`. Cast both operands to `u64` before multiplication (`(item.units_consumed as u64).checked_mul(...)`) to prevent truncation and overflow.'
 canonical_review: |-
   Senior Staff Engineer Review Critique:
   Executing raw arithmetic on fixed-width integers without overflow checks is a dangerous bug in billing systems (CWE-190). While Rust provides overflow panics during development (`debug` builds), release builds compile with two's complement wrapping enabled by default for performance.
@@ -46,8 +45,7 @@ canonical_review: |-
 recommended_fix_diff: |
   --- a/billing/engine.rs
   +++ b/billing/engine.rs
-  @@ -22,2 +22,4 @@
-  -        // Bug: u32 * u32 arithmetic wraps in release mode without checked multiplication
+  @@ -22,1 +22,4 @@
   -        let gross_micro_cents: u32 = item.units_consumed * item.unit_price_micro_cents;
   +        let units = item.units_consumed as u64;
   +        let unit_price = item.unit_price_micro_cents as u64;

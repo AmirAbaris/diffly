@@ -16,7 +16,6 @@ expected_issues:
   - 20
   - 24
   - 25
-  - 26
   matched_keywords:
   - unbounded_channel
   - backpressure

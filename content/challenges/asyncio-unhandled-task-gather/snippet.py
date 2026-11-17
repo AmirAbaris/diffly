@@ -29,6 +29,5 @@ class ReviewOrchestrator:
             asyncio.create_task(self.run_type_checker(path)),
         ]
 
-        # Defect: gather without return_exceptions=True or cleanup
         results = await asyncio.gather(*tasks)
         return results
