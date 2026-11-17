@@ -385,3 +385,79 @@ Nil pointer dereference when database fails.
     loaded = load_challenges_from_dir(tmp_path)
     assert len(loaded) == 1
     assert loaded[0]["slug"] == custom_slug
+
+
+def test_snippets_contain_no_spoiler_comments():
+    """Verify curated snippets do not leak defects via spoiler comments."""
+    import re
+    from pathlib import Path
+
+    import yaml
+
+    spoiler_patterns = [
+        r"\bdefect\s*:",
+        r"\bbug\s*:",
+        r"\bdanger\s*:",
+        r"\bbug\s+here\b",
+        r"\bvulnerable\b",
+        r"\boutside atomic boundary\b",
+        r"\bnon-atomic\b",
+        r"\bwithout verifying\b",
+        r"\bwithout enforcing\b",
+        r"\bwithout backpressure\b",
+        r"\bwithout checked multiplication\b",
+        r"\bwithout compound unique\b",
+        r"\bwhile already holding\b",
+        r"\brace window\b",
+        r"\bstale response\b",
+        r"\blocks node\.js event loop\b",
+        r"\bf-string interpolation\b",
+        r"\bieee 754 float\b",
+        r"\btyped nil pointer\b",
+        r"\bconcrete pointer initialized to nil\b",
+        r"\bis not nil\b",
+        r"\bevaluates to true even\b",
+        r"\bn\+1 query\b",
+        r"\bquery n:",
+        r"\bunbuffered channel\b",
+        r"\bcaller-provided destination url\b",
+        r"\bsystem configuration and runtime context\b",
+        r"\bexecutes arbitrary code\b",
+        r"\busing float multiplication\b",
+        r"\bbetween stat and create\b",
+    ]
+    combined = re.compile("|".join(spoiler_patterns), re.IGNORECASE)
+
+    challenges_dir = Path("content/challenges")
+    violations: list[str] = []
+    for bundle in sorted(challenges_dir.iterdir()):
+        if not bundle.is_dir():
+            continue
+        for snippet_file in bundle.glob("snippet.*"):
+            for line_num, line in enumerate(
+                snippet_file.read_text(encoding="utf-8").splitlines(), start=1
+            ):
+                stripped = line.strip()
+                is_comment = (
+                    stripped.startswith("#")
+                    or stripped.startswith("//")
+                    or " #" in line
+                    or " //" in line
+                )
+                if is_comment and combined.search(line):
+                    violations.append(
+                        f"{bundle.name}/{snippet_file.name}:{line_num}: {stripped}"
+                    )
+
+        meta_file = bundle / "meta.yaml"
+        meta = yaml.safe_load(meta_file.read_text(encoding="utf-8"))
+        diff_text = meta.get("recommended_fix_diff", "")
+        for diff_line in diff_text.splitlines():
+            if diff_line.startswith(("+", "---", "+++", "@@")):
+                continue
+            if combined.search(diff_line):
+                violations.append(
+                    f"{bundle.name}/meta.yaml diff: {diff_line.strip()}"
+                )
+
+    assert violations == [], "Spoiler comments found:\n" + "\n".join(violations)
