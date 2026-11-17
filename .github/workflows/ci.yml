@@ -62,6 +62,9 @@ jobs:
       - name: Frontend Lint (ESLint)
         run: pnpm lint:js
 
+      - name: Check No Verification Screenshots
+        run: pnpm lint:screenshots
+
       - name: Frontend Unit & Component Tests (Vitest)
         run: pnpm test
 

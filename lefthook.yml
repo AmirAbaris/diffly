@@ -35,3 +35,6 @@ pre-commit:
       glob: "*.{ts,tsx}"
       exclude: "content/"
       run: pnpm typecheck
+
+    - name: no-screenshots
+      run: bash scripts/check-no-screenshots.sh

@@ -1,8 +1,13 @@
 #!/usr/bin/env node
-import { spawn } from "node:child_process"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
+import {
+  CDPClient,
+  launchChrome,
+  sleep,
+  waitForCondition,
+} from "./cdp_client.mjs"
 
 const VIEWPORTS = [
   ["desktop", 1440, 900, 1, false],
@@ -15,122 +20,34 @@ const VIEWPORTS = [
   mobile,
 }))
 
+const BOOLEAN_FLAGS = new Set(["ephemeral"])
+
 function parseArgs(argv) {
-  return Object.fromEntries(
-    argv
-      .slice(2)
-      .flatMap((v, i, arr) =>
-        v.startsWith("--") ? [[v.slice(2), arr[i + 1]]] : []
-      )
-  )
-}
-
-class CDPClient {
-  constructor(wsUrl) {
-    this.wsUrl = wsUrl
-    this.ws = null
-    this.nextId = 1
-    this.pending = new Map()
-    this.events = []
-  }
-
-  async connect() {
-    this.ws = new WebSocket(this.wsUrl)
-    await new Promise((resolve, reject) => {
-      this.ws.addEventListener("open", resolve, { once: true })
-      this.ws.addEventListener("error", reject, { once: true })
-    })
-    this.ws.addEventListener("message", (event) => {
-      const msg = JSON.parse(event.data)
-      if (msg.id && this.pending.has(msg.id)) {
-        const { resolve, reject } = this.pending.get(msg.id)
-        this.pending.delete(msg.id)
-        if (msg.error)
-          reject(new Error(`${msg.error.message} (${msg.error.code})`))
-        else resolve(msg.result || {})
-      } else if (msg.method) {
-        this.events.push(msg)
-      }
-    })
-  }
-
-  send(method, params = {}) {
-    const id = this.nextId++
-    return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject })
-      this.ws.send(JSON.stringify({ id, method, params }))
-    })
-  }
-
-  async evaluate(expression) {
-    const res = await this.send("Runtime.evaluate", {
-      expression,
-      awaitPromise: true,
-      returnByValue: true,
-    })
-    if (res.exceptionDetails) {
-      throw new Error(res.exceptionDetails.text || "Runtime evaluation failed")
+  const args = {}
+  const rest = argv.slice(2)
+  for (let i = 0; i < rest.length; i += 1) {
+    const token = rest[i]
+    if (!token.startsWith("--")) continue
+    const eqIdx = token.indexOf("=")
+    if (eqIdx !== -1) {
+      const key = token.slice(2, eqIdx)
+      args[key] = token.slice(eqIdx + 1)
+      continue
     }
-    return res.result ? res.result.value : undefined
+    const key = token.slice(2)
+    if (BOOLEAN_FLAGS.has(key)) {
+      args[key] = true
+      continue
+    }
+    const next = rest[i + 1]
+    if (next !== undefined && !next.startsWith("--")) {
+      args[key] = next
+      i += 1
+    } else {
+      args[key] = true
+    }
   }
-
-  close() {
-    if (this.ws) this.ws.close()
-  }
-}
-
-async function launchChrome(chromeBin, userDataDir) {
-  const flags = [
-    "--headless=new",
-    "--disable-gpu",
-    "--no-first-run",
-    "--no-default-browser-check",
-    "--disable-background-networking",
-    "--remote-debugging-port=0",
-    `--user-data-dir=${userDataDir}`,
-    "about:blank",
-  ]
-  const proc = spawn(chromeBin, flags, { stdio: ["ignore", "pipe", "pipe"] })
-  const wsBrowserUrl = await new Promise((resolve, reject) => {
-    let stderr = ""
-    const timer = setTimeout(
-      () => reject(new Error(`Chrome DevTools timeout: ${stderr}`)),
-      15000
-    )
-    proc.stderr.on("data", (chunk) => {
-      stderr += chunk.toString()
-      const match = stderr.match(/DevTools listening on (ws:\/\/[^\s]+)/)
-      if (match) {
-        clearTimeout(timer)
-        resolve(match[1])
-      }
-    })
-    proc.on("exit", (code) => {
-      clearTimeout(timer)
-      reject(new Error(`Chrome exited early (${code}): ${stderr}`))
-    })
-  })
-  const httpBase = wsBrowserUrl
-    .replace("ws://", "http://")
-    .split("/devtools/")[0]
-  const targets = await fetch(`${httpBase}/json/list`).then((r) => r.json())
-  const page =
-    targets.find((t) => t.type === "page") ||
-    (await fetch(`${httpBase}/json/new?about:blank`).then((r) => r.json()))
-  return { proc, wsUrl: page.webSocketDebuggerUrl }
-}
-
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
-
-async function waitForCondition(client, expression, timeoutMs = 15000) {
-  const deadline = Date.now() + timeoutMs
-  async function poll() {
-    if (await client.evaluate(expression)) return true
-    if (Date.now() >= deadline) return false
-    await sleep(200)
-    return poll()
-  }
-  return poll()
+  return args
 }
 
 function buildSpecs(baseUrl) {
@@ -265,16 +182,37 @@ async function captureState(client, viewport, spec, outPath) {
 
 async function main() {
   const args = parseArgs(process.argv)
-  const baseUrl = (args["base-url"] || "").replace(/\/$/, "")
-  const evidenceDir = args["evidence-dir"]
+  const rawBaseUrl = typeof args["base-url"] === "string" ? args["base-url"] : ""
+  const baseUrl = rawBaseUrl.replace(/\/$/, "")
+  const evidenceDir =
+    typeof args["evidence-dir"] === "string" ? args["evidence-dir"] : ""
   const timestamp =
-    args.timestamp || new Date().toISOString().replace(/[-:.]/g, "")
+    typeof args.timestamp === "string"
+      ? args.timestamp
+      : new Date().toISOString().replace(/[-:.]/g, "")
+  const ephemeral =
+    args.ephemeral === true ||
+    args.ephemeral === "true" ||
+    args.ephemeral === "1" ||
+    process.env.VERIFY_EPHEMERAL_SCREENSHOTS === "1"
   if (!baseUrl || !evidenceDir) {
     process.stderr.write(
-      "Usage: capture_visual.mjs --base-url <url> --evidence-dir <dir> --timestamp <ts>\n"
+      "Usage: capture_visual.mjs --base-url <url> --evidence-dir <dir> [--screenshot-dir <dir>] [--timestamp <ts>] [--ephemeral]\n"
     )
     process.exit(1)
   }
+  const skillRoot = path.dirname(path.resolve(evidenceDir))
+  const screenshotDir =
+    typeof args["screenshot-dir"] === "string"
+      ? path.resolve(args["screenshot-dir"])
+      : path.join(skillRoot, ".screenshots", timestamp)
+  const relScreenshotDir = path.relative(skillRoot, screenshotDir)
+  const manifestScreenshotDir =
+    relScreenshotDir &&
+    !relScreenshotDir.startsWith("..") &&
+    !path.isAbsolute(relScreenshotDir)
+      ? relScreenshotDir
+      : screenshotDir
   const chromeBin = [
     process.env.CHROME_BIN,
     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
@@ -288,7 +226,10 @@ async function main() {
   }
 
   fs.mkdirSync(evidenceDir, { recursive: true })
+  const screenshotDirExisted = fs.existsSync(screenshotDir)
+  fs.mkdirSync(screenshotDir, { recursive: true })
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), "diffly-cdp-"))
+  const writtenFiles = []
   let chromeProc = null
   let client = null
   try {
@@ -314,12 +255,9 @@ async function main() {
       async (prevPromise, { viewport, spec }) => {
         const acc = await prevPromise
         const outFile = `${timestamp}_visual_${spec.name}_${viewport.name}.png`
-        const result = await captureState(
-          client,
-          viewport,
-          spec,
-          path.join(evidenceDir, outFile)
-        )
+        const outPath = path.join(screenshotDir, outFile)
+        const result = await captureState(client, viewport, spec, outPath)
+        writtenFiles.push(outPath)
         process.stdout.write(
           `[visual:${spec.name}:${viewport.name}] ${result.verdict} -> ${outFile} (overflow=${result.metrics.hasHorizontalOverflow}, nextError=${result.metrics.hasNextError}, errors=${result.consoleErrors.length})\n`
         )
@@ -337,6 +275,9 @@ async function main() {
       timestamp,
       browser: chromeBin,
       base_url: baseUrl,
+      screenshot_dir: manifestScreenshotDir,
+      ephemeral_screenshots: true,
+      screenshots_retained: !ephemeral,
       verdict: allClean ? "CAPTURED" : "FAILED",
       total_captures: captures.length,
       captures_with_findings: withFindings.length,
@@ -361,6 +302,18 @@ async function main() {
     try {
       fs.rmSync(userDataDir, { recursive: true, force: true })
     } catch {}
+    if (ephemeral) {
+      for (const file of writtenFiles) {
+        try {
+          fs.rmSync(file, { force: true })
+        } catch {}
+      }
+      if (!screenshotDirExisted) {
+        try {
+          fs.rmdirSync(screenshotDir)
+        } catch {}
+      }
+    }
   }
 }
 

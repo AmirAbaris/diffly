@@ -9,6 +9,7 @@ coverage
 .agents/skills/**/evidence/**
 .agents/skills/**/.pids/**
 .agents/skills/**/.logs/**
+.agents/skills/**/.screenshots/**
 .cursor/**
 .gemini/**
 .agents/rules/**
