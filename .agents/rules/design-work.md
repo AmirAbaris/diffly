@@ -35,6 +35,6 @@ Derive all styling from the tokens and primitives in `app/globals.css` and `comp
 
 Do not mark UI work done from build or unit tests alone.
 
-1. Capture screenshots of affected routes at desktop and mobile viewports using the `verify-diffly` `visual` drive once available.
-2. Have a fresh agent (not the author) inspect the screenshots against the Diffly design language and `web-design-guidelines`.
+1. Capture transient screenshots of affected routes at desktop and mobile viewports using `.agents/skills/verify-diffly/scripts/drive.sh visual` (writes PNGs to `.agents/skills/verify-diffly/.screenshots/<TIMESTAMP>/` and the manifest to `evidence/<TIMESTAMP>_visual.json`; pass `--ephemeral` for telemetry-only runs).
+2. Have a fresh agent (not the author) inspect the screenshots in `.screenshots/<TIMESTAMP>/` and the `_visual.json` manifest against the Diffly design language and `web-design-guidelines`, then run `.agents/skills/verify-diffly/scripts/cleanup.sh` (or `--screenshots-only`) to delete transient screenshots while preserving `.json`/`.txt` evidence.
 3. Report visual verification status explicitly using `VERIFIED LIVE`, `UNTESTED`, or `FAILED`.

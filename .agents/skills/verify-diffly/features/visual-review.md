@@ -21,8 +21,9 @@ Preconditions:
 - Backend is running against an isolated SQLite DB via `.agents/skills/verify-diffly/scripts/launch.sh` and verified with `scripts/doctor.sh`.
 - Local `node_modules` is installed (`pnpm install`) and Google Chrome or Chromium is installed on the host.
 
-- **Capture screenshots and manifest.** Run `.agents/skills/verify-diffly/scripts/drive.sh visual`. Next.js starts on port `3000` (or a free port) with `BACKEND_URL` pointing to the isolated backend, headless Chrome CDP (`scripts/capture_visual.mjs`) captures 10 PNGs plus `evidence/<TIMESTAMP>_visual.json`, and the temporary Next.js server shuts down on exit.
-- **Inspect captured evidence.** Open `evidence/<TIMESTAMP>_visual.json` and view each `evidence/<TIMESTAMP>_visual_<state>_<viewport>.png` artifact using a fresh agent that did not author the UI change.
+- **Capture screenshots and manifest.** Run `.agents/skills/verify-diffly/scripts/drive.sh visual`. Next.js starts on port `3000` (or a free port) with `BACKEND_URL` pointing to the isolated backend, headless Chrome CDP (`scripts/capture_visual.mjs`) captures 10 transient PNGs into `.agents/skills/verify-diffly/.screenshots/<TIMESTAMP>/` (gitignored) plus `evidence/<TIMESTAMP>_visual.json`, and the temporary Next.js server shuts down on exit. Pass `--ephemeral` (or `VERIFY_EPHEMERAL_SCREENSHOTS=1`) for telemetry-only runs that delete PNGs immediately before exiting.
+- **Inspect captured evidence.** Open `evidence/<TIMESTAMP>_visual.json` and view each `.screenshots/<TIMESTAMP>/<TIMESTAMP>_visual_<state>_<viewport>.png` artifact using a fresh agent that did not author the UI change.
+- **Clean up transient screenshots.** After the fresh-agent visual audit completes, run `.agents/skills/verify-diffly/scripts/cleanup.sh` (or `cleanup.sh --screenshots-only`) to delete all transient screenshots while preserving structured `.json` and `.txt` evidence.
 
 ## Fresh-Agent Judging Checklist
 

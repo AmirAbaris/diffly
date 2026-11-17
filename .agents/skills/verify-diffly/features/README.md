@@ -15,7 +15,7 @@ This directory documents the active features of **Diffly**.
 ## Verification Guidance
 
 1. Always run `.agents/skills/verify-diffly/scripts/doctor.sh` before driving features.
-2. Every drive captures dated evidence in `.agents/skills/verify-diffly/evidence/`.
-3. Proof artifacts survive `.agents/skills/verify-diffly/scripts/cleanup.sh`.
+2. Every drive captures structured `.json`/`.txt` evidence in `.agents/skills/verify-diffly/evidence/`. `drive.sh visual` captures transient PNGs to `.agents/skills/verify-diffly/.screenshots/<TIMESTAMP>/` (gitignored) and writes the manifest to `evidence/<TIMESTAMP>_visual.json` (pass `--ephemeral` for telemetry-only runs).
+3. Structured `.json`/`.txt` evidence survives `.agents/skills/verify-diffly/scripts/cleanup.sh`, while `cleanup.sh` (or `cleanup.sh --screenshots-only`) deletes all transient screenshots once the audit completes.
 4. `scripts/drive.sh formatting` checks code hygiene only; drive `auth-isolation`, `challenge-ownership`, and `visual` to verify runtime behavior.
 5. `visual` captures must be judged by a fresh agent that did not author the UI change using the checklist in [Visual Review](visual-review.md).
