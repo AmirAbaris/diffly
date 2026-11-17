@@ -1,0 +1,69 @@
+order: 27
+slug: java-xxe-document-builder
+title: XML External Entity (XXE) Injection in DocumentBuilderFactory
+difficulty: Medium
+category: Security
+language: java
+estimated_minutes: 6
+defect_target: Find 1 Critical XXE Vulnerability in XML Invoice Parser
+expected_issues:
+  - id: crit-java-xxe-document-builder
+    title: XML External Entity (XXE) Injection via Default DocumentBuilderFactory
+    severity: critical
+    matched_lines:
+      - 28
+      - 29
+      - 31
+      - 32
+    matched_keywords:
+      - xxe
+      - xml external entity
+      - doctype
+      - disallow-doctype-decl
+      - DocumentBuilderFactory
+      - external entities
+      - FEATURE_SECURE_PROCESSING
+      - cwe-611
+    line_score: 0.6
+    concept_score: 0.4
+    explanation: Calling `DocumentBuilderFactory.newInstance()` with default parser features permits `<!DOCTYPE>` declarations and external entity resolution (CWE-611). Parsing untrusted partner XML allows attackers to read local files, trigger SSRF, or launch Billion Laughs entity-expansion DoS attacks.
+hints:
+  - tier: 1
+    title: Contextual Clue
+    hint: Inspect how `DocumentBuilderFactory` is configured before `newDocumentBuilder()` parses `rawXmlPayload`.
+  - tier: 2
+    title: Vulnerability Class
+    hint: XML External Entity (XXE / CWE-611) injection occurs when an XML parser processes untrusted DTDs and external entity references enabled by default.
+  - tier: 3
+    title: Line Pointer & Guidance
+    hint: Look at lines 28-32. Disable DOCTYPE declarations (`http://apache.org/xml/features/disallow-doctype-decl` = `true`), disable external general/parameter entities and external DTDs, enable `XMLConstants.FEATURE_SECURE_PROCESSING`, and set `setXIncludeAware(false)` and `setExpandEntityReferences(false)`.
+canonical_review: |-
+  Senior Staff Engineer Review Critique:
+  Instantiating `DocumentBuilderFactory.newInstance()` without hardening parser features exposes the XML ingestion endpoint to XML External Entity (XXE) injection (CWE-611). By default, Java's `DocumentBuilderFactory` allows DTDs and resolves external entities.
+
+  Enforcing a `MAX_XML_BYTES` payload cap does not stop XXE: a tiny `< 1 KB` XML payload containing `<!DOCTYPE foo [ <!ENTITY xxe SYSTEM "file:///etc/passwd"> ]>` or an internal HTTP SSRF URI (`http://169.254.169.254/...`) forces the parser to fetch local files or cloud metadata endpoints and exfiltrate their contents inside parsed invoice fields.
+
+  Recommendation:
+  Harden `DocumentBuilderFactory` before calling `newDocumentBuilder()`: enable `XMLConstants.FEATURE_SECURE_PROCESSING`, set `http://apache.org/xml/features/disallow-doctype-decl` to `true`, disable `external-general-entities`, `external-parameter-entities`, and `load-external-dtd`, and set `setXIncludeAware(false)` and `setExpandEntityReferences(false)`.
+recommended_fix_diff: |
+  --- a/ingest/xml/InvoiceXmlParser.java
+  +++ b/ingest/xml/InvoiceXmlParser.java
+  @@ -5,4 +5,5 @@
+   import java.util.Optional;
+  +import javax.xml.XMLConstants;
+   import javax.xml.parsers.DocumentBuilder;
+   import javax.xml.parsers.DocumentBuilderFactory;
+   import javax.xml.parsers.ParserConfigurationException;
+  @@ -28,5 +29,12 @@
+           DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+           factory.setNamespaceAware(true);
+  +        factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+  +        factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+  +        factory.setFeature("http://xml.org/sax/features/external-general-entities", false);
+  +        factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+  +        factory.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
+  +        factory.setXIncludeAware(false);
+  +        factory.setExpandEntityReferences(false);
+   
+           DocumentBuilder builder = factory.newDocumentBuilder();
+           Document doc = builder.parse(new InputSource(new StringReader(rawXmlPayload)));

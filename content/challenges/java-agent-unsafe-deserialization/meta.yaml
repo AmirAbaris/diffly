@@ -1,0 +1,72 @@
+order: 30
+slug: java-agent-unsafe-deserialization
+title: Unsafe ObjectInputStream Deserialization in Agent Checkpoint
+difficulty: Hard
+category: Agent Antipaths
+language: java
+estimated_minutes: 8
+defect_target: Find 1 Critical Insecure Deserialization Vulnerability in Agent State Store
+expected_issues:
+  - id: crit-java-agent-deserialization
+    title: Arbitrary Code Execution via Unfiltered ObjectInputStream.readObject()
+    severity: critical
+    matched_lines:
+      - 42
+      - 43
+      - 44
+    matched_keywords:
+      - ObjectInputStream
+      - readObject
+      - ObjectInputFilter
+      - insecure deserialization
+      - allowlist
+      - gadget
+      - rce
+      - cwe-502
+    line_score: 0.6
+    concept_score: 0.4
+    explanation: Calling `ObjectInputStream.readObject()` on Base64-decoded checkpoint payloads without configuring an `ObjectInputFilter` allowlist enables Remote Code Execution (CWE-502). Checking `instanceof AgentSessionState` after `readObject()` is too late because Java gadget chains execute during object graph reconstruction.
+hints:
+  - tier: 1
+    title: Contextual Clue
+    hint: Examine how `restoreSession` decodes and reconstructs `AgentSessionState` from `CheckpointBackend`.
+  - tier: 2
+    title: Vulnerability Class
+    hint: Deserialization of Untrusted Data (CWE-502) occurs when `ObjectInputStream.readObject()` processes payloads without restricting allowed classes before instantiation.
+  - tier: 3
+    title: Line Pointer & Guidance
+    hint: Look at lines 42-46. Configure a strict `ObjectInputFilter` allowlist on `ois.setObjectInputFilter(...)` before calling `ois.readObject()` (and prefer schema-validated JSON over Java native serialization).
+canonical_review: |-
+  Senior Staff Engineer Review Critique:
+  Restoring agent session state from an external store via `ObjectInputStream.readObject()` without an `ObjectInputFilter` is a critical Remote Code Execution vulnerability (CWE-502).
+
+  Note that the `instanceof AgentSessionState` check on line 44 provides zero protection against deserialization attacks: Java invokes `readObject()` hooks, `hashCode()`, and proxy/reflection handlers on every object in the stream *before* `ois.readObject()` returns. An attacker who tampers with a checkpoint token or poisons the backend cache can trigger classpath gadget chains (e.g., Commons Collections, Spring, or JDK gadgets) to execute arbitrary code inside the agent worker.
+
+  Recommendation:
+  Long-term, replace Java native serialization with schema-validated JSON (Jackson) or Protocol Buffers. If legacy binary checkpoints must remain supported temporarily, attach a strict `ObjectInputFilter` allowlist (`ois.setObjectInputFilter(...)`) rejecting all classes except `AgentSessionState` and its safe value types, with tight `maxdepth` and `maxbytes` bounds, before calling `readObject()`.
+recommended_fix_diff: |
+  --- a/agent/checkpoint/AgentCheckpointStore.java
+  +++ b/agent/checkpoint/AgentCheckpointStore.java
+  @@ -4,3 +4,4 @@
+   import java.io.ByteArrayInputStream;
+   import java.io.IOException;
+  +import java.io.ObjectInputFilter;
+   import java.io.ObjectInputStream;
+  @@ -22,3 +23,11 @@
+       }
+   
+  +    private static final ObjectInputFilter SESSION_FILTER =
+  +            ObjectInputFilter.Config.createFilter(
+  +                    "com.acme.agent.checkpoint.AgentCheckpointStore$AgentSessionState;"
+  +                            + "java.lang.String;java.lang.Record;"
+  +                            + "java.util.List;java.util.ArrayList;java.util.HashMap;"
+  +                            + "java.util.Collections$*;java.util.ImmutableCollections$*;"
+  +                            + "maxdepth=5;maxbytes=65536;!*");
+  +
+       private final CheckpointBackend backend;
+  @@ -41,4 +50,5 @@
+           byte[] payload = Base64.getDecoder().decode(encoded);
+           try (ObjectInputStream ois = new ObjectInputStream(new ByteArrayInputStream(payload))) {
+  +            ois.setObjectInputFilter(SESSION_FILTER);
+               Object restored = ois.readObject();
+               if (!(restored instanceof AgentSessionState state)) {
