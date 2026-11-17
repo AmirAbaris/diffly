@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import ConfigDict, field_validator
+from sqlalchemy import CheckConstraint
 from sqlmodel import Field, Relationship, SQLModel
 
 from backend.models.challenge import Challenge
@@ -91,6 +92,12 @@ class SubmissionBase(SQLModel):
 
 class Submission(SubmissionBase, table=True):
     __tablename__ = "submissions"
+    __table_args__ = (
+        CheckConstraint(
+            "user_id IS NULL OR session_id IS NULL",
+            name="ck_submissions_single_owner",
+        ),
+    )
 
     id: int | None = Field(default=None, primary_key=True)
     created_at: datetime = Field(default_factory=get_utc_now)

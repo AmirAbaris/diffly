@@ -244,14 +244,14 @@ def test_list_challenges_filter_combinations(client: TestClient, session: Sessio
 
 
 def test_list_challenges_user_completion_status_guest(
-    client: TestClient, session: Session
+    client: TestClient, session: Session, as_guest
 ):
     """Guest session tracks completion status and highest score."""
     challenges = seed_challenges(session)
     ch1 = challenges[0]
     ch2 = challenges[1]
 
-    session_id = "test-guest-session-123"
+    session_id = as_guest(client, "test-guest-session-123")
 
     # ch1 has 2 submissions (50 and 85) -> best_score=85, is_solved=True
     sub1 = Submission(
@@ -276,8 +276,8 @@ def test_list_challenges_user_completion_status_guest(
     session.add_all([sub1, sub2, sub3])
     session.commit()
 
-    # Query with guest session header
-    res = client.get("/api/challenges", headers={"X-Diffly-Session-Id": session_id})
+    # Query with signed guest cookie
+    res = client.get("/api/challenges")
     assert res.status_code == 200
     data = res.json()
 
@@ -295,10 +295,9 @@ def test_list_challenges_user_completion_status_guest(
         assert item["is_solved"] is False
         assert item["best_score"] is None
 
-    # Query with a different session ID sees no completion
-    res_other = client.get(
-        "/api/challenges", headers={"X-Diffly-Session-Id": "other-session"}
-    )
+    # Query with a different signed guest cookie sees no completion
+    as_guest(client, "other-session")
+    res_other = client.get("/api/challenges")
     data_other = res_other.json()
     assert all(item["is_solved"] is False for item in data_other)
     assert all(item["best_score"] is None for item in data_other)
@@ -377,12 +376,12 @@ def test_get_challenge_by_numeric_id(client: TestClient, session: Session):
 
 
 def test_get_challenge_user_completion_status(
-    client: TestClient, session: Session, register_user, login_as
+    client: TestClient, session: Session, register_user, login_as, as_guest
 ):
     """GET /api/challenges/{identifier} reflects user completion status."""
     challenges = seed_challenges(session)
     ch = challenges[0]
-    session_id = "test-detail-session"
+    session_id = as_guest(client, "test-detail-session")
 
     sub = Submission(
         challenge_id=ch.id,
@@ -394,10 +393,7 @@ def test_get_challenge_user_completion_status(
     session.commit()
 
     # Guest session test
-    res = client.get(
-        f"/api/challenges/{ch.slug}",
-        headers={"X-Diffly-Session-Id": session_id},
-    )
+    res = client.get(f"/api/challenges/{ch.slug}")
     assert res.status_code == 200
     data = res.json()
     assert data["is_solved"] is True
@@ -511,22 +507,20 @@ def test_get_challenge_hints_not_found(client: TestClient, session: Session):
 
 
 def test_get_challenge_solution_forbidden_without_submission_or_reveal(
-    client: TestClient, session: Session, register_user, login_as
+    client: TestClient, session: Session, register_user, login_as, as_guest
 ):
     """GET solution returns 403 when unattempted and reveal=false."""
     challenges = seed_challenges(session)
     ch = challenges[0]
 
-    # Anonymous user without header
+    # Anonymous user without cookie
     res_anon = client.get(f"/api/challenges/{ch.slug}/solution")
     assert res_anon.status_code == 403
     assert "submission" in res_anon.json()["detail"].lower()
 
-    # Guest user with session header but no submissions
-    res_guest = client.get(
-        f"/api/challenges/{ch.slug}/solution",
-        headers={"X-Diffly-Session-Id": "unattempted-guest"},
-    )
+    # Guest user with signed cookie but no submissions
+    as_guest(client, "unattempted-guest")
+    res_guest = client.get(f"/api/challenges/{ch.slug}/solution")
     assert res_guest.status_code == 403
 
     # Authenticated user with no submissions
@@ -560,7 +554,7 @@ def test_get_challenge_solution_with_reveal_param(client: TestClient, session: S
 
 
 def test_get_challenge_solution_allowed_after_guest_submission(
-    client: TestClient, session: Session
+    client: TestClient, session: Session, as_guest
 ):
     """Guest user can access solution after making at least one submission."""
     challenges = seed_challenges(session)
@@ -576,25 +570,21 @@ def test_get_challenge_solution_allowed_after_guest_submission(
     session.add(sub)
     session.commit()
 
-    # Query with session header
-    res_header = client.get(
-        f"/api/challenges/{ch.slug}/solution",
-        headers={"X-Diffly-Session-Id": session_id},
-    )
-    assert res_header.status_code == 200
-    assert res_header.json()["slug"] == ch.slug
-
-    # Query with session query parameter
+    # Raw query param or header without signed cookie must remain forbidden
     res_query = client.get(
         f"/api/challenges/{ch.slug}/solution?session_id={session_id}"
     )
-    assert res_query.status_code == 200
+    assert res_query.status_code == 403
 
-    # Query with different session is forbidden
-    res_diff = client.get(
-        f"/api/challenges/{ch.slug}/solution",
-        headers={"X-Diffly-Session-Id": "different-guest"},
-    )
+    # Query with signed guest cookie succeeds
+    as_guest(client, session_id)
+    res_cookie = client.get(f"/api/challenges/{ch.slug}/solution")
+    assert res_cookie.status_code == 200
+    assert res_cookie.json()["slug"] == ch.slug
+
+    # Query with different signed guest cookie is forbidden
+    as_guest(client, "different-guest")
+    res_diff = client.get(f"/api/challenges/{ch.slug}/solution")
     assert res_diff.status_code == 403
 
 
@@ -654,11 +644,12 @@ def test_get_challenge_solution_not_found(client: TestClient, session: Session):
 
 
 def test_list_custom_challenges_includes_completion_status_and_best_score(
-    client: TestClient, session: Session
+    client: TestClient, session: Session, as_guest
 ):
     """GET /api/challenges/custom returns is_solved and best_score."""
     from backend.models.challenge import Challenge
 
+    sid = as_guest(client, "custom-status-sid")
     custom_ch = Challenge(
         slug="custom-solved-status-ch",
         title="Custom Solved Status",
@@ -668,7 +659,7 @@ def test_list_custom_challenges_includes_completion_status_and_best_score(
         description="Custom challenge",
         code_snippet="x = 1",
         is_public=False,
-        session_id="custom-status-sid",
+        session_id=sid,
     )
     session.add(custom_ch)
     session.commit()
@@ -676,17 +667,14 @@ def test_list_custom_challenges_includes_completion_status_and_best_score(
 
     sub = Submission(
         challenge_id=custom_ch.id,
-        session_id="custom-status-sid",
+        session_id=sid,
         score=95,
         comments="Solved custom challenge",
     )
     session.add(sub)
     session.commit()
 
-    res = client.get(
-        "/api/challenges/custom",
-        headers={"X-Diffly-Session-Id": "custom-status-sid"},
-    )
+    res = client.get("/api/challenges/custom")
     assert res.status_code == 200
     items = res.json()["items"]
     assert len(items) == 1

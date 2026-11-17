@@ -4,9 +4,8 @@ import axios from "axios"
 import useSWR, { mutate } from "swr"
 import { apiClient } from "@/lib/axios"
 import { CUSTOM_CHALLENGES_SWR_KEY } from "@/hooks/use-custom-challenges"
-import { claimSession } from "@/hooks/use-user-progress"
+import { toast } from "@/hooks/use-toast"
 import { mutateUserStats } from "@/hooks/use-user-stats"
-import { clearGuestSessionId, getOrCreateGuestSessionId } from "@/lib/session"
 
 export interface AuthUser {
   id: number
@@ -116,28 +115,32 @@ export async function fetchCurrentUser(): Promise<AuthUser | null> {
   return stored
 }
 
+function notifyIfClaimQuotaExceeded(
+  headers: Record<string, unknown> | undefined
+): void {
+  const status = headers?.["x-diffly-claim-status"]
+  if (status === "quota_exceeded") {
+    toast({
+      title: "Guest custom challenges kept separate",
+      description:
+        "Merging your guest custom challenges would exceed the 5-challenge limit. Delete an existing custom challenge to free space.",
+      variant: "destructive",
+    })
+  }
+}
+
 export async function apiLogin(
   credentials: LoginCredentials
 ): Promise<AuthUser> {
-  const sessionId = getOrCreateGuestSessionId()
-
   try {
     const response = await apiClient.post<AuthUser>("/api/auth/login", {
       identifier: credentials.emailOrUsername,
       username: credentials.emailOrUsername,
       password: credentials.password,
-      session_id: sessionId,
     })
     const user = response.data
     setStoredAuthUser(user)
-    if (sessionId) {
-      try {
-        await claimSession(sessionId)
-      } catch {
-        // Session claim is automatically completed server-side by /api/auth/login
-      }
-      clearGuestSessionId()
-    }
+    notifyIfClaimQuotaExceeded(response.headers)
     return user
   } catch (err) {
     const message = getAuthErrorMessage(
@@ -151,25 +154,15 @@ export async function apiLogin(
 export async function apiRegister(
   credentials: RegisterCredentials
 ): Promise<AuthUser> {
-  const sessionId = getOrCreateGuestSessionId()
-
   try {
     const response = await apiClient.post<AuthUser>("/api/auth/register", {
       email: credentials.email,
       username: credentials.username,
       password: credentials.password,
-      session_id: sessionId,
     })
     const user = response.data
     setStoredAuthUser(user)
-    if (sessionId) {
-      try {
-        await claimSession(sessionId)
-      } catch {
-        // Session claim is automatically completed server-side by /api/auth/register
-      }
-      clearGuestSessionId()
-    }
+    notifyIfClaimQuotaExceeded(response.headers)
     return user
   } catch (err) {
     const message = getAuthErrorMessage(
@@ -187,7 +180,6 @@ export async function apiLogout(): Promise<void> {
     // Suppress network errors during logout
   } finally {
     setStoredAuthUser(null)
-    clearGuestSessionId()
   }
 }
 

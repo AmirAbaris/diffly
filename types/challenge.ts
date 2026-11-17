@@ -78,7 +78,6 @@ export interface ReviewDraft {
 export interface ReviewSubmissionRequest {
   flagged_lines: number[]
   comments: string
-  session_id?: string | null
 }
 
 export interface DetectedIssue {
@@ -176,14 +175,4 @@ export interface UserProgress {
   average_score: number
   streak_days: number
   categories_breakdown: CategoryProgress[]
-}
-
-export interface ClaimSessionRequest {
-  session_id?: string | null
-}
-
-export interface ClaimSessionResponse {
-  claimed_count: number
-  user_id: number
-  session_id: string
 }

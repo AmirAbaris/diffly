@@ -24,7 +24,7 @@ Preconditions:
 
 - **Drive full custom challenge ownership suite.** Run `.agents/skills/verify-diffly/scripts/drive.sh challenge-ownership`. Exit code is `0` and JSON evidence is written to `evidence/<TIMESTAMP>_challenge-ownership.json` with `"verdict": "PASSED"`.
 - **Guest ownership and isolation.** Verify `POST /api/challenges/generate-custom` without `X-Gemini-Key` returns `401`. Provision Guest A's private custom challenge, verify Guest A evaluates it (`200`), verify public `/api/challenges` excludes it, and verify Guest B gets `404` on detail, review, and delete.
-- **Claim and cross-user lock.** Register User A with Guest A's `X-Diffly-Session-Id`, confirm User A reads detail and submission history via cookie auth, confirm the old session ID returns `404` on read and delete, and confirm User B gets `404` on detail, hints, solution, review evaluation, submissions, and delete.
+- **Claim and cross-user lock.** Register User A with Guest A's signed `diffly_guest_session` cookie jar, confirm User A reads detail and submission history via cookie auth, confirm replaying the pre-claim cookie returns `404` on read and delete, and confirm User B gets `404` on detail, hints, solution, review evaluation, submissions, and delete.
 - **Production header rejection, logout, and owner delete.** Confirm forged `x-user-id` under `ENVIRONMENT=production` gets `404` on read and delete; confirm User A loses access after `/api/auth/logout`, regains access on `/api/auth/login`, deletes the custom challenge (`200`), observes `404` afterward, and gets `403` when deleting a public challenge.
 
 ## Gotchas

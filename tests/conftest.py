@@ -1,3 +1,4 @@
+import time
 from collections.abc import Callable, Generator
 from itertools import count
 from typing import Any
@@ -9,7 +10,9 @@ from sqlmodel.pool import StaticPool
 
 import backend.models  # noqa: F401
 from api.index import app
+from backend.core.config import settings
 from backend.core.db import get_session
+from backend.core.guest_session import GuestSession, _encode, mint_guest_session
 
 
 DEFAULT_TEST_PASSWORD = "TestPassword123!"
@@ -68,6 +71,22 @@ def client_fixture(session: Session) -> Generator[TestClient, None, None]:
     app.dependency_overrides.clear()
 
 
+@pytest.fixture(name="as_guest")
+def as_guest_fixture() -> Callable[[TestClient, str | None], str]:
+    def _as_guest(target_client: TestClient, guest_id: str | None = None) -> str:
+        guest = (
+            GuestSession(id=guest_id, issued_at=int(time.time()))
+            if guest_id is not None
+            else mint_guest_session()
+        )
+        target_client.cookies.set(
+            settings.GUEST_COOKIE_NAME, _encode(guest), domain="testserver.local"
+        )
+        return guest.id
+
+    return _as_guest
+
+
 @pytest.fixture(name="register_user")
 def register_user_fixture(
     client_factory: Callable[[], TestClient],
@@ -77,7 +96,7 @@ def register_user_fixture(
         *,
         email: str | None = None,
         password: str = DEFAULT_TEST_PASSWORD,
-        session_id: str | None = None,
+        guest_id: str | None = None,
     ) -> dict[str, Any]:
         idx = next(_USER_COUNTER)
         resolved_username = username or f"testuser_{idx}"
@@ -87,10 +106,13 @@ def register_user_fixture(
             "username": resolved_username,
             "password": password,
         }
-        if session_id is not None:
-            payload["session_id"] = session_id
 
         reg_client = client_factory()
+        if guest_id is not None:
+            guest = GuestSession(id=guest_id, issued_at=int(time.time()))
+            reg_client.cookies.set(
+                settings.GUEST_COOKIE_NAME, _encode(guest), domain="testserver.local"
+            )
         res = reg_client.post("/api/auth/register", json=payload)
         assert res.status_code == 200, res.text
         user_data: dict[str, Any] = res.json()
@@ -108,16 +130,19 @@ def login_as_fixture(
         identifier: str,
         *,
         password: str = DEFAULT_TEST_PASSWORD,
-        session_id: str | None = None,
+        guest_id: str | None = None,
     ) -> TestClient:
         payload: dict[str, Any] = {
             "identifier": identifier,
             "password": password,
         }
-        if session_id is not None:
-            payload["session_id"] = session_id
 
         auth_client = client_factory()
+        if guest_id is not None:
+            guest = GuestSession(id=guest_id, issued_at=int(time.time()))
+            auth_client.cookies.set(
+                settings.GUEST_COOKIE_NAME, _encode(guest), domain="testserver.local"
+            )
         res = auth_client.post("/api/auth/login", json=payload)
         assert res.status_code == 200, res.text
         return auth_client

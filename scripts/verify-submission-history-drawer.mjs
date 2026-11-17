@@ -1,4 +1,6 @@
 import assert from "node:assert/strict"
+import fs from "node:fs"
+import path from "node:path"
 
 process.stdout.write(
   "==> Verifying Submission History Drawer & Multi-Attempt Logic...\n"
@@ -101,35 +103,25 @@ process.stdout.write(
   `✓ Best score calculation (${bestScore}%) and attempt counting (2) verified\n`
 )
 
-// 4. Verify Guest Session ID Generation and Header Injection
-const GUEST_SESSION_STORAGE_KEY = "diffly_session_id"
-const mockStorage = new Map()
-const fakeLocalStorage = {
-  getItem: (key) => mockStorage.get(key) || null,
-  setItem: (key, val) => mockStorage.set(key, String(val)),
-}
-
-function getOrCreateGuestSessionId(storage = fakeLocalStorage) {
-  let sessionId = storage.getItem(GUEST_SESSION_STORAGE_KEY)
-  if (!sessionId) {
-    sessionId = `guest-test${Math.random().toString(36).slice(2, 8)}`
-    storage.setItem(GUEST_SESSION_STORAGE_KEY, sessionId)
-  }
-  return sessionId
-}
-
-const session1 = getOrCreateGuestSessionId()
-const session2 = getOrCreateGuestSessionId()
-assert.equal(
-  session1,
-  session2,
-  "Guest session ID must persist across subsequent calls"
+// 4. Verify Cookie-Only Guest Session Configuration (no localStorage or header injection)
+const axiosSource = fs.readFileSync(
+  path.resolve(process.cwd(), "lib/axios.ts"),
+  "utf-8"
 )
 assert(
-  session1.startsWith("guest-"),
-  "Guest session ID must follow guest-* convention"
+  axiosSource.includes("withCredentials: true"),
+  "Axios client must send HttpOnly cookies with withCredentials: true"
 )
-process.stdout.write(`✓ Guest session ID persistence verified: "${session1}"\n`)
+assert(
+  !axiosSource.includes("X-Diffly-Session-Id"),
+  "Axios client must not inject unsigned X-Diffly-Session-Id headers"
+)
+assert.equal(
+  fs.existsSync(path.resolve(process.cwd(), "lib/session.ts")),
+  false,
+  "Legacy lib/session.ts localStorage helper must be removed"
+)
+process.stdout.write("✓ Cookie-only guest session configuration verified\n")
 
 // 5. Verify SWR Cache Key Generation and Contract
 const slug = "timing-attack-hmac"

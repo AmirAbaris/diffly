@@ -3,14 +3,18 @@
 from fastapi.testclient import TestClient
 from sqlmodel import Session
 
+from backend.core.config import settings
 from backend.models.submission import Submission
 from backend.seed.seed_data import seed_challenges
 
 
-def test_submit_review_guest_via_body_session_id(client: TestClient, session: Session):
-    """Guest user submits review with session_id in request body."""
+def test_submit_review_guest_via_signed_cookie(
+    client: TestClient, session: Session, as_guest
+):
+    """Guest user submits review using an existing signed guest cookie."""
     challenges = seed_challenges(session)
     ch = challenges[0]
+    guest_id = as_guest(client, "guest-session-abc-123")
 
     payload = {
         "flagged_lines": [6],
@@ -18,7 +22,6 @@ def test_submit_review_guest_via_body_session_id(client: TestClient, session: Se
             "The eval function executes unsanitized user expression "
             "without safe globals."
         ),
-        "session_id": "guest-session-abc-123",
     }
 
     res = client.post(f"/api/challenges/{ch.slug}/review", json=payload)
@@ -43,7 +46,7 @@ def test_submit_review_guest_via_body_session_id(client: TestClient, session: Se
     assert saved is not None
     assert saved.challenge_id == ch.id
     assert saved.user_id is None
-    assert saved.session_id == "guest-session-abc-123"
+    assert saved.session_id == guest_id
     assert saved.score == data["score"]
     assert saved.feedback == data["feedback"]
     assert saved.get_flagged_lines() == [6]
@@ -51,18 +54,19 @@ def test_submit_review_guest_via_body_session_id(client: TestClient, session: Se
     assert len(saved.get_detected_issues()) == len(data["detected_issues"])
 
 
-def test_submit_review_guest_via_header_session_id(
+def test_submit_review_ignores_raw_header_and_body_session_id(
     client: TestClient, session: Session
 ):
-    """Guest user submits review with session_id in X-Diffly-Session-Id header."""
+    """Server ignores unsigned X-Diffly-Session-Id and body session_id."""
     challenges = seed_challenges(session)
     ch = challenges[0]
 
     payload = {
         "flagged_lines": [6],
         "comments": "Critical vulnerability: eval arbitrary code execution.",
+        "session_id": "forged-body-session",
     }
-    headers = {"X-Diffly-Session-Id": "header-guest-session-789"}
+    headers = {"X-Diffly-Session-Id": "forged-header-session"}
 
     res = client.post(
         f"/api/challenges/{ch.id}/review",
@@ -70,16 +74,19 @@ def test_submit_review_guest_via_header_session_id(
         headers=headers,
     )
     assert res.status_code == 200
+    assert "X-Diffly-Session-Id" not in res.headers
     data = res.json()
 
     saved = session.get(Submission, data["submission_id"])
     assert saved is not None
-    assert saved.session_id == "header-guest-session-789"
     assert saved.user_id is None
+    assert saved.session_id is not None
+    assert saved.session_id.startswith("g_")
+    assert saved.session_id not in ("forged-body-session", "forged-header-session")
 
 
-def test_submit_review_guest_fallback_session_id(client: TestClient, session: Session):
-    """Guest submitting without session_id receives auto-generated guest session."""
+def test_submit_review_guest_mints_signed_cookie(client: TestClient, session: Session):
+    """Guest submitting without cookie receives auto-minted signed guest cookie."""
     challenges = seed_challenges(session)
     ch = challenges[0]
 
@@ -90,16 +97,18 @@ def test_submit_review_guest_fallback_session_id(client: TestClient, session: Se
 
     res = client.post(f"/api/challenges/{ch.slug}/review", json=payload)
     assert res.status_code == 200
+    assert settings.GUEST_COOKIE_NAME in res.cookies
     data = res.json()
 
     saved = session.get(Submission, data["submission_id"])
     assert saved is not None
     assert saved.session_id is not None
-    assert saved.session_id.startswith("guest-")
+    assert saved.session_id.startswith("g_")
+    assert data["session_id"] == saved.session_id
 
 
 def test_submit_review_authenticated_user(session: Session, register_user, login_as):
-    """Authenticated user submission is linked to user_id."""
+    """Authenticated user submission is linked to user_id with null session_id."""
     challenges = seed_challenges(session)
     ch = challenges[0]
 
@@ -117,6 +126,7 @@ def test_submit_review_authenticated_user(session: Session, register_user, login
     saved = session.get(Submission, data["submission_id"])
     assert saved is not None
     assert saved.user_id == user["id"]
+    assert saved.session_id is None
 
 
 def test_submit_review_supports_both_id_and_slug(client: TestClient, session: Session):
@@ -153,6 +163,7 @@ def test_submit_review_not_found(client: TestClient, session: Session):
     )
     assert res_slug.status_code == 404
     assert res_slug.json() == {"detail": "Challenge not found"}
+    assert settings.GUEST_COOKIE_NAME not in res_slug.cookies
 
     res_id = client.post(
         "/api/challenges/999999/review",
@@ -211,40 +222,34 @@ def test_submit_review_validation_errors(client: TestClient, session: Session):
 
 
 def test_get_submissions_history_guest(client: TestClient, session: Session):
-    """GET /submissions filters attempts by guest session and returns descending."""
+    """GET /submissions filters attempts by guest cookie and returns descending."""
     challenges = seed_challenges(session)
     ch = challenges[0]
-    session_id = "guest-history-session-456"
 
-    # Submit first attempt
+    # Submit first attempt (auto-mints signed guest cookie)
     res1 = client.post(
         f"/api/challenges/{ch.slug}/review",
         json={
             "flagged_lines": [1],
             "comments": "Initial incomplete attempt.",
-            "session_id": session_id,
         },
     )
     assert res1.status_code == 200
     sub1_id = res1.json()["submission_id"]
 
-    # Submit second attempt
+    # Submit second attempt (reuses same guest cookie jar)
     res2 = client.post(
         f"/api/challenges/{ch.slug}/review",
         json={
             "flagged_lines": [6],
             "comments": "Accurate attempt targeting eval execution defect.",
-            "session_id": session_id,
         },
     )
     assert res2.status_code == 200
     sub2_id = res2.json()["submission_id"]
 
-    # Retrieve history using header
-    hist_res = client.get(
-        f"/api/challenges/{ch.slug}/submissions",
-        headers={"X-Diffly-Session-Id": session_id},
-    )
+    # Retrieve history using signed guest cookie
+    hist_res = client.get(f"/api/challenges/{ch.slug}/submissions")
     assert hist_res.status_code == 200
     history = hist_res.json()
 
@@ -264,12 +269,14 @@ def test_get_submissions_history_guest(client: TestClient, session: Session):
     assert history[1]["attempt_number"] == 1
     assert history[1]["flagged_lines"] == [1]
 
-    # Retrieve history using query param
+    # Raw query param without signed cookie returns empty list
+    guest_sid = res1.json()["session_id"]
+    client.cookies.clear()
     hist_query = client.get(
-        f"/api/challenges/{ch.id}/submissions?session_id={session_id}",
+        f"/api/challenges/{ch.id}/submissions?session_id={guest_sid}",
     )
     assert hist_query.status_code == 200
-    assert len(hist_query.json()) == 2
+    assert hist_query.json() == []
 
 
 def test_get_submissions_history_authenticated_user(
@@ -313,41 +320,40 @@ def test_get_submissions_history_authenticated_user(
     assert history[1]["id"] == res1.json()["submission_id"]
 
 
-def test_get_submissions_history_isolation(client: TestClient, session: Session):
-    """Submissions from one session are not visible to another."""
+def test_get_submissions_history_isolation(client_factory, session: Session):
+    """Submissions from one guest cookie jar are not visible to another."""
     challenges = seed_challenges(session)
     ch = challenges[0]
 
+    client_a = client_factory()
+    client_b = client_factory()
+    client_none = client_factory()
+
     # Session A submits
-    client.post(
+    client_a.post(
         f"/api/challenges/{ch.slug}/review",
         json={
             "flagged_lines": [6],
             "comments": "Session A review on eval.",
-            "session_id": "session-A",
         },
     )
 
     # Session B submits
-    client.post(
+    client_b.post(
         f"/api/challenges/{ch.slug}/review",
         json={
             "flagged_lines": [6],
             "comments": "Session B review on eval.",
-            "session_id": "session-B",
         },
     )
 
     # Query Session A
-    res_a = client.get(
-        f"/api/challenges/{ch.slug}/submissions",
-        headers={"X-Diffly-Session-Id": "session-A"},
-    )
+    res_a = client_a.get(f"/api/challenges/{ch.slug}/submissions")
     assert len(res_a.json()) == 1
     assert res_a.json()[0]["comments"] == "Session A review on eval."
 
-    # Query unauthenticated request with no session ID returns empty list
-    res_none = client.get(f"/api/challenges/{ch.slug}/submissions")
+    # Query unauthenticated request with no cookie returns empty list
+    res_none = client_none.get(f"/api/challenges/{ch.slug}/submissions")
     assert res_none.status_code == 200
     assert res_none.json() == []
 
@@ -379,7 +385,6 @@ def test_review_evaluation_high_score_and_detected_issues(
             "Line 28 executes unsanitized user expression using eval(). "
             "This enables arbitrary code execution and remote code execution (RCE)."
         ),
-        "session_id": "eval-pro-session",
     }
 
     res = client.post(f"/api/challenges/{ch.slug}/review", json=payload)

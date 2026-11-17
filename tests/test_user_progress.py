@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 from fastapi.testclient import TestClient
 from sqlmodel import Session
 
+from backend.core.config import settings
 from backend.models.submission import Submission
 from backend.seed.seed_data import seed_challenges
 
@@ -32,22 +33,25 @@ def test_get_user_progress_empty_no_identity(client: TestClient, session: Sessio
         assert cat["total"] >= 0
 
 
-def test_get_user_progress_guest_via_header(client: TestClient, session: Session):
-    """Guest session metrics calculated accurately from session header."""
+def test_get_user_progress_guest_via_cookie(
+    client: TestClient, session: Session, as_guest
+):
+    """Guest session metrics calculated accurately from signed guest cookie."""
     challenges = seed_challenges(session)
     ch1 = challenges[0]
     ch2 = challenges[1]
+    sid = as_guest(client, "guest-session-456")
 
     sub1 = Submission(
         challenge_id=ch1.id,
-        session_id="guest-session-456",
+        session_id=sid,
         score=85,
         comments="Great catch on the vulnerability",
         flagged_lines=[5],
     )
     sub2 = Submission(
         challenge_id=ch2.id,
-        session_id="guest-session-456",
+        session_id=sid,
         score=60,
         comments="Partially spotted race condition",
         flagged_lines=[10],
@@ -55,10 +59,7 @@ def test_get_user_progress_guest_via_header(client: TestClient, session: Session
     session.add_all([sub1, sub2])
     session.commit()
 
-    res = client.get(
-        "/api/user/progress",
-        headers={"X-Diffly-Session-Id": "guest-session-456"},
-    )
+    res = client.get("/api/user/progress")
     assert res.status_code == 200
     data = res.json()
 
@@ -69,8 +70,10 @@ def test_get_user_progress_guest_via_header(client: TestClient, session: Session
     assert data["streak_days"] == 1
 
 
-def test_get_user_progress_guest_via_query_param(client: TestClient, session: Session):
-    """Guest session metrics accessible via query param."""
+def test_get_user_progress_ignores_raw_query_param_and_header(
+    client: TestClient, session: Session
+):
+    """Raw session_id query param or X-Diffly-Session-Id header never exposes data."""
     challenges = seed_challenges(session)
     ch = challenges[0]
 
@@ -84,32 +87,36 @@ def test_get_user_progress_guest_via_query_param(client: TestClient, session: Se
     session.add(sub)
     session.commit()
 
-    res = client.get("/api/user/progress?session_id=guest-param-789")
+    res = client.get(
+        "/api/user/progress?session_id=guest-param-789",
+        headers={"X-Diffly-Session-Id": "guest-param-789"},
+    )
     assert res.status_code == 200
     data = res.json()
 
-    assert data["total_attempted"] == 1
-    assert data["total_solved"] == 1
-    assert data["average_score"] == 95.0
+    assert data["total_attempted"] == 0
+    assert data["total_solved"] == 0
+    assert data["average_score"] == 0.0
 
 
 def test_get_user_progress_best_score_supersedes_earlier_attempt(
-    client: TestClient, session: Session
+    client: TestClient, session: Session, as_guest
 ):
     """Re-attempts update solved status and average score using best score."""
     challenges = seed_challenges(session)
     ch = challenges[0]
+    sid = as_guest(client, "guest-retry-123")
 
     sub_initial = Submission(
         challenge_id=ch.id,
-        session_id="guest-retry-123",
+        session_id=sid,
         score=50,
         comments="First attempt",
         flagged_lines=[1],
     )
     sub_retry = Submission(
         challenge_id=ch.id,
-        session_id="guest-retry-123",
+        session_id=sid,
         score=90,
         comments="Second attempt was much better",
         flagged_lines=[1, 2],
@@ -117,10 +124,7 @@ def test_get_user_progress_best_score_supersedes_earlier_attempt(
     session.add_all([sub_initial, sub_retry])
     session.commit()
 
-    res = client.get(
-        "/api/user/progress",
-        headers={"X-Diffly-Session-Id": "guest-retry-123"},
-    )
+    res = client.get("/api/user/progress")
     assert res.status_code == 200
     data = res.json()
 
@@ -129,16 +133,19 @@ def test_get_user_progress_best_score_supersedes_earlier_attempt(
     assert data["average_score"] == 90.0
 
 
-def test_get_user_progress_streak_calculation(client: TestClient, session: Session):
+def test_get_user_progress_streak_calculation(
+    client: TestClient, session: Session, as_guest
+):
     """Streak accurately counts consecutive active UTC days."""
     challenges = seed_challenges(session)
     ch = challenges[0]
     now = datetime.now(UTC)
+    sid = as_guest(client, "guest-streak-xyz")
 
     # 3 consecutive days: today, yesterday, 2 days ago
     s1 = Submission(
         challenge_id=ch.id,
-        session_id="guest-streak-xyz",
+        session_id=sid,
         score=80,
         comments="Day 0 review",
         flagged_lines=[2],
@@ -146,7 +153,7 @@ def test_get_user_progress_streak_calculation(client: TestClient, session: Sessi
     )
     s2 = Submission(
         challenge_id=ch.id,
-        session_id="guest-streak-xyz",
+        session_id=sid,
         score=80,
         comments="Day -1 review",
         flagged_lines=[2],
@@ -154,7 +161,7 @@ def test_get_user_progress_streak_calculation(client: TestClient, session: Sessi
     )
     s3 = Submission(
         challenge_id=ch.id,
-        session_id="guest-streak-xyz",
+        session_id=sid,
         score=80,
         comments="Day -2 review",
         flagged_lines=[2],
@@ -163,7 +170,7 @@ def test_get_user_progress_streak_calculation(client: TestClient, session: Sessi
     # Day -5 review (broken streak before day -2)
     s4 = Submission(
         challenge_id=ch.id,
-        session_id="guest-streak-xyz",
+        session_id=sid,
         score=80,
         comments="Day -5 review",
         flagged_lines=[2],
@@ -172,26 +179,24 @@ def test_get_user_progress_streak_calculation(client: TestClient, session: Sessi
     session.add_all([s1, s2, s3, s4])
     session.commit()
 
-    res = client.get(
-        "/api/user/progress",
-        headers={"X-Diffly-Session-Id": "guest-streak-xyz"},
-    )
+    res = client.get("/api/user/progress")
     assert res.status_code == 200
     data = res.json()
     assert data["streak_days"] == 3
 
 
 def test_get_user_progress_streak_zero_when_expired(
-    client: TestClient, session: Session
+    client: TestClient, session: Session, as_guest
 ):
     """Streak is zero if no submissions exist for today or yesterday."""
     challenges = seed_challenges(session)
     ch = challenges[0]
     now = datetime.now(UTC)
+    sid = as_guest(client, "guest-expired-streak")
 
     old_sub = Submission(
         challenge_id=ch.id,
-        session_id="guest-expired-streak",
+        session_id=sid,
         score=80,
         comments="Old review from 4 days ago",
         flagged_lines=[1],
@@ -200,45 +205,40 @@ def test_get_user_progress_streak_zero_when_expired(
     session.add(old_sub)
     session.commit()
 
-    res = client.get(
-        "/api/user/progress",
-        headers={"X-Diffly-Session-Id": "guest-expired-streak"},
-    )
+    res = client.get("/api/user/progress")
     assert res.status_code == 200
     assert res.json()["streak_days"] == 0
 
 
 def test_claim_session_requires_auth(client: TestClient, session: Session):
     """POST /api/user/claim-session rejects unauthenticated requests with 401."""
-    res = client.post(
-        "/api/user/claim-session",
-        json={"session_id": "guest-anonymous-111"},
-    )
+    res = client.post("/api/user/claim-session", json={})
     assert res.status_code == 401
     assert "detail" in res.json()
 
 
-def test_claim_session_missing_session_id(register_user, login_as):
-    """POST /api/user/claim-session without session_id returns 400."""
+def test_claim_session_missing_guest_cookie(register_user, login_as):
+    """POST /api/user/claim-session without signed guest cookie returns 400."""
     register_user("claim_tester")
     auth_client = login_as("claim_tester")
 
     res = auth_client.post("/api/user/claim-session", json={})
     assert res.status_code == 400
-    assert "session_id is required" in res.json()["detail"]
+    assert "guest session cookie" in res.json()["detail"].lower()
 
 
 def test_claim_session_success_and_idempotence(
-    session: Session, register_user, login_as
+    session: Session, register_user, login_as, as_guest
 ):
     """Unclaimed guest submissions transfer to authenticated user idempotently."""
     challenges = seed_challenges(session)
     user = register_user("alice_reviewer")
     auth_client = login_as("alice_reviewer")
+    sid = as_guest(auth_client, "guest-claimable-999")
 
     sub1 = Submission(
         challenge_id=challenges[0].id,
-        session_id="guest-claimable-999",
+        session_id=sid,
         user_id=None,
         score=88,
         comments="Guest review 1",
@@ -246,7 +246,7 @@ def test_claim_session_success_and_idempotence(
     )
     sub2 = Submission(
         challenge_id=challenges[1].id,
-        session_id="guest-claimable-999",
+        session_id=sid,
         user_id=None,
         score=92,
         comments="Guest review 2",
@@ -255,28 +255,26 @@ def test_claim_session_success_and_idempotence(
     session.add_all([sub1, sub2])
     session.commit()
 
-    # Claim guest submissions
-    res = auth_client.post(
-        "/api/user/claim-session",
-        json={"session_id": "guest-claimable-999"},
-    )
+    # Claim guest submissions via signed guest cookie
+    res = auth_client.post("/api/user/claim-session")
     assert res.status_code == 200
     claim_data = res.json()
     assert claim_data["claimed_count"] == 2
     assert claim_data["user_id"] == user["id"]
-    assert claim_data["session_id"] == "guest-claimable-999"
+    assert claim_data["session_id"] == sid
+    assert auth_client.cookies.get(settings.GUEST_COOKIE_NAME) is None
 
-    # Verify DB rows are now linked to user
+    # Verify DB rows are now linked to user and session_id is cleared
     session.refresh(sub1)
     session.refresh(sub2)
     assert sub1.user_id == user["id"]
+    assert sub1.session_id is None
     assert sub2.user_id == user["id"]
+    assert sub2.session_id is None
 
-    # Idempotence: second claim call finds 0 unclaimed rows
-    res_repeat = auth_client.post(
-        "/api/user/claim-session",
-        json={"session_id": "guest-claimable-999"},
-    )
+    # Idempotence: replaying the same signed guest cookie claims 0 rows
+    as_guest(auth_client, sid)
+    res_repeat = auth_client.post("/api/user/claim-session")
     assert res_repeat.status_code == 200
     assert res_repeat.json()["claimed_count"] == 0
 
@@ -289,10 +287,12 @@ def test_claim_session_success_and_idempotence(
     assert user_prog["average_score"] == 90.0
 
 
-def test_claim_session_via_header(session: Session, register_user, login_as):
-    """Claiming also accepts session_id from X-Diffly-Session-Id header."""
+def test_claim_session_rejects_raw_header_and_query(
+    session: Session, register_user, login_as
+):
+    """Claiming rejects unsigned X-Diffly-Session-Id header or query param with 403."""
     challenges = seed_challenges(session)
-    user = register_user("bob_reviewer")
+    register_user("bob_reviewer")
     auth_client = login_as("bob_reviewer")
 
     sub = Submission(
@@ -306,20 +306,23 @@ def test_claim_session_via_header(session: Session, register_user, login_as):
     session.add(sub)
     session.commit()
 
-    res = auth_client.post(
+    res_header = auth_client.post(
         "/api/user/claim-session",
         headers={"X-Diffly-Session-Id": "guest-header-claim"},
     )
-    assert res.status_code == 200
-    assert res.json()["claimed_count"] == 1
-    assert res.json()["session_id"] == "guest-header-claim"
+    assert res_header.status_code == 403
+
+    res_query = auth_client.post(
+        "/api/user/claim-session?session_id=guest-header-claim",
+    )
+    assert res_query.status_code == 403
 
     session.refresh(sub)
-    assert sub.user_id == user["id"]
+    assert sub.user_id is None
 
 
 def test_user_progress_excludes_private_custom_challenges_and_claimed_session_leaks(
-    client: TestClient, session: Session, register_user, login_as
+    client: TestClient, session: Session, register_user, login_as, as_guest
 ):
     """Private challenges do not inflate progress, and claimed sessions don't leak."""
     from backend.models.challenge import Category, Challenge, Difficulty, Language
@@ -328,6 +331,7 @@ def test_user_progress_excludes_private_custom_challenges_and_claimed_session_le
     public_total = len(challenges)
     user = register_user("progress_tester")
     auth_client = login_as("progress_tester")
+    sid = as_guest(auth_client, "guest-prog-sid")
 
     # Create a private custom challenge
     private_ch = Challenge(
@@ -340,7 +344,7 @@ def test_user_progress_excludes_private_custom_challenges_and_claimed_session_le
         code_snippet="x = 1",
         is_public=False,
         user_id=None,
-        session_id="guest-prog-sid",
+        session_id=sid,
     )
     session.add(private_ch)
     session.commit()
@@ -349,7 +353,7 @@ def test_user_progress_excludes_private_custom_challenges_and_claimed_session_le
     # Submit high score on 1 public challenge and 1 private custom challenge
     sub_public = Submission(
         challenge_id=challenges[0].id,
-        session_id="guest-prog-sid",
+        session_id=sid,
         user_id=None,
         score=90,
         comments="Solved public challenge",
@@ -357,7 +361,7 @@ def test_user_progress_excludes_private_custom_challenges_and_claimed_session_le
     )
     sub_private = Submission(
         challenge_id=private_ch.id,
-        session_id="guest-prog-sid",
+        session_id=sid,
         user_id=None,
         score=100,
         comments="Solved private custom challenge",
@@ -367,16 +371,14 @@ def test_user_progress_excludes_private_custom_challenges_and_claimed_session_le
     session.commit()
 
     # Claim session via /api/user/claim-session
-    claim_res = auth_client.post(
-        "/api/user/claim-session",
-        json={"session_id": "guest-prog-sid"},
-    )
+    claim_res = auth_client.post("/api/user/claim-session")
     assert claim_res.status_code == 200
     assert claim_res.json()["claimed_count"] == 3  # 2 submissions + 1 custom challenge
     assert claim_res.json()["claimed_challenges_count"] == 1
 
     session.refresh(private_ch)
     assert private_ch.user_id == user["id"]
+    assert private_ch.session_id is None
 
     # Progress for authenticated user counts only public catalog challenges for mastery
     prog_res = auth_client.get("/api/user/progress")
@@ -388,11 +390,9 @@ def test_user_progress_excludes_private_custom_challenges_and_claimed_session_le
     assert prog_data["average_score"] == 90.0
     assert prog_data["streak_days"] == 1
 
-    # Logged-out visitor with old session_id does not see claimed user's progress
-    anon_prog = client.get(
-        "/api/user/progress",
-        headers={"X-Diffly-Session-Id": "guest-prog-sid"},
-    )
+    # Logged-out visitor with old guest cookie does not see claimed user's progress
+    as_guest(client, sid)
+    anon_prog = client.get("/api/user/progress")
     assert anon_prog.status_code == 200
     assert anon_prog.json()["total_attempted"] == 0
     assert anon_prog.json()["total_solved"] == 0

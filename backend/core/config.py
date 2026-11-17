@@ -65,6 +65,8 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 10080  # 7 days
     AUTH_COOKIE_NAME: str = "diffly_access_token"
+    GUEST_COOKIE_NAME: str = "diffly_guest_session"
+    GUEST_SESSION_MAX_AGE_DAYS: int = 30
     ENVIRONMENT: str = "development"
     NODE_ENV: str = "development"
     PORT: int = 8000

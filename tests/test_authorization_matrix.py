@@ -1,16 +1,18 @@
 """Authorization matrix tests covering every FastAPI route and actor role."""
 
 import json
+import time
 from collections.abc import Callable, Iterator
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import httpx
 from fastapi.testclient import TestClient
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from api.index import app
 from backend.core.config import settings
+from backend.core.guest_session import GuestSession, _encode
 from backend.core.security import create_access_token
 from backend.models.challenge import Category, Challenge, Difficulty, Language
 from backend.models.submission import Submission
@@ -39,6 +41,8 @@ MATRIX: dict[tuple[str, str], dict[str, dict[str, int]]] = {
             "anonymous": 401,
             "guest_a": 401,
             "guest_b": 401,
+            "guest_forged": 401,
+            "guest_tampered": 401,
             "user_a": 200,
             "user_b": 200,
             "inactive": 401,
@@ -49,6 +53,8 @@ MATRIX: dict[tuple[str, str], dict[str, dict[str, int]]] = {
             "anonymous": 200,
             "guest_a": 200,
             "guest_b": 200,
+            "guest_forged": 200,
+            "guest_tampered": 200,
             "user_a": 200,
             "user_b": 200,
             "inactive": 200,
@@ -65,6 +71,8 @@ MATRIX: dict[tuple[str, str], dict[str, dict[str, int]]] = {
             "anonymous": 200,
             "guest_a": 200,
             "guest_b": 200,
+            "guest_forged": 200,
+            "guest_tampered": 200,
             "user_a": 200,
             "user_b": 200,
             "inactive": 200,
@@ -75,6 +83,8 @@ MATRIX: dict[tuple[str, str], dict[str, dict[str, int]]] = {
             "anonymous": 404,
             "guest_a": 404,
             "guest_b": 404,
+            "guest_forged": 404,
+            "guest_tampered": 404,
             "user_a": 200,
             "user_b": 404,
             "inactive": 404,
@@ -83,6 +93,8 @@ MATRIX: dict[tuple[str, str], dict[str, dict[str, int]]] = {
             "anonymous": 404,
             "guest_a": 200,
             "guest_b": 404,
+            "guest_forged": 404,
+            "guest_tampered": 404,
             "user_a": 404,
             "user_b": 404,
             "inactive": 404,
@@ -93,6 +105,8 @@ MATRIX: dict[tuple[str, str], dict[str, dict[str, int]]] = {
             "anonymous": 404,
             "guest_a": 404,
             "guest_b": 404,
+            "guest_forged": 404,
+            "guest_tampered": 404,
             "user_a": 200,
             "user_b": 404,
             "inactive": 404,
@@ -101,6 +115,8 @@ MATRIX: dict[tuple[str, str], dict[str, dict[str, int]]] = {
             "anonymous": 404,
             "guest_a": 200,
             "guest_b": 404,
+            "guest_forged": 404,
+            "guest_tampered": 404,
             "user_a": 404,
             "user_b": 404,
             "inactive": 404,
@@ -109,6 +125,8 @@ MATRIX: dict[tuple[str, str], dict[str, dict[str, int]]] = {
             "anonymous": 200,
             "guest_a": 200,
             "guest_b": 200,
+            "guest_forged": 200,
+            "guest_tampered": 200,
             "user_a": 200,
             "user_b": 200,
             "inactive": 200,
@@ -119,6 +137,8 @@ MATRIX: dict[tuple[str, str], dict[str, dict[str, int]]] = {
             "anonymous": 404,
             "guest_a": 404,
             "guest_b": 404,
+            "guest_forged": 404,
+            "guest_tampered": 404,
             "user_a": 200,
             "user_b": 404,
             "inactive": 404,
@@ -127,6 +147,8 @@ MATRIX: dict[tuple[str, str], dict[str, dict[str, int]]] = {
             "anonymous": 404,
             "guest_a": 200,
             "guest_b": 404,
+            "guest_forged": 404,
+            "guest_tampered": 404,
             "user_a": 404,
             "user_b": 404,
             "inactive": 404,
@@ -137,6 +159,8 @@ MATRIX: dict[tuple[str, str], dict[str, dict[str, int]]] = {
             "anonymous": 404,
             "guest_a": 404,
             "guest_b": 404,
+            "guest_forged": 404,
+            "guest_tampered": 404,
             "user_a": 200,
             "user_b": 404,
             "inactive": 404,
@@ -145,6 +169,8 @@ MATRIX: dict[tuple[str, str], dict[str, dict[str, int]]] = {
             "anonymous": 404,
             "guest_a": 200,
             "guest_b": 404,
+            "guest_forged": 404,
+            "guest_tampered": 404,
             "user_a": 404,
             "user_b": 404,
             "inactive": 404,
@@ -153,6 +179,8 @@ MATRIX: dict[tuple[str, str], dict[str, dict[str, int]]] = {
             "anonymous": 403,
             "guest_a": 200,
             "guest_b": 403,
+            "guest_forged": 403,
+            "guest_tampered": 403,
             "user_a": 200,
             "user_b": 403,
             "inactive": 403,
@@ -163,6 +191,8 @@ MATRIX: dict[tuple[str, str], dict[str, dict[str, int]]] = {
             "anonymous": 404,
             "guest_a": 404,
             "guest_b": 404,
+            "guest_forged": 404,
+            "guest_tampered": 404,
             "user_a": 200,
             "user_b": 404,
             "inactive": 404,
@@ -171,6 +201,8 @@ MATRIX: dict[tuple[str, str], dict[str, dict[str, int]]] = {
             "anonymous": 404,
             "guest_a": 200,
             "guest_b": 404,
+            "guest_forged": 404,
+            "guest_tampered": 404,
             "user_a": 404,
             "user_b": 404,
             "inactive": 404,
@@ -181,6 +213,8 @@ MATRIX: dict[tuple[str, str], dict[str, dict[str, int]]] = {
             "anonymous": 404,
             "guest_a": 404,
             "guest_b": 404,
+            "guest_forged": 404,
+            "guest_tampered": 404,
             "user_a": 200,
             "user_b": 404,
             "inactive": 404,
@@ -189,6 +223,8 @@ MATRIX: dict[tuple[str, str], dict[str, dict[str, int]]] = {
             "anonymous": 404,
             "guest_a": 200,
             "guest_b": 404,
+            "guest_forged": 404,
+            "guest_tampered": 404,
             "user_a": 404,
             "user_b": 404,
             "inactive": 404,
@@ -197,6 +233,8 @@ MATRIX: dict[tuple[str, str], dict[str, dict[str, int]]] = {
             "anonymous": 200,
             "guest_a": 200,
             "guest_b": 200,
+            "guest_forged": 200,
+            "guest_tampered": 200,
             "user_a": 200,
             "user_b": 200,
             "inactive": 200,
@@ -207,6 +245,8 @@ MATRIX: dict[tuple[str, str], dict[str, dict[str, int]]] = {
             "anonymous": 200,
             "guest_a": 200,
             "guest_b": 200,
+            "guest_forged": 200,
+            "guest_tampered": 200,
             "user_a": 200,
             "user_b": 200,
             "inactive": 200,
@@ -217,6 +257,8 @@ MATRIX: dict[tuple[str, str], dict[str, dict[str, int]]] = {
             "anonymous": 401,
             "guest_a": 401,
             "guest_b": 401,
+            "guest_forged": 401,
+            "guest_tampered": 401,
             "user_a": 200,
             "inactive": 401,
         },
@@ -256,11 +298,48 @@ def test_all_app_routes_covered_by_matrix_or_public_allowlist():
         assert reason.strip(), f"PUBLIC_ROUTES entry {route_key} must have a reason"
 
 
+def test_no_route_accepts_raw_guest_session_input():
+    """OpenAPI schema must never declare unsigned X-Diffly-Session-Id/session_id."""
+    schema = app.openapi()
+
+    for path, methods in schema.get("paths", {}).items():
+        for method, op in methods.items():
+            if not isinstance(op, dict):
+                continue
+            for param in op.get("parameters", []):
+                param_name = str(param.get("name", ""))
+                assert param_name.lower() != "x-diffly-session-id", (
+                    f"{method.upper()} {path} still accepts X-Diffly-Session-Id header"
+                )
+                assert param_name.lower() != "session_id", (
+                    f"{method.upper()} {path} still accepts session_id parameter"
+                )
+
+            req_body = op.get("requestBody", {})
+            for media in req_body.get("content", {}).values():
+                body_schema = media.get("schema", {})
+                ref = body_schema.get("$ref")
+                if ref and ref.startswith("#/components/schemas/"):
+                    comp_name = ref.split("/")[-1]
+                    comp = (
+                        schema.get("components", {})
+                        .get("schemas", {})
+                        .get(comp_name, {})
+                    )
+                    props = comp.get("properties", {})
+                else:
+                    props = body_schema.get("properties", {})
+                assert "session_id" not in props, (
+                    f"{method.upper()} {path} request body still accepts session_id"
+                )
+
+
 def _make_actors(
     session: Session,
     client_factory: Callable[[], TestClient],
     register_user: Callable[..., dict[str, Any]],
     login_as: Callable[..., TestClient],
+    as_guest: Callable[[TestClient, str | None], str],
 ) -> tuple[dict[str, tuple[TestClient, dict[str, str]]], dict[str, Any]]:
     user_a = register_user("matrix_user_a")
     user_b = register_user("matrix_user_b")
@@ -268,6 +347,21 @@ def _make_actors(
 
     client_a = login_as("matrix_user_a")
     client_b = login_as("matrix_user_b")
+
+    guest_a_client = client_factory()
+    guest_a_sid = as_guest(guest_a_client, "matrix-guest-a")
+
+    guest_b_client = client_factory()
+    guest_b_sid = as_guest(guest_b_client, "matrix-guest-b")
+
+    guest_forged_client = client_factory()
+
+    guest_tampered_client = client_factory()
+    guest_tampered_client.cookies.set(
+        settings.GUEST_COOKIE_NAME,
+        f"v1.{guest_a_sid}.{int(time.time())}.tampered_signature",
+        domain="testserver.local",
+    )
 
     inactive_client = client_factory()
     inactive_token = create_access_token(
@@ -277,7 +371,9 @@ def _make_actors(
             "email": inactive_data["email"],
         }
     )
-    inactive_client.cookies.set(settings.AUTH_COOKIE_NAME, inactive_token)
+    inactive_client.cookies.set(
+        settings.AUTH_COOKIE_NAME, inactive_token, domain="testserver.local"
+    )
     db_inactive = session.get(User, inactive_data["id"])
     assert db_inactive is not None
     db_inactive.is_active = False
@@ -286,8 +382,10 @@ def _make_actors(
 
     actors: dict[str, tuple[TestClient, dict[str, str]]] = {
         "anonymous": (client_factory(), {}),
-        "guest_a": (client_factory(), {"X-Diffly-Session-Id": "matrix-guest-a"}),
-        "guest_b": (client_factory(), {"X-Diffly-Session-Id": "matrix-guest-b"}),
+        "guest_a": (guest_a_client, {}),
+        "guest_b": (guest_b_client, {}),
+        "guest_forged": (guest_forged_client, {"X-Diffly-Session-Id": guest_a_sid}),
+        "guest_tampered": (guest_tampered_client, {}),
         "user_a": (client_a, {}),
         "user_b": (client_b, {}),
         "inactive": (inactive_client, {}),
@@ -296,8 +394,8 @@ def _make_actors(
         "user_a": user_a,
         "user_b": user_b,
         "inactive": inactive_data,
-        "guest_a_sid": "matrix-guest-a",
-        "guest_b_sid": "matrix-guest-b",
+        "guest_a_sid": guest_a_sid,
+        "guest_b_sid": guest_b_sid,
     }
     return actors, meta
 
@@ -434,9 +532,12 @@ def test_authorization_matrix_enforcement(
     client_factory: Callable[[], TestClient],
     register_user: Callable[..., dict[str, Any]],
     login_as: Callable[..., TestClient],
+    as_guest: Callable[[TestClient, str | None], str],
 ):
     """Verify allow/deny/404 isolation across all actors and protected resources."""
-    actors, meta = _make_actors(session, client_factory, register_user, login_as)
+    actors, meta = _make_actors(
+        session, client_factory, register_user, login_as, as_guest
+    )
     public_ch, user_a_private, guest_a_private = _seed_matrix_resources(
         session, meta["user_a"]["id"], meta["guest_a_sid"]
     )
@@ -602,77 +703,50 @@ def test_authorization_matrix_enforcement(
         if expected == 200:
             continue
         ac, headers = actors[actor_name]
-        res = ac.post(
-            "/api/user/claim-session",
-            json={"session_id": meta["guest_a_sid"]},
-            headers=headers,
-        )
+        res = ac.post("/api/user/claim-session", headers=headers)
         assert res.status_code == expected, f"claim <- {actor_name}"
 
-    claim_res = actors["user_a"][0].post(
-        "/api/user/claim-session",
-        json={"session_id": meta["guest_a_sid"]},
+    saved_guest_a_cookie = actors["guest_a"][0].cookies.get(settings.GUEST_COOKIE_NAME)
+    assert saved_guest_a_cookie is not None
+    actors["user_a"][0].cookies.set(
+        settings.GUEST_COOKIE_NAME, saved_guest_a_cookie, domain="testserver.local"
     )
+
+    claim_res = actors["user_a"][0].post("/api/user/claim-session")
     assert claim_res.status_code == 200
     assert claim_res.json()["claimed_challenges_count"] == 1
+    assert actors["user_a"][0].cookies.get(settings.GUEST_COOKIE_NAME) is None
 
-    # After claim, old guest_a_sid no longer exposes data to guest_a, anon, or user_b
+    # Re-apply pre-claim Guest A cookie to ensure claimed rows cannot be accessed
     for snooper_name in ("anonymous", "guest_a", "user_b", "inactive"):
         ac, _ = actors[snooper_name]
-        stale_headers = {"X-Diffly-Session-Id": meta["guest_a_sid"]}
-
-        assert (
-            ac.get("/api/challenges/custom", headers=stale_headers).json()["items"]
-            == []
-        )
-        assert (
-            ac.get(
-                f"/api/challenges/{guest_a_private.slug}", headers=stale_headers
-            ).status_code
-            == 404
-        )
-        assert (
-            ac.get(
-                f"/api/challenges/{guest_a_private.slug}/hints", headers=stale_headers
-            ).status_code
-            == 404
-        )
-        assert (
-            ac.get(
-                f"/api/challenges/{guest_a_private.slug}/solution?reveal=true",
-                headers=stale_headers,
-            ).status_code
-            == 404
-        )
-        assert (
-            ac.get(
-                f"/api/challenges/{guest_a_private.slug}/submissions",
-                headers=stale_headers,
-            ).status_code
-            == 404
-        )
-        assert (
-            ac.delete(
-                f"/api/challenges/custom/{guest_a_private.slug}",
-                headers=stale_headers,
-            ).status_code
-            == 404
-        )
-        assert (
-            ac.get(
-                f"/api/challenges/{public_ch.slug}/submissions",
-                headers=stale_headers,
-            ).json()
-            == []
-        )
-        assert (
-            ac.get("/api/user/progress", headers=stale_headers).json()[
-                "total_attempted"
-            ]
-            == 0
+        ac.cookies.set(
+            settings.GUEST_COOKIE_NAME, saved_guest_a_cookie, domain="testserver.local"
         )
 
-    # User A now owns both private challenges and can delete them; Guest A cannot
+        assert ac.get("/api/challenges/custom").json()["items"] == []
+        assert ac.get(f"/api/challenges/{guest_a_private.slug}").status_code == 404
+        assert (
+            ac.get(f"/api/challenges/{guest_a_private.slug}/hints").status_code == 404
+        )
+        assert (
+            ac.get(
+                f"/api/challenges/{guest_a_private.slug}/solution?reveal=true"
+            ).status_code
+            == 404
+        )
+        assert (
+            ac.get(f"/api/challenges/{guest_a_private.slug}/submissions").status_code
+            == 404
+        )
+        assert (
+            ac.delete(f"/api/challenges/custom/{guest_a_private.slug}").status_code
+            == 404
+        )
+        assert ac.get(f"/api/challenges/{public_ch.slug}/submissions").json() == []
+        assert ac.get("/api/user/progress").json()["total_attempted"] == 0
+
+    # User A now owns both private challenges and can delete them
     assert (
         actors["user_a"][0]
         .delete(f"/api/challenges/custom/{user_a_private.slug}")
@@ -694,6 +768,7 @@ def test_generate_custom_challenge_owner_isolation(
     client_factory: Callable[[], TestClient],
     register_user: Callable[..., dict[str, Any]],
     login_as: Callable[..., TestClient],
+    as_guest: Callable[[TestClient, str | None], str],
 ):
     """Custom challenges created via generate-custom are scoped to their creator."""
     sample_output = {
@@ -731,7 +806,7 @@ def test_generate_custom_challenge_owner_isolation(
         status_code=200, json=gemini_payload, request=request
     )
 
-    actors, _ = _make_actors(session, client_factory, register_user, login_as)
+    actors, _ = _make_actors(session, client_factory, register_user, login_as, as_guest)
 
     for creator_name in ("user_a", "guest_a"):
         creator_client, creator_headers = actors[creator_name]
@@ -770,14 +845,17 @@ def test_generate_custom_challenge_owner_isolation(
             )
 
 
-def test_authenticated_actor_ignores_unclaimed_guest_session_header(
+def test_authenticated_actor_ignores_unclaimed_guest_session_cookie_and_header(
     session: Session,
     client_factory: Callable[[], TestClient],
     register_user: Callable[..., dict[str, Any]],
     login_as: Callable[..., TestClient],
+    as_guest: Callable[[TestClient, str | None], str],
 ):
-    """Authenticated users must not access unclaimed guest records via header."""
-    actors, meta = _make_actors(session, client_factory, register_user, login_as)
+    """Authenticated users win over guest cookies and ignore raw session headers."""
+    actors, meta = _make_actors(
+        session, client_factory, register_user, login_as, as_guest
+    )
     _, _, guest_a_private = _seed_matrix_resources(
         session, meta["user_a"]["id"], meta["guest_a_sid"]
     )
@@ -785,6 +863,11 @@ def test_authenticated_actor_ignores_unclaimed_guest_session_header(
     guest_headers = {"X-Diffly-Session-Id": meta["guest_a_sid"]}
 
     user_b_client, _ = actors["user_b"]
+    user_b_client.cookies.set(
+        settings.GUEST_COOKIE_NAME,
+        _encode(GuestSession(id=meta["guest_a_sid"], issued_at=int(time.time()))),
+        domain="testserver.local",
+    )
     assert (
         user_b_client.get("/api/challenges/custom", headers=guest_headers).json()[
             "items"
@@ -874,6 +957,78 @@ def test_raw_guest_session_hijack_rejected_on_claim(
     )
     assert claim_res.status_code == 403
 
+    tampered_client = login_as("hijack_attacker")
+    tampered_client.cookies.set(
+        settings.GUEST_COOKIE_NAME,
+        f"v1.{victim_sid}.{int(time.time())}.invalid_sig",
+        domain="testserver.local",
+    )
+    tampered_res = tampered_client.post("/api/user/claim-session")
+    assert tampered_res.status_code == 403
+
     session.refresh(victim_challenge)
     assert victim_challenge.user_id is None
     assert victim_challenge.session_id == victim_sid
+
+
+def test_claimed_rows_have_null_session_id(
+    session: Session,
+    client_factory: Callable[[], TestClient],
+    register_user: Callable[..., dict[str, Any]],
+    login_as: Callable[..., TestClient],
+    as_guest: Callable[[TestClient, str | None], str],
+):
+    """Claiming guest challenges and submissions sets user_id and clears session_id."""
+    guest_sid = "g_null_session_id_verify"
+    pub = Challenge(
+        slug="null-sid-pub",
+        title="Null SID Pub",
+        difficulty=Difficulty.EASY,
+        category=Category.SECURITY,
+        language=Language.PYTHON,
+        description="Public",
+        code_snippet="x = 1",
+        is_public=True,
+    )
+    priv = Challenge(
+        slug="null-sid-priv",
+        title="Null SID Priv",
+        difficulty=Difficulty.EASY,
+        category=Category.SECURITY,
+        language=Language.PYTHON,
+        description="Private",
+        code_snippet="x = 1",
+        is_public=False,
+        user_id=None,
+        session_id=guest_sid,
+    )
+    session.add_all([pub, priv])
+    session.commit()
+    session.refresh(pub)
+    session.refresh(priv)
+
+    sub = Submission(
+        challenge_id=pub.id,
+        user_id=None,
+        session_id=guest_sid,
+        flagged_lines=[1],
+        comments="Guest review",
+        score=85,
+    )
+    session.add(sub)
+    session.commit()
+
+    user = register_user("null_sid_owner")
+    auth_client = login_as("null_sid_owner")
+    as_guest(auth_client, guest_sid)
+
+    res = auth_client.post("/api/user/claim-session")
+    assert res.status_code == 200
+    assert res.json()["claimed_count"] == 2
+
+    claimed_ch = session.exec(select(Challenge).where(Challenge.id == priv.id)).one()
+    claimed_sub = session.exec(select(Submission).where(Submission.id == sub.id)).one()
+    assert claimed_ch.user_id == user["id"]
+    assert claimed_ch.session_id is None
+    assert claimed_sub.user_id == user["id"]
+    assert claimed_sub.session_id is None

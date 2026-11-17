@@ -223,10 +223,7 @@ def provision_guest_custom_challenge(
     if gemini_key:
         res = client.post(
             "/api/challenges/generate-custom",
-            headers={
-                "X-Diffly-Session-Id": guest_session_id,
-                "X-Gemini-Key": gemini_key,
-            },
+            headers={"X-Gemini-Key": gemini_key},
             json={
                 "topic": f"SQLite query ownership check {run_id}",
                 "language": "python",
@@ -303,10 +300,17 @@ def deactivate_user_in_db(db_url: str, username: str) -> None:
         db.commit()
 
 
+def _response_clears_guest_cookie(response: httpx.Response) -> bool:
+    set_cookies = response.headers.get_list("set-cookie")
+    return any(
+        header.startswith("diffly_guest_session=")
+        and ('diffly_guest_session=""' in header or "Max-Age=0" in header)
+        for header in set_cookies
+    )
+
+
 def run_auth_isolation(runner: VerificationRunner) -> None:
     run_id = uuid4().hex[:8]
-    guest_a_sid = f"guest-a-{run_id}"
-    guest_b_sid = f"guest-b-{run_id}"
     user_a_creds = {
         "email": f"user_a_{run_id}@example.com",
         "username": f"user_a_{run_id}",
@@ -325,6 +329,8 @@ def run_auth_isolation(runner: VerificationRunner) -> None:
 
     with (
         httpx.Client(base_url=runner.base_url, timeout=15.0) as anon,
+        httpx.Client(base_url=runner.base_url, timeout=15.0) as guest_a,
+        httpx.Client(base_url=runner.base_url, timeout=15.0) as guest_b,
         httpx.Client(base_url=runner.base_url, timeout=15.0) as client_a,
         httpx.Client(base_url=runner.base_url, timeout=15.0) as client_b,
         httpx.Client(base_url=runner.base_url, timeout=15.0) as client_inactive,
@@ -340,9 +346,8 @@ def run_auth_isolation(runner: VerificationRunner) -> None:
         )
         public_slug = ch_data[0]["slug"]
 
-        sub_res = anon.post(
+        sub_res = guest_a.post(
             f"/api/challenges/{public_slug}/review",
-            headers={"X-Diffly-Session-Id": guest_a_sid},
             json={
                 "flagged_lines": [1],
                 "comments": (
@@ -350,29 +355,35 @@ def run_auth_isolation(runner: VerificationRunner) -> None:
                 ),
             },
         )
-        runner.check_response(
+        sub_data = runner.check_response(
             step="guest_a_submit_review",
             actor="guest_a",
             response=sub_res,
             expected_status=200,
-            assertion="Guest A submits review using X-Diffly-Session-Id",
-            predicate=lambda d, _: (
+            assertion=(
+                "Guest A submits review and gets signed diffly_guest_session cookie"
+            ),
+            predicate=lambda d, r: (
                 isinstance(d, dict)
                 and d.get("submission_id", 0) > 0
-                and d.get("session_id") == guest_a_sid
+                and str(d.get("session_id", "")).startswith("g_")
+                and "diffly_guest_session" in r.cookies
             ),
         )
+        guest_a_sid = str(sub_data.get("session_id", ""))
+        saved_guest_a_cookie = guest_a.cookies.get("diffly_guest_session") or ""
+        if not guest_a_sid or not saved_guest_a_cookie:
+            raise RuntimeError(
+                "Guest A review did not mint signed guest session cookie"
+            )
 
         custom_slug, setup_mode = provision_guest_custom_challenge(
-            runner, anon, guest_a_sid, run_id
+            runner, guest_a, guest_a_sid, run_id
         )
         runner.metadata["custom_challenge_setup"] = setup_mode
         runner.metadata["custom_challenge_slug"] = custom_slug
 
-        ga_custom_res = anon.get(
-            "/api/challenges/custom",
-            headers={"X-Diffly-Session-Id": guest_a_sid},
-        )
+        ga_custom_res = guest_a.get("/api/challenges/custom")
         runner.check_response(
             step="guest_a_reads_own_custom_challenges",
             actor="guest_a",
@@ -384,23 +395,17 @@ def run_auth_isolation(runner: VerificationRunner) -> None:
             ),
         )
 
-        ga_hist_res = anon.get(
-            f"/api/challenges/{public_slug}/submissions",
-            headers={"X-Diffly-Session-Id": guest_a_sid},
-        )
+        ga_hist_res = guest_a.get(f"/api/challenges/{public_slug}/submissions")
         runner.check_response(
             step="guest_a_reads_own_history",
             actor="guest_a",
             response=ga_hist_res,
             expected_status=200,
-            assertion="Guest A reads own submission history",
+            assertion="Guest A reads own submission history via signed guest cookie",
             predicate=lambda d, _: isinstance(d, list) and len(d) == 1,
         )
 
-        ga_prog_res = anon.get(
-            "/api/user/progress",
-            headers={"X-Diffly-Session-Id": guest_a_sid},
-        )
+        ga_prog_res = guest_a.get("/api/user/progress")
         runner.check_response(
             step="guest_a_reads_own_progress",
             actor="guest_a",
@@ -410,10 +415,7 @@ def run_auth_isolation(runner: VerificationRunner) -> None:
             predicate=lambda d, _: d.get("total_attempted") == 1,
         )
 
-        gb_hist_res = anon.get(
-            f"/api/challenges/{public_slug}/submissions",
-            headers={"X-Diffly-Session-Id": guest_b_sid},
-        )
+        gb_hist_res = guest_b.get(f"/api/challenges/{public_slug}/submissions")
         runner.check_response(
             step="guest_b_isolated_from_guest_a_history",
             actor="guest_b",
@@ -423,10 +425,7 @@ def run_auth_isolation(runner: VerificationRunner) -> None:
             predicate=lambda d, _: isinstance(d, list) and len(d) == 0,
         )
 
-        gb_prog_res = anon.get(
-            "/api/user/progress",
-            headers={"X-Diffly-Session-Id": guest_b_sid},
-        )
+        gb_prog_res = guest_b.get("/api/user/progress")
         runner.check_response(
             step="guest_b_isolated_from_guest_a_progress",
             actor="guest_b",
@@ -436,10 +435,7 @@ def run_auth_isolation(runner: VerificationRunner) -> None:
             predicate=lambda d, _: d.get("total_attempted") == 0,
         )
 
-        gb_custom_res = anon.get(
-            "/api/challenges/custom",
-            headers={"X-Diffly-Session-Id": guest_b_sid},
-        )
+        gb_custom_res = guest_b.get("/api/challenges/custom")
         runner.check_response(
             step="guest_b_isolated_from_guest_a_custom_challenges",
             actor="guest_b",
@@ -449,22 +445,83 @@ def run_auth_isolation(runner: VerificationRunner) -> None:
             predicate=lambda d, _: d.get("total") == 0 and d.get("items") == [],
         )
 
-        reg_a_res = client_a.post(
-            "/api/auth/register",
+        forged_hdr_hist = anon.get(
+            f"/api/challenges/{public_slug}/submissions",
             headers={"X-Diffly-Session-Id": guest_a_sid},
-            json={**user_a_creds, "session_id": guest_a_sid},
         )
+        runner.check_response(
+            step="forged_header_ignored_on_history",
+            actor="attacker_forged_header",
+            response=forged_hdr_hist,
+            expected_status=200,
+            assertion="Forged X-Diffly-Session-Id header cannot read Guest A history",
+            predicate=lambda d, _: isinstance(d, list) and len(d) == 0,
+        )
+
+        forged_hdr_prog = anon.get(
+            "/api/user/progress",
+            headers={"X-Diffly-Session-Id": guest_a_sid},
+        )
+        runner.check_response(
+            step="forged_header_ignored_on_progress",
+            actor="attacker_forged_header",
+            response=forged_hdr_prog,
+            expected_status=200,
+            assertion="Forged X-Diffly-Session-Id header cannot read Guest A progress",
+            predicate=lambda d, _: d.get("total_attempted") == 0,
+        )
+
+        forged_hdr_custom = anon.get(
+            "/api/challenges/custom",
+            headers={"X-Diffly-Session-Id": guest_a_sid},
+        )
+        runner.check_response(
+            step="forged_header_ignored_on_custom_challenges",
+            actor="attacker_forged_header",
+            response=forged_hdr_custom,
+            expected_status=200,
+            assertion=(
+                "Forged X-Diffly-Session-Id header cannot read Guest A custom items"
+            ),
+            predicate=lambda d, _: d.get("total") == 0 and d.get("items") == [],
+        )
+
+        tampered_cookie = f"{saved_guest_a_cookie}tampered"
+        tampered_prog = anon.get(
+            "/api/user/progress",
+            cookies={"diffly_guest_session": tampered_cookie},
+        )
+        runner.check_response(
+            step="tampered_guest_cookie_ignored_and_cleared",
+            actor="attacker_tampered_cookie",
+            response=tampered_prog,
+            expected_status=200,
+            assertion=(
+                "Tampered diffly_guest_session cookie yields empty progress and clears"
+            ),
+            predicate=lambda d, r: (
+                d.get("total_attempted") == 0 and _response_clears_guest_cookie(r)
+            ),
+        )
+        anon.cookies.clear()
+
+        base_host = httpx.URL(runner.base_url).host or ""
+        client_a.cookies.set(
+            "diffly_guest_session", saved_guest_a_cookie, domain=base_host
+        )
+        reg_a_res = client_a.post("/api/auth/register", json=user_a_creds)
         reg_a_data = runner.check_response(
             step="user_a_register_and_claim",
             actor="user_a",
             response=reg_a_res,
             expected_status=200,
             assertion=(
-                "User A registers, claims Guest A session, and receives auth cookie"
+                "User A registers, claims Guest A cookie, and receives auth cookie"
             ),
             predicate=lambda d, r: (
                 d.get("username") == user_a_creds["username"]
                 and "diffly_access_token" in r.cookies
+                and _response_clears_guest_cookie(r)
             ),
         )
         user_a_id = reg_a_data["id"]
@@ -513,50 +570,49 @@ def run_auth_isolation(runner: VerificationRunner) -> None:
 
         old_hist_res = anon.get(
             f"/api/challenges/{public_slug}/submissions",
-            headers={"X-Diffly-Session-Id": guest_a_sid},
+            cookies={"diffly_guest_session": saved_guest_a_cookie},
         )
         runner.check_response(
-            step="old_session_exposes_no_claimed_history",
-            actor="third_party_with_old_session",
+            step="old_cookie_exposes_no_claimed_history",
+            actor="third_party_with_old_cookie",
             response=old_hist_res,
             expected_status=200,
             assertion=(
-                "Old Guest A session ID exposes no submission history after claim"
+                "Old Guest A signed cookie exposes no submission history after claim"
             ),
             predicate=lambda d, _: isinstance(d, list) and len(d) == 0,
         )
 
         old_prog_res = anon.get(
             "/api/user/progress",
-            headers={"X-Diffly-Session-Id": guest_a_sid},
+            cookies={"diffly_guest_session": saved_guest_a_cookie},
         )
         runner.check_response(
-            step="old_session_exposes_no_claimed_progress",
-            actor="third_party_with_old_session",
+            step="old_cookie_exposes_no_claimed_progress",
+            actor="third_party_with_old_cookie",
             response=old_prog_res,
             expected_status=200,
-            assertion="Old Guest A session ID exposes no progress after claim",
+            assertion="Old Guest A signed cookie exposes no progress after claim",
             predicate=lambda d, _: d.get("total_attempted") == 0,
         )
 
         old_custom_res = anon.get(
             "/api/challenges/custom",
-            headers={"X-Diffly-Session-Id": guest_a_sid},
+            cookies={"diffly_guest_session": saved_guest_a_cookie},
         )
         runner.check_response(
-            step="old_session_exposes_no_claimed_custom_challenges",
-            actor="third_party_with_old_session",
+            step="old_cookie_exposes_no_claimed_custom_challenges",
+            actor="third_party_with_old_cookie",
             response=old_custom_res,
             expected_status=200,
-            assertion="Old Guest A session ID exposes no custom challenges after claim",
+            assertion=(
+                "Old Guest A signed cookie exposes no custom challenges after claim"
+            ),
             predicate=lambda d, _: d.get("total") == 0 and d.get("items") == [],
         )
+        anon.cookies.clear()
 
-        reg_b_res = client_b.post(
-            "/api/auth/register",
-            headers={"X-Diffly-Session-Id": guest_b_sid},
-            json={**user_b_creds, "session_id": guest_b_sid},
-        )
+        reg_b_res = client_b.post("/api/auth/register", json=user_b_creds)
         runner.check_response(
             step="user_b_register",
             actor="user_b",
@@ -569,10 +625,40 @@ def run_auth_isolation(runner: VerificationRunner) -> None:
             ),
         )
 
-        hijack_res = client_b.post(
+        forged_claim_res = client_b.post(
             "/api/user/claim-session",
             headers={"X-Diffly-Session-Id": guest_a_sid},
-            json={"session_id": guest_a_sid},
+            json={},
+        )
+        runner.check_response(
+            step="user_b_forged_header_claim_rejected",
+            actor="user_b",
+            response=forged_claim_res,
+            expected_status=403,
+            assertion=(
+                "POST /api/user/claim-session rejects forged session header with 403"
+            ),
+        )
+
+        tampered_claim_res = client_b.post(
+            "/api/user/claim-session",
+            cookies={"diffly_guest_session": tampered_cookie},
+            json={},
+        )
+        runner.check_response(
+            step="user_b_tampered_cookie_claim_rejected",
+            actor="user_b",
+            response=tampered_claim_res,
+            expected_status=403,
+            assertion=(
+                "POST /api/user/claim-session rejects tampered guest cookie with 403"
+            ),
+        )
+
+        hijack_res = client_b.post(
+            "/api/user/claim-session",
+            cookies={"diffly_guest_session": saved_guest_a_cookie},
+            json={},
         )
         runner.check_response(
             step="user_b_cannot_reclaim_old_guest_a_session",
@@ -580,39 +666,42 @@ def run_auth_isolation(runner: VerificationRunner) -> None:
             response=hijack_res,
             expected_status=200,
             assertion=(
-                "User B claim-session on already-claimed Guest A session claims 0 items"
+                "User B claim-session on already-claimed Guest A cookie claims 0 items"
             ),
             predicate=lambda d, _: (
                 d.get("claimed_count") == 0 and d.get("claimed_challenges_count") == 0
             ),
         )
+        client_b.cookies.delete("diffly_guest_session")
 
         ub_hist_res = client_b.get(
             f"/api/challenges/{public_slug}/submissions",
+            cookies={"diffly_guest_session": saved_guest_a_cookie},
             headers={"X-Diffly-Session-Id": guest_a_sid},
         )
         runner.check_response(
-            step="user_b_cannot_see_user_a_history_even_with_old_sid",
+            step="user_b_cannot_see_user_a_history_even_with_old_cookie",
             actor="user_b",
             response=ub_hist_res,
             expected_status=200,
             assertion=(
-                "User B cannot see User A submissions even with old Guest A session ID"
+                "User B cannot see User A submissions even with old Guest A cookie"
             ),
             predicate=lambda d, _: isinstance(d, list) and len(d) == 0,
         )
 
         ub_prog_res = client_b.get(
             "/api/user/progress",
+            cookies={"diffly_guest_session": saved_guest_a_cookie},
             headers={"X-Diffly-Session-Id": guest_a_sid},
         )
         runner.check_response(
-            step="user_b_cannot_see_user_a_progress_even_with_old_sid",
+            step="user_b_cannot_see_user_a_progress_even_with_old_cookie",
             actor="user_b",
             response=ub_prog_res,
             expected_status=200,
             assertion=(
-                "User B cannot see User A progress even with old Guest A session ID"
+                "User B cannot see User A progress even with old Guest A cookie/header"
             ),
             predicate=lambda d, _: d.get("total_attempted") == 0,
         )
@@ -795,8 +884,6 @@ def run_auth_isolation(runner: VerificationRunner) -> None:
 
 def run_challenge_ownership(runner: VerificationRunner) -> None:
     run_id = uuid4().hex[:8]
-    guest_a_sid = f"guest-owner-a-{run_id}"
-    guest_b_sid = f"guest-owner-b-{run_id}"
     user_a_creds = {
         "email": f"owner_a_{run_id}@example.com",
         "username": f"owner_a_{run_id}",
@@ -810,12 +897,13 @@ def run_challenge_ownership(runner: VerificationRunner) -> None:
 
     with (
         httpx.Client(base_url=runner.base_url, timeout=15.0) as anon,
+        httpx.Client(base_url=runner.base_url, timeout=15.0) as guest_a,
+        httpx.Client(base_url=runner.base_url, timeout=15.0) as guest_b,
         httpx.Client(base_url=runner.base_url, timeout=15.0) as client_a,
         httpx.Client(base_url=runner.base_url, timeout=15.0) as client_b,
     ):
-        missing_key_res = anon.post(
+        missing_key_res = guest_a.post(
             "/api/challenges/generate-custom",
-            headers={"X-Diffly-Session-Id": guest_a_sid},
             json={
                 "topic": "Unauthorized generation check",
                 "language": "python",
@@ -830,23 +918,35 @@ def run_challenge_ownership(runner: VerificationRunner) -> None:
             assertion=(
                 "POST /api/challenges/generate-custom rejects missing key with 401"
             ),
+            predicate=lambda _, r: "diffly_guest_session" not in r.cookies,
         )
 
+        guest_a_sid = ""
+        if not os.environ.get("GEMINI_API_KEY", "").strip():
+            pub_list = anon.get("/api/challenges").json()
+            seed_slug = pub_list[0]["slug"]
+            mint_res = guest_a.post(
+                f"/api/challenges/{seed_slug}/review",
+                json={"flagged_lines": [1], "comments": "Mint guest cookie."},
+            )
+            if mint_res.status_code != 200:
+                raise RuntimeError("Failed to mint server-signed guest cookie")
+            guest_a_sid = str(mint_res.json().get("session_id", ""))
+
         custom_slug, setup_mode = provision_guest_custom_challenge(
-            runner, anon, guest_a_sid, run_id
+            runner, guest_a, guest_a_sid, run_id
         )
         runner.metadata["custom_challenge_setup"] = setup_mode
         runner.metadata["custom_challenge_slug"] = custom_slug
 
-        ga_eval_res = anon.post(
+        ga_eval_res = guest_a.post(
             f"/api/challenges/{custom_slug}/review",
-            headers={"X-Diffly-Session-Id": guest_a_sid},
             json={
                 "flagged_lines": [2],
                 "comments": "Missing ownership authorization check (IDOR) on line 2.",
             },
         )
-        runner.check_response(
+        ga_eval_data = runner.check_response(
             step="guest_a_evaluates_own_custom_challenge",
             actor="guest_a",
             response=ga_eval_res,
@@ -854,6 +954,10 @@ def run_challenge_ownership(runner: VerificationRunner) -> None:
             assertion="Guest A evaluates own private custom challenge via /review",
             predicate=lambda d, _: d.get("submission_id", 0) > 0,
         )
+        guest_a_sid = str(ga_eval_data.get("session_id", guest_a_sid))
+        saved_guest_a_cookie = guest_a.cookies.get("diffly_guest_session") or ""
+        if not guest_a_sid or not saved_guest_a_cookie:
+            raise RuntimeError("Guest A missing signed guest cookie for ownership test")
 
         pub_res = anon.get("/api/challenges")
         runner.check_response(
@@ -867,10 +971,7 @@ def run_challenge_ownership(runner: VerificationRunner) -> None:
             predicate=lambda d, _: all(item.get("slug") != custom_slug for item in d),
         )
 
-        gb_list_res = anon.get(
-            "/api/challenges/custom",
-            headers={"X-Diffly-Session-Id": guest_b_sid},
-        )
+        gb_list_res = guest_b.get("/api/challenges/custom")
         runner.check_response(
             step="guest_b_cannot_list_guest_a_custom_challenge",
             actor="guest_b",
@@ -882,10 +983,7 @@ def run_challenge_ownership(runner: VerificationRunner) -> None:
             ),
         )
 
-        gb_get_res = anon.get(
-            f"/api/challenges/{custom_slug}",
-            headers={"X-Diffly-Session-Id": guest_b_sid},
-        )
+        gb_get_res = guest_b.get(f"/api/challenges/{custom_slug}")
         runner.check_response(
             step="guest_b_cannot_read_guest_a_custom_challenge",
             actor="guest_b",
@@ -894,9 +992,8 @@ def run_challenge_ownership(runner: VerificationRunner) -> None:
             assertion="Guest B gets 404 reading Guest A custom challenge detail",
         )
 
-        gb_eval_res = anon.post(
+        gb_eval_res = guest_b.post(
             f"/api/challenges/{custom_slug}/review",
-            headers={"X-Diffly-Session-Id": guest_b_sid},
             json={
                 "flagged_lines": [2],
                 "comments": "Unauthorized review attempt by Guest B.",
@@ -910,10 +1007,7 @@ def run_challenge_ownership(runner: VerificationRunner) -> None:
             assertion="Guest B gets 404 evaluating Guest A custom challenge",
         )
 
-        gb_del_res = anon.delete(
-            f"/api/challenges/custom/{custom_slug}",
-            headers={"X-Diffly-Session-Id": guest_b_sid},
-        )
+        gb_del_res = guest_b.delete(f"/api/challenges/custom/{custom_slug}")
         runner.check_response(
             step="guest_b_cannot_delete_guest_a_custom_challenge",
             actor="guest_b",
@@ -922,11 +1016,40 @@ def run_challenge_ownership(runner: VerificationRunner) -> None:
             assertion="Guest B gets 404 deleting Guest A custom challenge",
         )
 
-        reg_a_res = client_a.post(
-            "/api/auth/register",
+        forged_get_res = anon.get(
+            f"/api/challenges/{custom_slug}",
             headers={"X-Diffly-Session-Id": guest_a_sid},
-            json={**user_a_creds, "session_id": guest_a_sid},
         )
+        runner.check_response(
+            step="forged_header_cannot_read_guest_a_custom_challenge",
+            actor="attacker_forged_header",
+            response=forged_get_res,
+            expected_status=404,
+            assertion=(
+                "Forged X-Diffly-Session-Id header gets 404 on Guest A custom challenge"
+            ),
+        )
+
+        tampered_get_res = anon.get(
+            f"/api/challenges/{custom_slug}",
+            cookies={"diffly_guest_session": f"{saved_guest_a_cookie}tampered"},
+        )
+        runner.check_response(
+            step="tampered_cookie_cannot_read_guest_a_custom_challenge",
+            actor="attacker_tampered_cookie",
+            response=tampered_get_res,
+            expected_status=404,
+            assertion=(
+                "Tampered diffly_guest_session cookie gets 404 on custom challenge"
+            ),
+        )
+        anon.cookies.clear()
+
+        base_host = httpx.URL(runner.base_url).host or ""
+        client_a.cookies.set(
+            "diffly_guest_session", saved_guest_a_cookie, domain=base_host
+        )
+        reg_a_res = client_a.post("/api/auth/register", json=user_a_creds)
         reg_a_data = runner.check_response(
             step="user_a_registers_and_claims_custom_challenge",
             actor="user_a",
@@ -959,27 +1082,30 @@ def run_challenge_ownership(runner: VerificationRunner) -> None:
 
         old_read_res = anon.get(
             f"/api/challenges/{custom_slug}",
-            headers={"X-Diffly-Session-Id": guest_a_sid},
+            cookies={"diffly_guest_session": saved_guest_a_cookie},
         )
         runner.check_response(
-            step="old_session_cannot_read_claimed_custom_challenge",
-            actor="third_party_with_old_session",
+            step="old_cookie_cannot_read_claimed_custom_challenge",
+            actor="third_party_with_old_cookie",
             response=old_read_res,
             expected_status=404,
-            assertion="Old Guest A session ID cannot read claimed custom challenge",
+            assertion="Old Guest A signed cookie cannot read claimed custom challenge",
         )
 
         old_del_res = anon.delete(
             f"/api/challenges/custom/{custom_slug}",
-            headers={"X-Diffly-Session-Id": guest_a_sid},
+            cookies={"diffly_guest_session": saved_guest_a_cookie},
         )
         runner.check_response(
-            step="old_session_cannot_delete_claimed_custom_challenge",
-            actor="third_party_with_old_session",
+            step="old_cookie_cannot_delete_claimed_custom_challenge",
+            actor="third_party_with_old_cookie",
             response=old_del_res,
             expected_status=404,
-            assertion="Old Guest A session ID cannot delete claimed custom challenge",
+            assertion=(
+                "Old Guest A signed cookie cannot delete claimed custom challenge"
+            ),
         )
+        anon.cookies.clear()
 
         reg_b_res = client_b.post("/api/auth/register", json=user_b_creds)
         runner.check_response(

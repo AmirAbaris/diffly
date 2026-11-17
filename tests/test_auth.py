@@ -116,7 +116,9 @@ def test_register_invalid_email_format(client: TestClient):
     assert response.status_code == 422
 
 
-def test_register_claims_guest_submissions(client: TestClient, session: Session):
+def test_register_claims_guest_submissions(
+    client: TestClient, session: Session, as_guest
+):
     challenge = Challenge(
         slug="guest-challenge-1",
         title="Guest Challenge",
@@ -132,10 +134,11 @@ def test_register_claims_guest_submissions(client: TestClient, session: Session)
     session.commit()
     session.refresh(challenge)
 
+    guest_id = as_guest(client, "guest-session-reg")
     guest_sub = Submission(
         challenge_id=challenge.id,
         user_id=None,
-        session_id="guest-session-reg",
+        session_id=guest_id,
         flagged_lines=[1],
         comments="Potential vulnerability spotted",
         score=90,
@@ -150,7 +153,6 @@ def test_register_claims_guest_submissions(client: TestClient, session: Session)
         "email": "claimer@diffly.dev",
         "username": "claimer",
         "password": "Password123!",
-        "session_id": "guest-session-reg",
     }
     response = client.post("/api/auth/register", json=register_payload)
     assert response.status_code == 200
@@ -158,11 +160,11 @@ def test_register_claims_guest_submissions(client: TestClient, session: Session)
 
     session.refresh(guest_sub)
     assert guest_sub.user_id == user_id
+    assert guest_sub.session_id is None
+    assert client.cookies.get(settings.GUEST_COOKIE_NAME) is None
 
 
-def test_register_claims_guest_submissions_via_header(
-    client: TestClient, session: Session
-):
+def test_register_ignores_raw_session_header(client: TestClient, session: Session):
     challenge = Challenge(
         slug="guest-challenge-header",
         title="Header Challenge",
@@ -201,10 +203,10 @@ def test_register_claims_guest_submissions_via_header(
         headers={"X-Diffly-Session-Id": "guest-session-header-123"},
     )
     assert response.status_code == 200
-    user_id = response.json()["id"]
 
     session.refresh(guest_sub)
-    assert guest_sub.user_id == user_id
+    assert guest_sub.user_id is None
+    assert guest_sub.session_id == "guest-session-header-123"
 
 
 def test_login_success_with_username(client: TestClient, session: Session):
@@ -316,7 +318,7 @@ def test_login_inactive_user_fails(client: TestClient, session: Session):
     assert "inactive" in response.json()["detail"].lower()
 
 
-def test_login_claims_guest_submissions(client: TestClient, session: Session):
+def test_login_claims_guest_submissions(client: TestClient, session: Session, as_guest):
     user = User(
         email="loginclaimer@diffly.dev",
         username="loginclaimer",
@@ -343,10 +345,11 @@ def test_login_claims_guest_submissions(client: TestClient, session: Session):
         session.commit()
         session.refresh(challenge)
 
+    guest_id = as_guest(client, "guest-login-claim-sid")
     guest_sub = Submission(
         challenge_id=challenge.id,
         user_id=None,
-        session_id="guest-login-claim-sid",
+        session_id=guest_id,
         flagged_lines=[1],
         comments="Pre-login review",
         score=75,
@@ -360,13 +363,14 @@ def test_login_claims_guest_submissions(client: TestClient, session: Session):
         json={
             "username": "loginclaimer",
             "password": "Password123!",
-            "session_id": "guest-login-claim-sid",
         },
     )
     assert resp.status_code == 200
 
     session.refresh(guest_sub)
     assert guest_sub.user_id == user.id
+    assert guest_sub.session_id is None
+    assert client.cookies.get(settings.GUEST_COOKIE_NAME) is None
 
 
 def test_get_me_authenticated_via_cookie(client: TestClient):
@@ -474,9 +478,11 @@ def test_deps_request_state_override(session: Session):
 
 
 def test_register_and_login_claim_guest_custom_challenges(
-    client: TestClient, session: Session
+    client: TestClient, session: Session, as_guest
 ):
     """Guest custom private challenges are migrated to user_id on signup/login."""
+    reg_sid = "guest-custom-reg-sid"
+    login_sid = "guest-custom-login-sid"
     custom_ch_reg = Challenge(
         slug="guest-custom-reg-ch",
         title="Guest Custom Reg Challenge",
@@ -487,7 +493,7 @@ def test_register_and_login_claim_guest_custom_challenges(
         code_snippet="x = 1",
         is_public=False,
         user_id=None,
-        session_id="guest-custom-reg-sid",
+        session_id=reg_sid,
     )
     custom_ch_login = Challenge(
         slug="guest-custom-login-ch",
@@ -499,21 +505,21 @@ def test_register_and_login_claim_guest_custom_challenges(
         code_snippet="package main",
         is_public=False,
         user_id=None,
-        session_id="guest-custom-login-sid",
+        session_id=login_sid,
     )
     session.add_all([custom_ch_reg, custom_ch_login])
     session.commit()
     session.refresh(custom_ch_reg)
     session.refresh(custom_ch_login)
 
-    # 1. Register claims custom_ch_reg
+    # 1. Register claims custom_ch_reg via signed guest cookie
+    as_guest(client, reg_sid)
     reg_res = client.post(
         "/api/auth/register",
         json={
             "email": "custom_owner@diffly.dev",
             "username": "custom_owner",
             "password": "Password123!",
-            "session_id": "guest-custom-reg-sid",
         },
     )
     assert reg_res.status_code == 200
@@ -521,21 +527,23 @@ def test_register_and_login_claim_guest_custom_challenges(
 
     session.refresh(custom_ch_reg)
     assert custom_ch_reg.user_id == user_id
+    assert custom_ch_reg.session_id is None
 
-    # 2. Login on another device (with guest-custom-login-sid) claims custom_ch_login
+    # 2. Login on another device claims custom_ch_login via guest cookie
+    as_guest(client, login_sid)
     login_res = client.post(
         "/api/auth/login",
         json={
             "username": "custom_owner",
             "password": "Password123!",
-            "session_id": "guest-custom-login-sid",
         },
     )
     assert login_res.status_code == 200
     session.refresh(custom_ch_login)
     assert custom_ch_login.user_id == user_id
+    assert custom_ch_login.session_id is None
 
-    # 3. User sees both custom challenges even without a session_id
+    # 3. User sees both custom challenges even without a guest cookie
     list_res = client.get("/api/challenges/custom")
     assert list_res.status_code == 200
     slugs = {item["slug"] for item in list_res.json()["items"]}
@@ -543,9 +551,9 @@ def test_register_and_login_claim_guest_custom_challenges(
 
 
 def test_claimed_records_not_leaked_via_session_id_after_logout(
-    client: TestClient, session: Session
+    client: TestClient, session: Session, as_guest
 ):
-    """Claimed user records are not leaked to logged-out requests with session_id."""
+    """Claimed user records stay hidden from logged-out callers with old cookie."""
     custom_ch = Challenge(
         slug="private-claimed-ch",
         title="Private Claimed Challenge",
@@ -561,34 +569,28 @@ def test_claimed_records_not_leaked_via_session_id_after_logout(
     session.add(custom_ch)
     session.commit()
 
-    # Register & claim
+    # Register & claim via signed cookie
+    as_guest(client, "shared-browser-sid")
     reg_res = client.post(
         "/api/auth/register",
         json={
             "email": "usera@diffly.dev",
             "username": "usera",
             "password": "Password123!",
-            "session_id": "shared-browser-sid",
         },
     )
     assert reg_res.status_code == 200
 
-    # Logout (clear auth cookies)
+    # Logout and simulate an attacker replaying the pre-claim signed guest cookie
     client.post("/api/auth/logout")
     client.cookies.clear()
+    as_guest(client, "shared-browser-sid")
 
-    # Logged-out requests with old session_id must not leak User A's challenge
-    anon_list = client.get(
-        "/api/challenges/custom",
-        headers={"X-Diffly-Session-Id": "shared-browser-sid"},
-    )
+    anon_list = client.get("/api/challenges/custom")
     assert anon_list.status_code == 200
     assert anon_list.json()["items"] == []
 
-    anon_del = client.delete(
-        "/api/challenges/custom/private-claimed-ch",
-        headers={"X-Diffly-Session-Id": "shared-browser-sid"},
-    )
+    anon_del = client.delete("/api/challenges/custom/private-claimed-ch")
     assert anon_del.status_code == 404
 
 
@@ -684,7 +686,9 @@ def test_bearer_fallback_when_auth_cookie_expired_or_invalid(
 
     for bad_cookie in (expired_cookie, "not.a.valid.jwt", inactive_cookie):
         client.cookies.clear()
-        client.cookies.set(settings.AUTH_COOKIE_NAME, bad_cookie)
+        client.cookies.set(
+            settings.AUTH_COOKIE_NAME, bad_cookie, domain="testserver.local"
+        )
         res = client.get(
             "/api/auth/me",
             headers={"Authorization": f"Bearer {valid_bearer}"},
@@ -717,6 +721,8 @@ def test_claim_clears_session_id_and_user_delete_does_not_reexpose(
     )
     assert sub_res.status_code == 200
     sub_id = sub_res.json()["submission_id"]
+    saved_guest_cookie = client.cookies.get(settings.GUEST_COOKIE_NAME)
+    assert saved_guest_cookie is not None
 
     reg_res = client.post(
         "/api/auth/register",
@@ -734,7 +740,6 @@ def test_claim_clears_session_id_and_user_delete_does_not_reexpose(
     assert claimed_sub.user_id == owner_id
     assert claimed_sub.session_id is None
 
-    saved_guest_cookies = dict(client.cookies)
     owner = session.get(User, owner_id)
     assert owner is not None
     session.delete(owner)
@@ -744,9 +749,9 @@ def test_claim_clears_session_id_and_user_delete_does_not_reexpose(
     assert claimed_sub.session_id is None
 
     client.cookies.clear()
-    for k, v in saved_guest_cookies.items():
-        if k != settings.AUTH_COOKIE_NAME:
-            client.cookies.set(k, v)
+    client.cookies.set(
+        settings.GUEST_COOKIE_NAME, saved_guest_cookie, domain="testserver.local"
+    )
     prog_res = client.get("/api/user/progress")
     assert prog_res.status_code == 200
     assert prog_res.json()["total_attempted"] == 0
@@ -821,7 +826,7 @@ def test_claim_enforces_five_challenge_quota_atomically(
     session.commit()
 
     for k, v in guest_client.cookies.items():
-        auth_client.cookies.set(k, v)
+        auth_client.cookies.set(k, v, domain="testserver.local")
 
     claim_res = auth_client.post("/api/user/claim-session")
     assert claim_res.status_code == 409
@@ -829,3 +834,156 @@ def test_claim_enforces_five_challenge_quota_atomically(
     list_res = auth_client.get("/api/challenges/custom")
     assert list_res.status_code == 200
     assert list_res.json()["total"] == 4
+
+
+def test_login_over_quota_succeeds_and_keeps_guest_cookie(
+    client_factory, session: Session, register_user, as_guest
+):
+    """Login succeeds and preserves guest cookie when claiming exceeds quota."""
+    user = register_user("over_quota_login")
+
+    for i in range(4):
+        session.add(
+            Challenge(
+                slug=f"oq-owned-{i}",
+                title=f"OQ Owned {i}",
+                difficulty=Difficulty.EASY,
+                category=Category.SECURITY,
+                language=Language.PYTHON,
+                description="Owned",
+                code_snippet="x = 1",
+                is_public=False,
+                user_id=user["id"],
+            )
+        )
+
+    guest_client = client_factory()
+    guest_sid = as_guest(guest_client, "g_over_quota_login_guest")
+    for i in range(2):
+        session.add(
+            Challenge(
+                slug=f"oq-guest-{i}",
+                title=f"OQ Guest {i}",
+                difficulty=Difficulty.EASY,
+                category=Category.SECURITY,
+                language=Language.PYTHON,
+                description="Guest",
+                code_snippet="x = 1",
+                is_public=False,
+                user_id=None,
+                session_id=guest_sid,
+            )
+        )
+    session.commit()
+
+    login_res = guest_client.post(
+        "/api/auth/login",
+        json={"identifier": user["username"], "password": user["password"]},
+    )
+    assert login_res.status_code == 200
+    assert login_res.headers.get("X-Diffly-Claim-Status") == "quota_exceeded"
+    assert settings.AUTH_COOKIE_NAME in login_res.cookies
+    assert guest_client.cookies.get(settings.GUEST_COOKIE_NAME) is not None
+
+    guest_challenges = session.exec(
+        select(Challenge).where(Challenge.session_id == guest_sid)
+    ).all()
+    assert len(guest_challenges) == 2
+    assert all(ch.user_id is None for ch in guest_challenges)
+
+
+def test_register_over_quota_succeeds_and_keeps_guest_cookie(
+    client_factory, session: Session, as_guest
+):
+    """Register succeeds and keeps guest cookie intact if incoming challenges > 5."""
+    guest_client = client_factory()
+    guest_sid = as_guest(guest_client, "g_over_quota_register_guest")
+    for i in range(6):
+        session.add(
+            Challenge(
+                slug=f"oq-reg-guest-{i}",
+                title=f"OQ Reg Guest {i}",
+                difficulty=Difficulty.EASY,
+                category=Category.SECURITY,
+                language=Language.PYTHON,
+                description="Guest",
+                code_snippet="x = 1",
+                is_public=False,
+                user_id=None,
+                session_id=guest_sid,
+            )
+        )
+    session.commit()
+
+    reg_res = guest_client.post(
+        "/api/auth/register",
+        json={
+            "email": "over_quota_reg@diffly.dev",
+            "username": "over_quota_reg",
+            "password": "Password123!",
+        },
+    )
+    assert reg_res.status_code == 200
+    assert reg_res.headers.get("X-Diffly-Claim-Status") == "quota_exceeded"
+    assert settings.AUTH_COOKIE_NAME in reg_res.cookies
+    assert guest_client.cookies.get(settings.GUEST_COOKIE_NAME) is not None
+
+    guest_challenges = session.exec(
+        select(Challenge).where(Challenge.session_id == guest_sid)
+    ).all()
+    assert len(guest_challenges) == 6
+    assert all(ch.user_id is None for ch in guest_challenges)
+
+
+def test_register_and_login_ignore_body_and_header_session_id(
+    client_factory, session: Session, register_user
+):
+    """Register and login ignore unsigned body session_id and X-Diffly-Session-Id."""
+    victim_sid = "g_victim_ignore_sid"
+    victim_ch = Challenge(
+        slug="victim-ignore-ch",
+        title="Victim Ignore",
+        difficulty=Difficulty.EASY,
+        category=Category.SECURITY,
+        language=Language.PYTHON,
+        description="Private",
+        code_snippet="x = 1",
+        is_public=False,
+        user_id=None,
+        session_id=victim_sid,
+    )
+    session.add(victim_ch)
+    session.commit()
+    session.refresh(victim_ch)
+
+    reg_client = client_factory()
+    reg_res = reg_client.post(
+        "/api/auth/register",
+        headers={"X-Diffly-Session-Id": victim_sid},
+        json={
+            "email": "attacker_reg@diffly.dev",
+            "username": "attacker_reg",
+            "password": "Password123!",
+            "session_id": victim_sid,
+        },
+    )
+    assert reg_res.status_code == 200
+    session.refresh(victim_ch)
+    assert victim_ch.user_id is None
+    assert victim_ch.session_id == victim_sid
+
+    existing = register_user("attacker_login")
+    login_client = client_factory()
+    login_res = login_client.post(
+        "/api/auth/login",
+        headers={"X-Diffly-Session-Id": victim_sid},
+        json={
+            "identifier": existing["username"],
+            "password": existing["password"],
+            "session_id": victim_sid,
+        },
+    )
+    assert login_res.status_code == 200
+    session.refresh(victim_ch)
+    assert victim_ch.user_id is None
+    assert victim_ch.session_id == victim_sid

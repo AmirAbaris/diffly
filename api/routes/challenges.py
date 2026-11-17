@@ -2,12 +2,11 @@ import json
 from typing import Annotated, Any
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
+from fastapi import APIRouter, Header, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlmodel import Session, func, or_, select
+from sqlmodel import Session, or_, select
 
-from api.deps import get_optional_current_user
-from backend.core.db import get_session
+from api.deps import ActorDep, OwnerActorDep, SessionDep
 from backend.models.challenge import (
     Category,
     Challenge,
@@ -23,7 +22,6 @@ from backend.models.challenge import (
     Language,
 )
 from backend.models.submission import Submission
-from backend.models.user import User
 from backend.services.evaluation_service import (
     DetectedIssue,
     MissedIssue,
@@ -37,15 +35,23 @@ from backend.services.gemini_generator import (
     generate_custom_challenge,
 )
 from backend.services.ownership import (
+    CUSTOM_CHALLENGE_QUOTA,
     Actor,
+    CustomQuotaExceeded,
     can_access_challenge,
     challenge_owner_filter,
+    ensure_custom_quota,
     is_challenge_owner,
     submission_owner_filter,
 )
 
 
 router = APIRouter(prefix="/api/challenges", tags=["challenges"])
+
+_QUOTA_REACHED_DETAIL = (
+    f"Quota limit reached. You can have at most {CUSTOM_CHALLENGE_QUOTA} custom "
+    "challenges. Please delete an existing custom challenge to create a new one."
+)
 
 
 def _compute_best_scores_map(
@@ -71,7 +77,8 @@ def _compute_best_scores_map(
 
 @router.get("", response_model=list[ChallengeSummary])
 def list_challenges(
-    session: Annotated[Session, Depends(get_session)],
+    session: SessionDep,
+    actor: ActorDep,
     difficulty: Annotated[
         Difficulty | None,
         Query(description="Filter by challenge difficulty level"),
@@ -87,11 +94,6 @@ def list_challenges(
     search: Annotated[
         str | None,
         Query(description="Search by title, description, or slug"),
-    ] = None,
-    current_user: Annotated[User | None, Depends(get_optional_current_user)] = None,
-    session_id: Annotated[
-        str | None,
-        Header(alias="X-Diffly-Session-Id", description="Guest session identifier"),
     ] = None,
 ) -> list[ChallengeSummary]:
     """Retrieve list of challenges with optional filtering and completion status."""
@@ -116,7 +118,6 @@ def list_challenges(
     statement = statement.order_by(Challenge.id)
     challenges = list(session.exec(statement).all())
 
-    actor = Actor.from_request(current_user, session_id)
     best_scores_map = _compute_best_scores_map(session, challenges, actor)
 
     return [
@@ -189,13 +190,8 @@ class CustomEvaluationResponse(BaseModel):
 )
 async def generate_custom_challenge_endpoint(
     payload: GenerateCustomChallengeRequest,
-    response: Response,
-    session: Annotated[Session, Depends(get_session)],
-    current_user: Annotated[User | None, Depends(get_optional_current_user)] = None,
-    header_session_id: Annotated[
-        str | None,
-        Header(alias="X-Diffly-Session-Id", description="Guest session identifier"),
-    ] = None,
+    session: SessionDep,
+    actor: OwnerActorDep,
     x_gemini_key: Annotated[
         str | None,
         Header(
@@ -214,27 +210,16 @@ async def generate_custom_challenge_endpoint(
             ),
         )
 
-    actor = Actor.from_request(current_user, header_session_id)
-    if actor.user_id is None and actor.guest_session_id is None:
-        actor = Actor(user_id=None, guest_session_id=f"guest-{uuid4().hex[:12]}")
-
-    if actor.guest_session_id:
-        response.headers["X-Diffly-Session-Id"] = actor.guest_session_id
-
-    owner_filter = challenge_owner_filter(actor)
-    count_stmt = select(func.count(Challenge.id)).where(
-        Challenge.is_public.is_(False),
-        owner_filter,
-    )
-    existing_count = session.exec(count_stmt).one() if owner_filter is not None else 0
-    if existing_count >= 5:
+    try:
+        ensure_custom_quota(session, actor, lock=False)
+    except CustomQuotaExceeded as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=(
-                "Quota limit reached. You can have at most 5 custom challenges. "
-                "Please delete an existing custom challenge to create a new one."
-            ),
-        )
+            detail=_QUOTA_REACHED_DETAIL,
+        ) from exc
+    finally:
+        # Release read transaction and pooled connection before external Gemini HTTP I/O
+        session.rollback()
 
     try:
         generated = await generate_custom_challenge(
@@ -257,16 +242,13 @@ async def generate_custom_challenge_endpoint(
             detail=str(exc),
         ) from exc
 
-    # Re-check quota right before DB insert to guard against concurrent requests
-    latest_count = session.exec(count_stmt).one() if owner_filter is not None else 0
-    if latest_count >= 5:
+    try:
+        ensure_custom_quota(session, actor, lock=True)
+    except CustomQuotaExceeded as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=(
-                "Quota limit reached. You can have at most 5 custom challenges. "
-                "Please delete an existing custom challenge to create a new one."
-            ),
-        )
+            detail=_QUOTA_REACHED_DETAIL,
+        ) from exc
 
     base_slug = generated.slug
     candidate_slug = base_slug
@@ -328,23 +310,18 @@ async def generate_custom_challenge_endpoint(
 
 @router.get("/custom", response_model=CustomChallengesListResponse)
 def list_custom_challenges(
-    session: Annotated[Session, Depends(get_session)],
-    current_user: Annotated[User | None, Depends(get_optional_current_user)] = None,
-    header_session_id: Annotated[
-        str | None,
-        Header(alias="X-Diffly-Session-Id", description="Guest session identifier"),
-    ] = None,
+    session: SessionDep,
+    actor: ActorDep,
 ) -> CustomChallengesListResponse:
     """List the current user's private custom challenges and quota status."""
-    actor = Actor.from_request(current_user, header_session_id)
     owner_filter = challenge_owner_filter(actor)
 
     if owner_filter is None:
         return CustomChallengesListResponse(
             items=[],
             total=0,
-            quota_limit=5,
-            quota_remaining=5,
+            quota_limit=CUSTOM_CHALLENGE_QUOTA,
+            quota_remaining=CUSTOM_CHALLENGE_QUOTA,
         )
 
     stmt = (
@@ -369,24 +346,18 @@ def list_custom_challenges(
     return CustomChallengesListResponse(
         items=summaries,
         total=total,
-        quota_limit=5,
-        quota_remaining=max(0, 5 - total),
+        quota_limit=CUSTOM_CHALLENGE_QUOTA,
+        quota_remaining=max(0, CUSTOM_CHALLENGE_QUOTA - total),
     )
 
 
 @router.delete("/custom/{identifier}")
 def delete_custom_challenge(
     identifier: str,
-    session: Annotated[Session, Depends(get_session)],
-    current_user: Annotated[User | None, Depends(get_optional_current_user)] = None,
-    header_session_id: Annotated[
-        str | None,
-        Header(alias="X-Diffly-Session-Id", description="Guest session identifier"),
-    ] = None,
+    session: SessionDep,
+    actor: ActorDep,
 ) -> dict[str, Any]:
     """Delete a user's private custom challenge to free up quota."""
-    actor = Actor.from_request(current_user, header_session_id)
-
     if identifier.isdigit():
         ch_id = int(identifier)
         stmt = select(Challenge).where(
@@ -492,15 +463,10 @@ def get_challenge_or_404(
 @router.get("/{identifier}", response_model=ChallengeDetail)
 def get_challenge(
     identifier: str,
-    session: Annotated[Session, Depends(get_session)],
-    current_user: Annotated[User | None, Depends(get_optional_current_user)] = None,
-    session_id: Annotated[
-        str | None,
-        Header(alias="X-Diffly-Session-Id", description="Guest session identifier"),
-    ] = None,
+    session: SessionDep,
+    actor: ActorDep,
 ) -> ChallengeDetail:
     """Retrieve challenge detail by numeric ID or URL slug with completion status."""
-    actor = Actor.from_request(current_user, session_id)
     challenge = get_challenge_or_404(identifier, session, actor=actor)
 
     owner_filter = submission_owner_filter(actor)
@@ -523,7 +489,8 @@ def get_challenge(
 @router.get("/{identifier}/hints", response_model=list[HintResponse])
 def get_challenge_hints(
     identifier: str,
-    session: Annotated[Session, Depends(get_session)],
+    session: SessionDep,
+    actor: ActorDep,
     tier: Annotated[
         int | None,
         Query(
@@ -532,14 +499,8 @@ def get_challenge_hints(
             description="Filter by progressive hint tier (1, 2, or 3)",
         ),
     ] = None,
-    current_user: Annotated[User | None, Depends(get_optional_current_user)] = None,
-    header_session_id: Annotated[
-        str | None,
-        Header(alias="X-Diffly-Session-Id", description="Guest session identifier"),
-    ] = None,
 ) -> list[HintResponse]:
     """Retrieve progressive tiered hints for a challenge by numeric ID or URL slug."""
-    actor = Actor.from_request(current_user, header_session_id)
     challenge = get_challenge_or_404(identifier, session, actor=actor)
 
     hints = [h.to_response() for h in challenge.get_hints()]
@@ -554,29 +515,17 @@ def get_challenge_hints(
 @router.get("/{identifier}/solution", response_model=ChallengeSolutionResponse)
 def get_challenge_solution(
     identifier: str,
-    session: Annotated[Session, Depends(get_session)],
+    session: SessionDep,
+    actor: ActorDep,
     reveal: Annotated[
         bool,
         Query(description="Explicitly reveal solution without prior submission"),
     ] = False,
-    current_user: Annotated[User | None, Depends(get_optional_current_user)] = None,
-    header_session_id: Annotated[
-        str | None,
-        Header(alias="X-Diffly-Session-Id", description="Guest session identifier"),
-    ] = None,
-    query_session_id: Annotated[
-        str | None,
-        Query(
-            alias="session_id",
-            description="Guest session identifier via query param",
-        ),
-    ] = None,
 ) -> ChallengeSolutionResponse:
     """Retrieve canonical expert review, recommended fix diff, and expected issues.
 
     Requires at least one submission attempt for the challenge or explicit ?reveal=true.
     """
-    actor = Actor.from_request(current_user, header_session_id, query_session_id)
     challenge = get_challenge_or_404(identifier, session, actor=actor)
 
     if not reveal:

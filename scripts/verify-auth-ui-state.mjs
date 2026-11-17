@@ -57,13 +57,25 @@ assert.ok(
   authSource.includes("export function getAuthErrorMessage("),
   "lib/auth.ts must export getAuthErrorMessage()"
 )
-assert.ok(
-  authSource.includes("session_id: sessionId"),
-  "apiLogin and apiRegister must include session_id for session migration"
+const axiosSource = fs.readFileSync(
+  path.resolve(process.cwd(), "lib/axios.ts"),
+  "utf-8"
 )
 assert.ok(
-  authSource.includes("claimSession(sessionId)"),
-  "lib/auth.ts should trigger session claiming"
+  axiosSource.includes("withCredentials: true"),
+  "lib/axios.ts must send HttpOnly cookies with withCredentials: true"
+)
+assert.ok(
+  !axiosSource.includes("X-Diffly-Session-Id"),
+  "lib/axios.ts must not inject X-Diffly-Session-Id headers"
+)
+assert.ok(
+  !authSource.includes("getOrCreateGuestSessionId"),
+  "lib/auth.ts must rely on signed HttpOnly guest cookies rather than localStorage"
+)
+assert.ok(
+  !authSource.includes("session_id:"),
+  "apiLogin and apiRegister must not send raw session_id in request body"
 )
 assert.ok(
   authSource.includes("mutateUserStats()"),

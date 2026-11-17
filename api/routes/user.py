@@ -1,21 +1,21 @@
 """User profile, progress, and guest session management API routes."""
 
+import json
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
-from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Request, Response, status
 from pydantic import BaseModel, ConfigDict, Field
-from sqlmodel import Session, select
+from sqlmodel import select
 
-from api.deps import get_current_user, get_optional_current_user
-from backend.core.db import get_session
+from api.deps import ActorDep, CurrentUserDep, GuestSessionDep, SessionDep
+from backend.core.config import settings
+from backend.core.guest_session import clear_guest_cookie
 from backend.models.challenge import Category, Challenge
 from backend.models.submission import Submission
-from backend.models.user import User
 from backend.services.ownership import (
-    Actor,
-    claim_guest_records,
+    CustomQuotaExceeded,
+    claim_guest_session,
     submission_owner_filter,
 )
 
@@ -56,15 +56,6 @@ class UserProgressResponse(BaseModel):
     categories_breakdown: list[CategoryProgress] = Field(
         default_factory=list,
         description="Category mastery breakdown",
-    )
-
-
-class ClaimSessionRequest(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
-    session_id: str | None = Field(
-        default=None,
-        description="Guest session identifier to claim",
     )
 
 
@@ -117,16 +108,8 @@ def compute_streak_days(submissions: list[Submission], now_utc: datetime) -> int
     status_code=status.HTTP_200_OK,
 )
 def get_user_progress(
-    session: Annotated[Session, Depends(get_session)],
-    current_user: Annotated[User | None, Depends(get_optional_current_user)] = None,
-    header_session_id: Annotated[
-        str | None,
-        Header(alias="X-Diffly-Session-Id", description="Guest session identifier"),
-    ] = None,
-    query_session_id: Annotated[
-        str | None,
-        Query(alias="session_id", description="Guest session query parameter"),
-    ] = None,
+    session: SessionDep,
+    actor: ActorDep,
 ) -> UserProgressResponse:
     """Retrieve user or guest review progress, accuracy stats, and streak."""
     challenges = session.exec(
@@ -144,7 +127,6 @@ def get_user_progress(
             categories_map[cat_name] = []
         categories_map[cat_name].append(ch)
 
-    actor = Actor.from_request(current_user, header_session_id, query_session_id)
     owner_filter = submission_owner_filter(actor)
 
     if owner_filter is None:
@@ -223,48 +205,74 @@ def get_user_progress(
     )
 
 
+async def _has_raw_session_input(request: Request) -> bool:
+    if request.headers.get("X-Diffly-Session-Id", "").strip():
+        return True
+    if request.query_params.get("session_id", "").strip():
+        return True
+
+    raw_body = await request.body()
+    if not raw_body:
+        return False
+
+    try:
+        parsed_body = json.loads(raw_body)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return False
+
+    if isinstance(parsed_body, dict) and "session_id" in parsed_body:
+        raw_sid = parsed_body["session_id"]
+        if isinstance(raw_sid, str):
+            return bool(raw_sid.strip())
+        return raw_sid is not None
+
+    return False
+
+
 @router.post(
     "/claim-session",
     response_model=ClaimSessionResponse,
     status_code=status.HTTP_200_OK,
 )
-def claim_guest_session(
-    current_user: Annotated[User, Depends(get_current_user)],
-    session: Annotated[Session, Depends(get_session)],
-    payload: ClaimSessionRequest | None = None,
-    header_session_id: Annotated[
-        str | None,
-        Header(alias="X-Diffly-Session-Id", description="Guest session identifier"),
-    ] = None,
+async def claim_guest_session_endpoint(
+    current_user: CurrentUserDep,
+    session: SessionDep,
+    request: Request,
+    response: Response,
+    guest: GuestSessionDep,
 ) -> ClaimSessionResponse:
     """Claim anonymous guest submissions and custom challenges for the user."""
-    target_session_id = (
-        payload.session_id.strip()
-        if payload and payload.session_id and payload.session_id.strip()
-        else None
-    ) or (
-        header_session_id.strip()
-        if header_session_id and header_session_id.strip()
-        else None
+    has_tampered_cookie = (
+        settings.GUEST_COOKIE_NAME in request.cookies and guest is None
     )
-
-    if not target_session_id or current_user.id is None:
+    if has_tampered_cookie or await _has_raw_session_input(request):
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=(
-                "session_id is required in request body or X-Diffly-Session-Id header"
-            ),
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid or unsigned guest session token",
         )
 
-    claimed_subs_count, claimed_challenges_count = claim_guest_records(
-        session=session,
-        user_id=current_user.id,
-        session_ids={target_session_id},
-    )
+    if guest is None or current_user.id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Valid guest session cookie is required",
+        )
 
+    try:
+        result = claim_guest_session(
+            session=session,
+            user_id=current_user.id,
+            guest=guest,
+        )
+    except CustomQuotaExceeded as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=exc.message,
+        ) from exc
+
+    clear_guest_cookie(response)
     return ClaimSessionResponse(
-        claimed_count=claimed_subs_count + claimed_challenges_count,
-        claimed_challenges_count=claimed_challenges_count,
+        claimed_count=result.submissions + result.challenges,
+        claimed_challenges_count=result.challenges,
         user_id=current_user.id,
-        session_id=target_session_id,
+        session_id=guest.id,
     )
