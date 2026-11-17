@@ -15,7 +15,7 @@ from api.routes.user import router as user_router
 from backend.core.config import settings
 from backend.core.db import get_session, init_db
 from backend.models.challenge import Challenge
-from backend.seed.seed_data import seed_challenges_if_empty
+from backend.seed.seed_data import seed_missing_challenges
 
 
 SERVER_START_TIME = time.time()
@@ -26,7 +26,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     settings.validate_runtime_security()
     if not settings.is_vercel:
         init_db()
-    seed_challenges_if_empty()
+    seed_missing_challenges()
     yield
 
 
