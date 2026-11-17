@@ -70,8 +70,8 @@ case "$FEATURE" in
             fi
         }
         {
-            run_hygiene_check "Ruff Check" "$RUFF_BIN" check "$REPO_ROOT/api" "$REPO_ROOT/backend" "$REPO_ROOT/tests"
-            run_hygiene_check "Ruff Format Check" "$RUFF_BIN" format --check "$REPO_ROOT/api" "$REPO_ROOT/backend" "$REPO_ROOT/tests"
+            run_hygiene_check "Ruff Check" "$RUFF_BIN" check "$REPO_ROOT/api" "$REPO_ROOT/backend" "$REPO_ROOT/tests" "$REPO_ROOT/alembic"
+            run_hygiene_check "Ruff Format Check" "$RUFF_BIN" format --check "$REPO_ROOT/api" "$REPO_ROOT/backend" "$REPO_ROOT/tests" "$REPO_ROOT/alembic"
             run_hygiene_check "Prettier Check" pnpm --prefix "$REPO_ROOT" format:check
             run_hygiene_check "Oxlint Check" pnpm --prefix "$REPO_ROOT" lint:oxlint
             run_hygiene_check "React Doctor Check" pnpm --prefix "$REPO_ROOT" lint:doctor

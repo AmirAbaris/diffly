@@ -230,11 +230,20 @@ ENVIRONMENT=production
 NODE_ENV=production
 ```
 
-Create tables and seed curated challenges against your Neon database:
+Apply Alembic schema migrations and seed curated challenges against your Neon database (use the direct, non-`-pooler` Neon connection URL for DDL migrations):
 
 ```bash
+DATABASE_URL="postgresql://neondb_owner:npg_password@ep-bold.us-east-2.aws.neon.tech/neondb?sslmode=require" alembic upgrade head
 python -m backend.seed.seed_data
 ```
+
+If an existing pre-Alembic database (local `diffly.db`, Docker `diffly-data` volume, or Neon PostgreSQL) already has the schema installed without `alembic_version`, verify its constraints/enums match the baseline and stamp it once before applying future migrations (or delete a disposable local `diffly.db` to recreate cleanly):
+
+```bash
+alembic stamp head
+```
+
+For future PostgreSQL enum value additions (such as `ALTER TYPE ... ADD VALUE`), execute the statement inside `with op.get_context().autocommit_block():` in the Alembic migration.
 
 ### 2. Vercel deployment
 

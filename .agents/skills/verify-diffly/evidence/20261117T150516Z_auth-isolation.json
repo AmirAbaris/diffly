@@ -1,0 +1,496 @@
+{
+  "feature": "auth-isolation",
+  "timestamp": "2026-11-17T15:05:19Z",
+  "base_url": "http://127.0.0.1:8000",
+  "metadata": {
+    "custom_challenge_setup": "seeded_in_isolated_db",
+    "custom_challenge_slug": "verify-custom-792e84ef"
+  },
+  "verdict": "PASSED",
+  "total_steps": 40,
+  "passed_steps": 40,
+  "failed_steps": 0,
+  "errors": [],
+  "steps": [
+    {
+      "step": "list_public_challenges",
+      "actor": "anonymous",
+      "request": {
+        "method": "GET",
+        "path": "/api/challenges"
+      },
+      "expected_status": 200,
+      "actual_status": 200,
+      "verdict": "PASS",
+      "assertion": "Public challenge catalog is available"
+    },
+    {
+      "step": "guest_a_submit_review",
+      "actor": "guest_a",
+      "request": {
+        "method": "POST",
+        "path": "/api/challenges/agent-unsanitized-exec/review"
+      },
+      "expected_status": 200,
+      "actual_status": 200,
+      "verdict": "PASS",
+      "assertion": "Guest A submits review and gets signed diffly_guest_session cookie"
+    },
+    {
+      "step": "guest_a_reads_own_custom_challenges",
+      "actor": "guest_a",
+      "request": {
+        "method": "GET",
+        "path": "/api/challenges/custom"
+      },
+      "expected_status": 200,
+      "actual_status": 200,
+      "verdict": "PASS",
+      "assertion": "Guest A sees own private custom challenge before registration"
+    },
+    {
+      "step": "guest_a_reads_own_history",
+      "actor": "guest_a",
+      "request": {
+        "method": "GET",
+        "path": "/api/challenges/agent-unsanitized-exec/submissions"
+      },
+      "expected_status": 200,
+      "actual_status": 200,
+      "verdict": "PASS",
+      "assertion": "Guest A reads own submission history via signed guest cookie"
+    },
+    {
+      "step": "guest_a_reads_own_progress",
+      "actor": "guest_a",
+      "request": {
+        "method": "GET",
+        "path": "/api/user/progress"
+      },
+      "expected_status": 200,
+      "actual_status": 200,
+      "verdict": "PASS",
+      "assertion": "Guest A progress reflects 1 attempted challenge"
+    },
+    {
+      "step": "guest_b_isolated_from_guest_a_history",
+      "actor": "guest_b",
+      "request": {
+        "method": "GET",
+        "path": "/api/challenges/agent-unsanitized-exec/submissions"
+      },
+      "expected_status": 200,
+      "actual_status": 200,
+      "verdict": "PASS",
+      "assertion": "Guest B cannot read Guest A submission history"
+    },
+    {
+      "step": "guest_b_isolated_from_guest_a_progress",
+      "actor": "guest_b",
+      "request": {
+        "method": "GET",
+        "path": "/api/user/progress"
+      },
+      "expected_status": 200,
+      "actual_status": 200,
+      "verdict": "PASS",
+      "assertion": "Guest B cannot read Guest A progress metrics"
+    },
+    {
+      "step": "guest_b_isolated_from_guest_a_custom_challenges",
+      "actor": "guest_b",
+      "request": {
+        "method": "GET",
+        "path": "/api/challenges/custom"
+      },
+      "expected_status": 200,
+      "actual_status": 200,
+      "verdict": "PASS",
+      "assertion": "Guest B cannot read Guest A custom challenges"
+    },
+    {
+      "step": "forged_header_ignored_on_history",
+      "actor": "attacker_forged_header",
+      "request": {
+        "method": "GET",
+        "path": "/api/challenges/agent-unsanitized-exec/submissions"
+      },
+      "expected_status": 200,
+      "actual_status": 200,
+      "verdict": "PASS",
+      "assertion": "Forged X-Diffly-Session-Id header cannot read Guest A history"
+    },
+    {
+      "step": "forged_header_ignored_on_progress",
+      "actor": "attacker_forged_header",
+      "request": {
+        "method": "GET",
+        "path": "/api/user/progress"
+      },
+      "expected_status": 200,
+      "actual_status": 200,
+      "verdict": "PASS",
+      "assertion": "Forged X-Diffly-Session-Id header cannot read Guest A progress"
+    },
+    {
+      "step": "forged_header_ignored_on_custom_challenges",
+      "actor": "attacker_forged_header",
+      "request": {
+        "method": "GET",
+        "path": "/api/challenges/custom"
+      },
+      "expected_status": 200,
+      "actual_status": 200,
+      "verdict": "PASS",
+      "assertion": "Forged X-Diffly-Session-Id header cannot read Guest A custom items"
+    },
+    {
+      "step": "tampered_guest_cookie_ignored_and_cleared",
+      "actor": "attacker_tampered_cookie",
+      "request": {
+        "method": "GET",
+        "path": "/api/user/progress"
+      },
+      "expected_status": 200,
+      "actual_status": 200,
+      "verdict": "PASS",
+      "assertion": "Tampered diffly_guest_session cookie yields empty progress and clears"
+    },
+    {
+      "step": "user_a_register_and_claim",
+      "actor": "user_a",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register"
+      },
+      "expected_status": 200,
+      "actual_status": 200,
+      "verdict": "PASS",
+      "assertion": "User A registers, claims Guest A cookie, and receives auth cookie"
+    },
+    {
+      "step": "user_a_me_cookie_auth",
+      "actor": "user_a",
+      "request": {
+        "method": "GET",
+        "path": "/api/auth/me"
+      },
+      "expected_status": 200,
+      "actual_status": 200,
+      "verdict": "PASS",
+      "assertion": "User A authenticates to /api/auth/me via HttpOnly cookie"
+    },
+    {
+      "step": "user_a_sees_claimed_history",
+      "actor": "user_a",
+      "request": {
+        "method": "GET",
+        "path": "/api/challenges/agent-unsanitized-exec/submissions"
+      },
+      "expected_status": 200,
+      "actual_status": 200,
+      "verdict": "PASS",
+      "assertion": "User A sees claimed Guest A submission via cookie auth"
+    },
+    {
+      "step": "user_a_sees_claimed_progress",
+      "actor": "user_a",
+      "request": {
+        "method": "GET",
+        "path": "/api/user/progress"
+      },
+      "expected_status": 200,
+      "actual_status": 200,
+      "verdict": "PASS",
+      "assertion": "User A sees claimed Guest A progress via cookie auth"
+    },
+    {
+      "step": "user_a_sees_claimed_custom_challenge",
+      "actor": "user_a",
+      "request": {
+        "method": "GET",
+        "path": "/api/challenges/custom"
+      },
+      "expected_status": 200,
+      "actual_status": 200,
+      "verdict": "PASS",
+      "assertion": "User A sees claimed Guest A custom challenge via cookie auth"
+    },
+    {
+      "step": "old_cookie_exposes_no_claimed_history",
+      "actor": "third_party_with_old_cookie",
+      "request": {
+        "method": "GET",
+        "path": "/api/challenges/agent-unsanitized-exec/submissions"
+      },
+      "expected_status": 200,
+      "actual_status": 200,
+      "verdict": "PASS",
+      "assertion": "Old Guest A signed cookie exposes no submission history after claim"
+    },
+    {
+      "step": "old_cookie_exposes_no_claimed_progress",
+      "actor": "third_party_with_old_cookie",
+      "request": {
+        "method": "GET",
+        "path": "/api/user/progress"
+      },
+      "expected_status": 200,
+      "actual_status": 200,
+      "verdict": "PASS",
+      "assertion": "Old Guest A signed cookie exposes no progress after claim"
+    },
+    {
+      "step": "old_cookie_exposes_no_claimed_custom_challenges",
+      "actor": "third_party_with_old_cookie",
+      "request": {
+        "method": "GET",
+        "path": "/api/challenges/custom"
+      },
+      "expected_status": 200,
+      "actual_status": 200,
+      "verdict": "PASS",
+      "assertion": "Old Guest A signed cookie exposes no custom challenges after claim"
+    },
+    {
+      "step": "user_b_register",
+      "actor": "user_b",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register"
+      },
+      "expected_status": 200,
+      "actual_status": 200,
+      "verdict": "PASS",
+      "assertion": "User B registers cleanly with own cookie"
+    },
+    {
+      "step": "user_b_forged_header_claim_rejected",
+      "actor": "user_b",
+      "request": {
+        "method": "POST",
+        "path": "/api/user/claim-session"
+      },
+      "expected_status": 403,
+      "actual_status": 403,
+      "verdict": "PASS",
+      "assertion": "POST /api/user/claim-session rejects forged session header with 403"
+    },
+    {
+      "step": "user_b_tampered_cookie_claim_rejected",
+      "actor": "user_b",
+      "request": {
+        "method": "POST",
+        "path": "/api/user/claim-session"
+      },
+      "expected_status": 403,
+      "actual_status": 403,
+      "verdict": "PASS",
+      "assertion": "POST /api/user/claim-session rejects tampered guest cookie with 403"
+    },
+    {
+      "step": "user_b_cannot_reclaim_old_guest_a_session",
+      "actor": "user_b",
+      "request": {
+        "method": "POST",
+        "path": "/api/user/claim-session"
+      },
+      "expected_status": 200,
+      "actual_status": 200,
+      "verdict": "PASS",
+      "assertion": "User B claim-session on already-claimed Guest A cookie claims 0 items"
+    },
+    {
+      "step": "user_b_cannot_see_user_a_history_even_with_old_cookie",
+      "actor": "user_b",
+      "request": {
+        "method": "GET",
+        "path": "/api/challenges/agent-unsanitized-exec/submissions"
+      },
+      "expected_status": 200,
+      "actual_status": 200,
+      "verdict": "PASS",
+      "assertion": "User B cannot see User A submissions even with old Guest A cookie"
+    },
+    {
+      "step": "user_b_cannot_see_user_a_progress_even_with_old_cookie",
+      "actor": "user_b",
+      "request": {
+        "method": "GET",
+        "path": "/api/user/progress"
+      },
+      "expected_status": 200,
+      "actual_status": 200,
+      "verdict": "PASS",
+      "assertion": "User B cannot see User A progress even with old Guest A cookie/header"
+    },
+    {
+      "step": "user_a_logout",
+      "actor": "user_a",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/logout"
+      },
+      "expected_status": 200,
+      "actual_status": 200,
+      "verdict": "PASS",
+      "assertion": "User A logs out and clears auth cookie"
+    },
+    {
+      "step": "user_a_me_after_logout_denied",
+      "actor": "user_a_logged_out",
+      "request": {
+        "method": "GET",
+        "path": "/api/auth/me"
+      },
+      "expected_status": 401,
+      "actual_status": 401,
+      "verdict": "PASS",
+      "assertion": "Logged-out User A receives 401 on /api/auth/me"
+    },
+    {
+      "step": "user_a_progress_cleared_after_logout",
+      "actor": "user_a_logged_out",
+      "request": {
+        "method": "GET",
+        "path": "/api/user/progress"
+      },
+      "expected_status": 200,
+      "actual_status": 200,
+      "verdict": "PASS",
+      "assertion": "Logged-out User A sees 0 attempted progress"
+    },
+    {
+      "step": "user_a_login_restores_access",
+      "actor": "user_a",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login"
+      },
+      "expected_status": 200,
+      "actual_status": 200,
+      "verdict": "PASS",
+      "assertion": "User A logs back in and receives fresh auth cookie"
+    },
+    {
+      "step": "user_a_progress_restored_after_login",
+      "actor": "user_a",
+      "request": {
+        "method": "GET",
+        "path": "/api/user/progress"
+      },
+      "expected_status": 200,
+      "actual_status": 200,
+      "verdict": "PASS",
+      "assertion": "Re-authenticated User A sees claimed progress again"
+    },
+    {
+      "step": "forged_cookie_rejected",
+      "actor": "forged_cookie",
+      "request": {
+        "method": "GET",
+        "path": "/api/auth/me"
+      },
+      "expected_status": 401,
+      "actual_status": 401,
+      "verdict": "PASS",
+      "assertion": "Garbage auth cookie is rejected with 401 on /api/auth/me"
+    },
+    {
+      "step": "forged_cookie_yields_no_progress",
+      "actor": "forged_cookie",
+      "request": {
+        "method": "GET",
+        "path": "/api/user/progress"
+      },
+      "expected_status": 200,
+      "actual_status": 200,
+      "verdict": "PASS",
+      "assertion": "Garbage auth cookie grants no progress access"
+    },
+    {
+      "step": "register_user_to_deactivate",
+      "actor": "inactive_user",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register"
+      },
+      "expected_status": 200,
+      "actual_status": 200,
+      "verdict": "PASS",
+      "assertion": "Register user before deactivating in isolated DB"
+    },
+    {
+      "step": "inactive_user_cookie_rejected",
+      "actor": "inactive_user",
+      "request": {
+        "method": "GET",
+        "path": "/api/auth/me"
+      },
+      "expected_status": 401,
+      "actual_status": 401,
+      "verdict": "PASS",
+      "assertion": "Deactivated user auth cookie is rejected with 401"
+    },
+    {
+      "step": "inactive_user_login_rejected",
+      "actor": "inactive_user",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login"
+      },
+      "expected_status": 403,
+      "actual_status": 403,
+      "verdict": "PASS",
+      "assertion": "Deactivated user login attempt is rejected with 403"
+    },
+    {
+      "step": "dev_x_user_id_header_rejected_on_me",
+      "actor": "forged_x_user_id_dev",
+      "request": {
+        "method": "GET",
+        "path": "/api/auth/me"
+      },
+      "expected_status": 401,
+      "actual_status": 401,
+      "verdict": "PASS",
+      "assertion": "Forged x-user-id header returns 401 even in development mode"
+    },
+    {
+      "step": "prod_x_user_id_header_rejected_on_me",
+      "actor": "forged_x_user_id_prod",
+      "request": {
+        "method": "GET",
+        "path": "/api/auth/me"
+      },
+      "expected_status": 401,
+      "actual_status": 401,
+      "verdict": "PASS",
+      "assertion": "Forged x-user-id header returns 401 when ENVIRONMENT=production"
+    },
+    {
+      "step": "prod_x_user_id_header_exposes_no_progress",
+      "actor": "forged_x_user_id_prod",
+      "request": {
+        "method": "GET",
+        "path": "/api/user/progress"
+      },
+      "expected_status": 200,
+      "actual_status": 200,
+      "verdict": "PASS",
+      "assertion": "Forged x-user-id header exposes no User A progress in production"
+    },
+    {
+      "step": "prod_x_user_id_header_exposes_no_history",
+      "actor": "forged_x_user_id_prod",
+      "request": {
+        "method": "GET",
+        "path": "/api/challenges/agent-unsanitized-exec/submissions"
+      },
+      "expected_status": 200,
+      "actual_status": 200,
+      "verdict": "PASS",
+      "assertion": "Forged x-user-id header exposes no User A history in production"
+    }
+  ]
+}

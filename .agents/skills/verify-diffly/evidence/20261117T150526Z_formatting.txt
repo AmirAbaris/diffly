@@ -1,0 +1,59 @@
+=== Ruff Check ===
+All checks passed!
+=== Ruff Format Check ===
+37 files already formatted
+=== Prettier Check ===
+$ prettier --check "**/*.{ts,tsx,js,mjs,json,md}"
+Checking formatting...
+All matched files use Prettier code style!
+=== Oxlint Check ===
+$ oxlint
+Found 0 warnings and 0 errors.
+Finished in 38ms on 151 files with 156 rules using 10 threads.
+=== React Doctor Check ===
+$ react-doctor -y --no-telemetry
+✔ Select projects › diffly
+  
+✔ Scanned 153 files in 0.7s [~10 workers]
+✔ Scanned 153 files in 1.5s
+
+React Doctor — diffly
+Score disabled by --no-score. Want something custom to your company? Contact us at https://react.doctor/enterprise.
+
+13 issues
+Maintainability: 13 warnings
+
+⚠ React function has high control-flow complexity ×2
+  react-doctor/no-high-complexity-react-function
+  components/review/code-viewer.tsx:43
+  components/review/submission-bar.tsx:109
+⚠ Non-component export in component file ×11
+  react-doctor/only-export-components
+  components/review/comparison/staff-review-column.tsx:9
+  components/review/context-panel/progressive-hints.tsx:15
+  components/review/markdown-preview.tsx:18
+  components/review/markdown-preview.tsx:18
+  components/review/result-modal/score-helpers.tsx:11
+  components/review/result-modal/score-helpers.tsx:41
+  components/review/review-result-modal.tsx:28
+  components/review/review-result-modal.tsx:28
+  components/ui/badge.tsx:62
+  components/ui/button.tsx:64
+  components/ui/toggle.tsx:46
+
+  ────────────────────────────────────────────────────────────
+
+  Docs: https://react.doctor/docs
+  Learn more about fixing issues, setting up CI/CD, and
+  configuring rules with a config file
+
+  GitHub: https://github.com/millionco/react-doctor
+  Report issues and star the repository!
+
+=== ESLint Check ===
+$ eslint
+=== Screenshot Hygiene Check ===
+$ bash scripts/check-no-screenshots.sh
+No tracked or staged verification screenshots found.
+=== TypeScript Check ===
+$ tsc --noEmit
