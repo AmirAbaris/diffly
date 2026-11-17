@@ -4,13 +4,11 @@ import time
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, SQLModel, create_engine
 from sqlmodel.pool import StaticPool
 
 from backend.core.config import settings
-from backend.core.db import _scrub_claimed_session_ids
 from backend.core.guest_session import (
     GuestSession,
     _decode,
@@ -129,7 +127,7 @@ def test_stale_guest_cookie_refreshes_on_read_and_write(
     assert refreshed.issued_at > stale_time
 
 
-def test_single_owner_check_constraint_and_startup_scrub():
+def test_single_owner_check_constraint():
     engine = create_engine(
         "sqlite:///:memory:",
         connect_args={"check_same_thread": False},
@@ -191,46 +189,7 @@ def test_single_owner_check_constraint_and_startup_scrub():
             db.commit()
         db.rollback()
 
-    legacy_engine = create_engine("sqlite:///:memory:")
-    with legacy_engine.begin() as conn:
-        conn.execute(
-            text(
-                "CREATE TABLE challenges "
-                "(id INTEGER PRIMARY KEY, user_id INTEGER, session_id TEXT)"
-            )
-        )
-        conn.execute(
-            text(
-                "CREATE TABLE submissions "
-                "(id INTEGER PRIMARY KEY, user_id INTEGER, session_id TEXT)"
-            )
-        )
-        conn.execute(
-            text(
-                "INSERT INTO challenges VALUES (1, 7, 'g_legacy'), (2, NULL, 'g_guest')"
-            )
-        )
-        conn.execute(
-            text(
-                "INSERT INTO submissions VALUES "
-                "(1, 7, 'g_legacy'), (2, NULL, 'g_guest')"
-            )
-        )
-
-    _scrub_claimed_session_ids(legacy_engine)
-
-    with legacy_engine.connect() as conn:
-        ch_rows = conn.execute(
-            text("SELECT id, user_id, session_id FROM challenges ORDER BY id")
-        ).all()
-        sub_rows = conn.execute(
-            text("SELECT id, user_id, session_id FROM submissions ORDER BY id")
-        ).all()
-        assert ch_rows == [(1, 7, None), (2, None, "g_guest")]
-        assert sub_rows == [(1, 7, None), (2, None, "g_guest")]
-
     engine.dispose()
-    legacy_engine.dispose()
 
 
 def test_tampered_guest_cookie_on_write_emits_single_set_cookie(

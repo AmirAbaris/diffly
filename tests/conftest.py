@@ -2,6 +2,7 @@ import time
 from collections.abc import Callable, Generator
 from itertools import count
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -48,15 +49,20 @@ def client_factory_fixture(
     app.dependency_overrides[get_session] = get_session_override
     created_clients: list[TestClient] = []
 
-    def _create_client() -> TestClient:
-        test_client = TestClient(app)
-        created_clients.append(test_client)
-        return test_client
+    with (
+        patch("api.index.init_db"),
+        patch("api.index.seed_challenges_if_empty"),
+    ):
 
-    yield _create_client
+        def _create_client() -> TestClient:
+            test_client = TestClient(app)
+            created_clients.append(test_client)
+            return test_client
 
-    for test_client in created_clients:
-        test_client.close()
+        yield _create_client
+
+        for test_client in created_clients:
+            test_client.close()
     app.dependency_overrides.clear()
 
 
@@ -66,7 +72,11 @@ def client_fixture(session: Session) -> Generator[TestClient, None, None]:
         yield session
 
     app.dependency_overrides[get_session] = get_session_override
-    with TestClient(app) as test_client:
+    with (
+        patch("api.index.init_db"),
+        patch("api.index.seed_challenges_if_empty"),
+        TestClient(app) as test_client,
+    ):
         yield test_client
     app.dependency_overrides.clear()
 

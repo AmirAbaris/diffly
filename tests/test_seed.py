@@ -221,16 +221,22 @@ def test_seed_challenges_if_empty(session: Session):
     assert ch_reloaded.title == "Do Not Overwrite"
 
 
-def test_cli_seed_command():
+def test_cli_seed_command(tmp_path):
     """Verify executing python -m backend.seed.seed_data succeeds."""
+    import os
     import subprocess
     import sys
+
+    db_path = tmp_path / "seed_cli.db"
+    env = os.environ.copy()
+    env["DATABASE_URL"] = f"sqlite:///{db_path}"
 
     result = subprocess.run(
         [sys.executable, "-m", "backend.seed.seed_data"],
         capture_output=True,
         text=True,
         check=True,
+        env=env,
     )
     assert result.returncode == 0
     assert f"Successfully seeded {len(CHALLENGES_DATA)} challenges" in result.stdout

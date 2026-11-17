@@ -34,7 +34,7 @@
     "start": "next start",
     "lint:js": "eslint",
     "lint:oxlint": "oxlint",
-    "lint:py": "([ -f .venv/bin/ruff ] && .venv/bin/ruff check api backend tests) || ruff check api backend tests",
+    "lint:py": "([ -f .venv/bin/ruff ] && .venv/bin/ruff check api backend tests alembic) || ruff check api backend tests alembic",
     "lint:doctor": "react-doctor -y --no-telemetry",
     "lint:screenshots": "bash scripts/check-no-screenshots.sh",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,mjs,json,md}\"",

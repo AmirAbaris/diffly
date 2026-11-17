@@ -100,6 +100,10 @@ class Settings(BaseSettings):
         return cleaned
 
     @property
+    def is_vercel(self) -> bool:
+        return (self.VERCEL or "").strip().lower() in {"1", "true"}
+
+    @property
     def is_cookie_secure(self) -> bool:
         if self.COOKIE_SECURE:
             return True

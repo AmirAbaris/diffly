@@ -97,6 +97,8 @@ RUN mkdir -p /app/data && chown -R diffly:diffly /app
 
 COPY --chown=diffly:diffly api /app/api
 COPY --chown=diffly:diffly backend /app/backend
+COPY --chown=diffly:diffly alembic /app/alembic
+COPY --chown=diffly:diffly alembic.ini /app/alembic.ini
 COPY --chown=diffly:diffly content /app/content
 COPY --chown=diffly:diffly pyproject.toml /app/pyproject.toml
 
@@ -107,4 +109,4 @@ EXPOSE 8000
 HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=3 \
     CMD curl -f http://127.0.0.1:8000/api/health || exit 1
 
-CMD ["sh", "-c", "python -m backend.seed.seed_data && exec uvicorn api.index:app --host 0.0.0.0 --port ${PORT:-8000} --workers 2 --proxy-headers --forwarded-allow-ips '*'"]
+CMD ["sh", "-c", "alembic upgrade head && python -m backend.seed.seed_data && exec uvicorn api.index:app --host 0.0.0.0 --port ${PORT:-8000} --workers 2 --proxy-headers --forwarded-allow-ips '*'"]

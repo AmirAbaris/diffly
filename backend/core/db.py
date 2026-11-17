@@ -1,13 +1,21 @@
 import importlib.util
 from collections.abc import Generator
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
-from sqlalchemy import Engine, event, text
-from sqlmodel import Session, SQLModel, create_engine
+from alembic.config import Config
+from sqlalchemy import Engine, event, inspect
+from sqlmodel import Session, create_engine
 
+from alembic import command
 from backend.core.config import Settings, settings
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+ALEMBIC_INI_PATH = PROJECT_ROOT / "alembic.ini"
+ALEMBIC_SCRIPT_LOCATION = PROJECT_ROOT / "alembic"
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,86 +128,31 @@ def create_db_engine(source: Settings | str | None = None) -> Engine:
 engine = create_db_engine()
 
 
-def _ensure_postgres_enum_values(target_engine: Engine) -> None:
-    if target_engine.dialect.name != "postgresql":
-        return
+def run_migrations(target_engine: Engine | None = None, revision: str = "head") -> None:
+    """Apply Alembic migrations on the given (or default) engine."""
+    resolved_engine = target_engine if target_engine is not None else engine
+    alembic_cfg = Config(str(ALEMBIC_INI_PATH))
+    alembic_cfg.set_main_option("script_location", str(ALEMBIC_SCRIPT_LOCATION))
+    alembic_cfg.attributes["configure_logger"] = False
 
-    with target_engine.connect().execution_options(
-        isolation_level="AUTOCOMMIT"
-    ) as connection:
-        connection.execute(text("ALTER TYPE language ADD VALUE IF NOT EXISTS 'JAVA'"))
-
-
-def _scrub_claimed_session_ids(target_engine: Engine) -> None:
-    """Clear leftover session_id on claimed rows so single-owner invariant holds."""
-    with target_engine.begin() as connection:
-        connection.execute(
-            text(
-                "UPDATE challenges SET session_id = NULL "
-                "WHERE user_id IS NOT NULL AND session_id IS NOT NULL"
+    with resolved_engine.connect() as connection:
+        table_names = set(inspect(connection).get_table_names())
+        if connection.in_transaction():
+            connection.rollback()
+        app_tables = {"users", "challenges", "submissions"}
+        if "alembic_version" not in table_names and (table_names & app_tables):
+            existing = ", ".join(sorted(table_names & app_tables))
+            raise RuntimeError(
+                f"Pre-Alembic database detected (existing tables: {existing}; "
+                "missing alembic_version). Verify schema constraints and enums, then "
+                "run `alembic stamp head` (or recreate a local dev database)."
             )
-        )
-        connection.execute(
-            text(
-                "UPDATE submissions SET session_id = NULL "
-                "WHERE user_id IS NOT NULL AND session_id IS NOT NULL"
-            )
-        )
+        alembic_cfg.attributes["connection"] = connection
+        command.upgrade(alembic_cfg, revision)
 
 
-def _ensure_single_owner_constraints(target_engine: Engine) -> None:
-    """Install single-owner CHECK constraints on existing PostgreSQL tables."""
-    if target_engine.dialect.name != "postgresql":
-        return
-
-    with target_engine.begin() as connection:
-        connection.execute(
-            text(
-                """
-                DO $$
-                BEGIN
-                    IF NOT EXISTS (
-                        SELECT 1 FROM pg_constraint
-                        WHERE conname = 'ck_challenges_single_owner'
-                    ) THEN
-                        ALTER TABLE challenges
-                        ADD CONSTRAINT ck_challenges_single_owner
-                        CHECK (user_id IS NULL OR session_id IS NULL);
-                    END IF;
-                    IF NOT EXISTS (
-                        SELECT 1 FROM pg_constraint
-                        WHERE conname = 'ck_submissions_single_owner'
-                    ) THEN
-                        ALTER TABLE submissions
-                        ADD CONSTRAINT ck_submissions_single_owner
-                        CHECK (user_id IS NULL OR session_id IS NULL);
-                    END IF;
-                END
-                $$;
-                """
-            )
-        )
-
-
-def init_db() -> None:
-    import backend.models  # noqa: F401
-
-    try:
-        SQLModel.metadata.create_all(engine)
-    except Exception as exc:
-        err_msg = str(exc).lower()
-        if (
-            "already exists" in err_msg
-            or "locked" in err_msg
-            or "duplicate key" in err_msg
-        ):
-            pass
-        else:
-            raise
-
-    _ensure_postgres_enum_values(engine)
-    _scrub_claimed_session_ids(engine)
-    _ensure_single_owner_constraints(engine)
+def init_db(target_engine: Engine | None = None) -> None:
+    run_migrations(target_engine=target_engine)
 
 
 def get_session() -> Generator[Session, None, None]:

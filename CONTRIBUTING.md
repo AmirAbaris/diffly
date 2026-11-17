@@ -58,7 +58,8 @@ CI and Lefthook enforce the rules below across frontend and backend code:
 
 - **React component size limit.** Keep files under 350 non-blank, non-comment lines (`max-lines` in `eslint.config.mjs` and `.oxlintrc.json`). Extract pure parsers into `lib/`, stateful logic into `hooks/`, and sub-views into focused child components.
 - **Semantic CSS tokens only.** Never use raw hex, `rgb()`, `hsl()`, `oklch()`, or arbitrary Tailwind color classes in `components/` or `app/`. Use semantic tokens defined in `app/globals.css` (such as `bg-background`, `text-foreground`, and `border-border`).
-- **Python formatting and linting.** Format and lint all files in `api/`, `backend/`, and `tests/` with Ruff (`ruff check` and `ruff format --check`) following PEP 8 and the rules in `pyproject.toml`.
+- **Python formatting and linting.** Format and lint all files in `api/`, `backend/`, `tests/`, and `alembic/` with Ruff (`ruff check` and `ruff format --check`) following PEP 8 and the rules in `pyproject.toml`.
+- **Database schema migrations.** Add schema changes via Alembic revisions under `alembic/versions/` (`alembic revision --autogenerate`) and run `alembic upgrade head` against a direct (non-pooler) database URL. Wrap future PostgreSQL `ALTER TYPE ... ADD VALUE` statements in `with op.get_context().autocommit_block():`.
 - **Backend test coverage.** Keep Pytest line coverage at or above 85% across `api/` and `backend/`.
 - **Authorization matrix registration.** Whenever you add, rename, or remove a FastAPI endpoint, register it in `tests/test_authorization_matrix.py` (`PUBLIC_ROUTES` or `MATRIX`) with expected status codes across anonymous, guest, user, and inactive actors.
 
