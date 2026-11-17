@@ -508,7 +508,7 @@ def test_app_lifespan_fails_fast_with_unsafe_production_secret(monkeypatch):
     )
     with (
         patch("api.index.init_db"),
-        patch("api.index.seed_challenges_if_empty"),
+        patch("api.index.seed_missing_challenges"),
         TestClient(app) as tc,
     ):
         assert tc is not None
@@ -520,7 +520,7 @@ def test_app_lifespan_skips_init_db_on_vercel(monkeypatch):
     monkeypatch.setattr(settings, "VERCEL", "1")
     with (
         patch("api.index.init_db") as mock_init_db,
-        patch("api.index.seed_challenges_if_empty") as mock_seed,
+        patch("api.index.seed_missing_challenges") as mock_seed,
         TestClient(app),
     ):
         mock_init_db.assert_not_called()
@@ -529,7 +529,7 @@ def test_app_lifespan_skips_init_db_on_vercel(monkeypatch):
     monkeypatch.setattr(settings, "VERCEL", None)
     with (
         patch("api.index.init_db") as mock_init_db,
-        patch("api.index.seed_challenges_if_empty") as mock_seed,
+        patch("api.index.seed_missing_challenges") as mock_seed,
         TestClient(app),
     ):
         mock_init_db.assert_called_once()

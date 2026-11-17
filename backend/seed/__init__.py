@@ -9,11 +9,16 @@ __all__ = [
     "CHALLENGES_DATA",
     "seed_challenges",
     "seed_challenges_if_empty",
+    "seed_missing_challenges",
 ]
 
 
 def __getattr__(name: str) -> Any:
-    if name in ("seed_challenges", "seed_challenges_if_empty"):
+    if name in (
+        "seed_challenges",
+        "seed_challenges_if_empty",
+        "seed_missing_challenges",
+    ):
         from backend.seed import seed_data
 
         return getattr(seed_data, name)

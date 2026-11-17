@@ -11,6 +11,7 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
 
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from backend.core.db import engine, init_db
@@ -114,6 +115,57 @@ def seed_challenges_if_empty(
             "Notice during seed_challenges_if_empty (concurrent worker): %s", exc
         )
         return []
+
+
+def seed_missing_challenges(
+    session: Session | None = None,
+    content_dir: Path | str | None = None,
+) -> list[Challenge]:
+    """Insert curated challenge bundles not yet present in the public catalog."""
+    challenges_data = load_challenges_from_dir(content_dir)
+
+    with get_managed_session(session) as db:
+        existing_public_slugs = set(
+            db.exec(select(Challenge.slug).where(Challenge.is_public.is_(True))).all()
+        )
+        missing_bundles = [
+            ch for ch in challenges_data if ch["slug"] not in existing_public_slugs
+        ]
+
+        if not missing_bundles:
+            logger.info("All curated challenge bundles are already seeded.")
+            return list(
+                db.exec(select(Challenge).where(Challenge.is_public.is_(True))).all()
+            )
+
+        for challenge_dict in missing_bundles:
+            slug = challenge_dict["slug"]
+            existing = db.exec(select(Challenge).where(Challenge.slug == slug)).first()
+
+            if existing is not None and existing.is_public:
+                continue
+
+            if existing is not None and not existing.is_public:
+                existing.slug = f"{slug}-custom-{existing.id or '1'}"
+                db.add(existing)
+                db.flush()
+
+            try:
+                with db.begin_nested():
+                    candidate = Challenge(**challenge_dict)
+                    db.add(candidate)
+                    db.flush()
+                logger.info("Seeded missing curated challenge: %s", slug)
+            except IntegrityError:
+                logger.info(
+                    "Challenge %s inserted concurrently; skipping",
+                    slug,
+                )
+
+        db.commit()
+        return list(
+            db.exec(select(Challenge).where(Challenge.is_public.is_(True))).all()
+        )
 
 
 def main() -> None:

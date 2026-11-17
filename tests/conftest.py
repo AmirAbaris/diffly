@@ -51,7 +51,7 @@ def client_factory_fixture(
 
     with (
         patch("api.index.init_db"),
-        patch("api.index.seed_challenges_if_empty"),
+        patch("api.index.seed_missing_challenges"),
     ):
 
         def _create_client() -> TestClient:
@@ -74,7 +74,7 @@ def client_fixture(session: Session) -> Generator[TestClient, None, None]:
     app.dependency_overrides[get_session] = get_session_override
     with (
         patch("api.index.init_db"),
-        patch("api.index.seed_challenges_if_empty"),
+        patch("api.index.seed_missing_challenges"),
         TestClient(app) as test_client,
     ):
         yield test_client
