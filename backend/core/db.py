@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlsplit
 
-from sqlalchemy import Engine, event
+from sqlalchemy import Engine, event, text
 from sqlmodel import Session, SQLModel, create_engine
 
 from backend.core.config import Settings, settings
@@ -120,6 +120,16 @@ def create_db_engine(source: Settings | str | None = None) -> Engine:
 engine = create_db_engine()
 
 
+def _ensure_postgres_enum_values(target_engine: Engine) -> None:
+    if target_engine.dialect.name != "postgresql":
+        return
+
+    with target_engine.connect().execution_options(
+        isolation_level="AUTOCOMMIT"
+    ) as connection:
+        connection.execute(text("ALTER TYPE language ADD VALUE IF NOT EXISTS 'JAVA'"))
+
+
 def init_db() -> None:
     import backend.models  # noqa: F401
 
@@ -135,6 +145,8 @@ def init_db() -> None:
             pass
         else:
             raise
+
+    _ensure_postgres_enum_values(engine)
 
 
 def get_session() -> Generator[Session, None, None]:

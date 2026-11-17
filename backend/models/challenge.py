@@ -73,6 +73,7 @@ class Language(StrEnum):
     TYPESCRIPT = "typescript"
     GO = "go"
     RUST = "rust"
+    JAVA = "java"
 
     @classmethod
     def _missing_(cls, value: object):
@@ -425,7 +426,7 @@ class GenerateCustomChallengeRequest(BaseModel):
     )
     language: Language = Field(
         default=Language.PYTHON,
-        description="Programming language: python, typescript, go, rust",
+        description="Programming language: python, typescript, go, rust, java",
     )
     difficulty: Difficulty = Field(
         default=Difficulty.MEDIUM,

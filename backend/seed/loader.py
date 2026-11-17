@@ -3,7 +3,7 @@
 Traverses `content/challenges/<slug>/` bundles containing:
   - meta.yaml: Challenge metadata, schema, hints, solutions, expected defects
   - description.md: Rich problem description & threat model
-  - snippet.<ext>: Native clean code snippet (.py, .ts, .go, .rs, etc.)
+  - snippet.<ext>: Native clean code snippet (.py, .ts, .go, .rs, .java, etc.)
 """
 
 import logging

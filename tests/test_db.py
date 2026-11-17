@@ -194,6 +194,37 @@ def test_init_db_tolerates_duplicate_key_and_raises_unrelated_errors():
         init_db()
 
 
+def test_init_db_ensures_postgres_enum_values_only_for_postgresql():
+    pg_engine = MagicMock()
+    pg_engine.dialect.name = "postgresql"
+    pg_conn = MagicMock()
+    pg_autocommit_conn = MagicMock()
+    pg_engine.connect.return_value = pg_conn
+    pg_conn.execution_options.return_value.__enter__.return_value = pg_autocommit_conn
+
+    with (
+        patch("backend.core.db.engine", pg_engine),
+        patch("backend.core.db.SQLModel.metadata.create_all"),
+    ):
+        init_db()
+
+    pg_engine.connect.assert_called_once()
+    pg_conn.execution_options.assert_called_once_with(isolation_level="AUTOCOMMIT")
+    pg_autocommit_conn.execute.assert_called_once()
+    executed_sql = str(pg_autocommit_conn.execute.call_args[0][0])
+    assert executed_sql == "ALTER TYPE language ADD VALUE IF NOT EXISTS 'JAVA'"
+
+    sqlite_engine = MagicMock()
+    sqlite_engine.dialect.name = "sqlite"
+    with (
+        patch("backend.core.db.engine", sqlite_engine),
+        patch("backend.core.db.SQLModel.metadata.create_all"),
+    ):
+        init_db()
+
+    sqlite_engine.connect.assert_not_called()
+
+
 def test_get_session_yields_session():
     gen: Generator[Session, None, None] = get_session()
     session = next(gen)
