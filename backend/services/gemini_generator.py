@@ -72,7 +72,10 @@ Constraints:
    - Provide 30 to 60 lines of realistic, production-grade {language.value} code.
    - Embed exactly 1 to 2 subtle, realistic defects (e.g. IDOR, race condition,
      auth bypass, injection, resource leak, or logic error).
-   - DO NOT include comments like "# BUG HERE" or "TODO: fix vulnerability".
+   - NEVER include comments that hint at, name, or reveal the defect or missing guard
+     (for example "# Defect:", "// Vulnerability:", "// Bug:", "// Missing ... check",
+     "# BUG HERE", or "TODO: fix vulnerability"). Comments must read like neutral
+     production code comments only.
    - The code must be well-formatted and idiomatic.
 
 2. expected_issues:
