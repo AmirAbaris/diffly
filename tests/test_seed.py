@@ -456,8 +456,6 @@ def test_snippets_contain_no_spoiler_comments():
             if diff_line.startswith(("+", "---", "+++", "@@")):
                 continue
             if combined.search(diff_line):
-                violations.append(
-                    f"{bundle.name}/meta.yaml diff: {diff_line.strip()}"
-                )
+                violations.append(f"{bundle.name}/meta.yaml diff: {diff_line.strip()}")
 
     assert violations == [], "Spoiler comments found:\n" + "\n".join(violations)
