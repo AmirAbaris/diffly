@@ -19,7 +19,7 @@ Required files in every bundle:
 
 - `meta.yaml` (or `meta.yml`) holds metadata, `expected_issues`, `hints`, `canonical_review`, and `recommended_fix_diff`.
 - `description.md` holds the problem context and the threat model section.
-- `snippet.<ext>` holds the raw vulnerable source file using `.py`, `.ts`, `.go`, or `.rs`.
+- `snippet.<ext>` holds the raw vulnerable source file using `.py`, `.ts`, `.go`, `.rs`, or `.java`.
 
 Optional fallback files when `meta.yaml` omits the corresponding inline fields:
 
@@ -41,7 +41,7 @@ When both the inline field in `meta.yaml` and a fallback file are present, `load
 | `title`             | string  | Yes      | Display title shown in the challenge catalog and workspace.                                                           |
 | `difficulty`        | string  | Yes      | Matches `Difficulty` (`Easy`, `Medium`, or `Hard`). YAML parsing accepts lowercase values (`easy`, `medium`, `hard`). |
 | `category`          | string  | Yes      | Matches `Category`. See accepted canonical values and aliases below.                                                  |
-| `language`          | string  | Yes      | Matches `Language` (`python`, `typescript`, `go`, or `rust`), matched case-insensitively.                             |
+| `language`          | string  | Yes      | Matches `Language` (`python`, `typescript`, `go`, `rust`, or `java`), matched case-insensitively.                     |
 | `estimated_minutes` | integer | No       | Estimated review duration in minutes. Defaults to `5`.                                                                |
 | `defect_target`     | string  | No       | Short objective shown in the workspace header, such as `Find 1 Critical RCE Vulnerability in agent tool execution`.   |
 
@@ -192,7 +192,7 @@ Describe who controls the untrusted input, what privilege boundary breaks, and w
 
 `load_challenge_bundle()` loads the first file matching `snippet.*` whose suffix is not `.yaml`, `.yml`, `.md`, `.json`, or `.diff`. `tests/test_seed.py` enforces four rules on every `snippet.<ext>` file under `content/challenges/`:
 
-- Each bundle has exactly one snippet file with extension `.py`, `.ts`, `.go`, or `.rs`.
+- Each bundle has exactly one snippet file with extension `.py`, `.ts`, `.go`, `.rs`, or `.java`.
 - The file contains raw multiline source code with more than 5 lines (`len(lines) > 5`).
 - The file does not start with triple-quote or tuple wrappers (`"""`, `'''`, `("`, or `('`).
 - Python snippets (`snippet.py`) parse without syntax errors under `ast.parse()`.
