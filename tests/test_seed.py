@@ -506,3 +506,131 @@ def test_snippets_contain_no_spoiler_comments():
                 violations.append(f"{bundle.name}/meta.yaml diff: {diff_line.strip()}")
 
     assert violations == [], "Spoiler comments found:\n" + "\n".join(violations)
+
+
+def test_lifespan_seeds_missing_curated_bundles_on_non_empty_db(
+    engine, session: Session
+):
+    """Verify app lifespan seeds missing curated bundles when public rows exist."""
+    from collections.abc import Generator
+    from unittest.mock import patch
+
+    from fastapi.testclient import TestClient
+
+    from api.index import app
+    from backend.core.db import get_session
+
+    non_java_challenges = [
+        ch for ch in CHALLENGES_DATA if ch["language"] != Language.JAVA
+    ]
+    java_slugs = {
+        ch["slug"] for ch in CHALLENGES_DATA if ch["language"] == Language.JAVA
+    }
+    assert len(java_slugs) == 5
+
+    for ch_dict in non_java_challenges:
+        session.add(Challenge(**ch_dict))
+    session.flush()
+
+    tampered_slug = non_java_challenges[0]["slug"]
+    tampered = session.exec(
+        select(Challenge).where(Challenge.slug == tampered_slug)
+    ).first()
+    assert tampered is not None
+    tampered.title = "Do Not Overwrite"
+    session.add(tampered)
+    session.commit()
+
+    def override_get_session() -> Generator[Session, None, None]:
+        yield session
+
+    app.dependency_overrides[get_session] = override_get_session
+    try:
+        with (
+            patch("api.index.init_db"),
+            patch("backend.seed.seed_data.engine", engine),
+            TestClient(app) as tc,
+        ):
+            res = tc.get("/api/challenges?language=java")
+            assert res.status_code == 200
+            returned_slugs = {item["slug"] for item in res.json()}
+            assert returned_slugs == java_slugs
+    finally:
+        app.dependency_overrides.clear()
+
+    session.expire_all()
+    persisted = session.exec(
+        select(Challenge).where(Challenge.slug == tampered_slug)
+    ).first()
+    assert persisted is not None
+    assert persisted.title == "Do Not Overwrite"
+
+
+def test_seed_missing_curated_bundles_preserves_private_slug_collision(
+    session: Session,
+):
+    """Verify seed_missing_challenges syncs bundles and keeps private collisions."""
+    from backend.seed.seed_data import seed_missing_challenges
+
+    non_java_challenges = [
+        ch for ch in CHALLENGES_DATA if ch["language"] != Language.JAVA
+    ]
+    java_challenges = [ch for ch in CHALLENGES_DATA if ch["language"] == Language.JAVA]
+    assert len(java_challenges) == 5
+
+    for ch_dict in non_java_challenges:
+        session.add(Challenge(**ch_dict))
+
+    tampered_slug = non_java_challenges[0]["slug"]
+    session.flush()
+    tampered = session.exec(
+        select(Challenge).where(Challenge.slug == tampered_slug)
+    ).first()
+    assert tampered is not None
+    tampered.title = "Do Not Overwrite"
+    session.add(tampered)
+
+    colliding_slug = java_challenges[0]["slug"]
+    private_custom = Challenge(
+        slug=colliding_slug,
+        title="Private Custom Collision",
+        difficulty=Difficulty.EASY,
+        category=Category.SECURITY,
+        language=Language.JAVA,
+        description="User generated challenge",
+        code_snippet="class Custom {}",
+        is_public=False,
+        session_id="g_collision_owner",
+    )
+    session.add(private_custom)
+    session.commit()
+    session.refresh(private_custom)
+    private_id = private_custom.id
+
+    results = seed_missing_challenges(session)
+    assert len(results) == len(CHALLENGES_DATA)
+    assert {ch.slug for ch in results} == {ch["slug"] for ch in CHALLENGES_DATA}
+
+    public_curated = session.exec(
+        select(Challenge).where(
+            Challenge.slug == colliding_slug,
+            Challenge.is_public.is_(True),
+        )
+    ).first()
+    assert public_curated is not None
+    assert public_curated.title == java_challenges[0]["title"]
+
+    preserved_private = session.get(Challenge, private_id)
+    assert preserved_private is not None
+    assert preserved_private.is_public is False
+    assert preserved_private.title == "Private Custom Collision"
+    assert preserved_private.slug.startswith(f"{colliding_slug}-custom-")
+    assert preserved_private.slug != colliding_slug
+
+    session.refresh(tampered)
+    assert tampered.title == "Do Not Overwrite"
+
+    second_results = seed_missing_challenges(session)
+    assert len(second_results) == len(CHALLENGES_DATA)
+    session.refresh(tampered)
+    assert tampered.title == "Do Not Overwrite"
