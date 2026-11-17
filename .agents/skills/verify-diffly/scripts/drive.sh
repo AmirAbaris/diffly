@@ -61,24 +61,24 @@ case "$FEATURE" in
         OUT="$EVIDENCE_DIR/${TIMESTAMP}_formatting.txt"
         RUFF_BIN="$(resolve_bin ruff)"
         FORMATTING_STATUS=0
+        run_hygiene_check() {
+            local label="$1"
+            shift
+            echo "=== $label ==="
+            if ! "$@"; then
+                FORMATTING_STATUS=1
+            fi
+        }
         {
-            echo "=== Ruff Check ==="
-            "$RUFF_BIN" check "$REPO_ROOT/api" "$REPO_ROOT/backend" "$REPO_ROOT/tests"
-            echo "=== Ruff Format Check ==="
-            "$RUFF_BIN" format --check "$REPO_ROOT/api" "$REPO_ROOT/backend" "$REPO_ROOT/tests"
-            echo "=== Prettier Check ==="
-            pnpm --prefix "$REPO_ROOT" format:check
-            echo "=== Oxlint Check ==="
-            pnpm --prefix "$REPO_ROOT" lint:oxlint
-            echo "=== React Doctor Check ==="
-            pnpm --prefix "$REPO_ROOT" lint:doctor
-            echo "=== ESLint Check ==="
-            pnpm --prefix "$REPO_ROOT" lint:js
-            echo "=== Screenshot Hygiene Check ==="
-            pnpm --prefix "$REPO_ROOT" lint:screenshots
-            echo "=== TypeScript Check ==="
-            pnpm --prefix "$REPO_ROOT" typecheck
-        } > "$OUT" 2>&1 || FORMATTING_STATUS=$?
+            run_hygiene_check "Ruff Check" "$RUFF_BIN" check "$REPO_ROOT/api" "$REPO_ROOT/backend" "$REPO_ROOT/tests"
+            run_hygiene_check "Ruff Format Check" "$RUFF_BIN" format --check "$REPO_ROOT/api" "$REPO_ROOT/backend" "$REPO_ROOT/tests"
+            run_hygiene_check "Prettier Check" pnpm --prefix "$REPO_ROOT" format:check
+            run_hygiene_check "Oxlint Check" pnpm --prefix "$REPO_ROOT" lint:oxlint
+            run_hygiene_check "React Doctor Check" pnpm --prefix "$REPO_ROOT" lint:doctor
+            run_hygiene_check "ESLint Check" pnpm --prefix "$REPO_ROOT" lint:js
+            run_hygiene_check "Screenshot Hygiene Check" pnpm --prefix "$REPO_ROOT" lint:screenshots
+            run_hygiene_check "TypeScript Check" pnpm --prefix "$REPO_ROOT" typecheck
+        } > "$OUT" 2>&1
         cat "$OUT"
         echo "Evidence recorded to $OUT"
         exit "$FORMATTING_STATUS"

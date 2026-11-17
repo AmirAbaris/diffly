@@ -182,7 +182,8 @@ async function captureState(client, viewport, spec, outPath) {
 
 async function main() {
   const args = parseArgs(process.argv)
-  const rawBaseUrl = typeof args["base-url"] === "string" ? args["base-url"] : ""
+  const rawBaseUrl =
+    typeof args["base-url"] === "string" ? args["base-url"] : ""
   const baseUrl = rawBaseUrl.replace(/\/$/, "")
   const evidenceDir =
     typeof args["evidence-dir"] === "string" ? args["evidence-dir"] : ""

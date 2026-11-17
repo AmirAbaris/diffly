@@ -5,19 +5,17 @@ All checks passed!
 === Prettier Check ===
 $ prettier --check "**/*.{ts,tsx,js,mjs,json,md}"
 Checking formatting...
-[warn] .agents/skills/verify-diffly/scripts/capture_visual.mjs
-[warn] Code style issues found in the above file. Run Prettier with --write to fix.
-[ELIFECYCLE] Command failed with exit code 1.
+All matched files use Prettier code style!
 === Oxlint Check ===
 $ oxlint
 Found 0 warnings and 0 errors.
-Finished in 53ms on 151 files with 156 rules using 10 threads.
+Finished in 37ms on 151 files with 156 rules using 10 threads.
 === React Doctor Check ===
 $ react-doctor -y --no-telemetry
 ✔ Select projects › diffly
   
-✔ Scanned 153 files in 1.0s [~10 workers]
-✔ Scanned 153 files in 1.7s
+✔ Scanned 153 files in 0.6s [~10 workers]
+✔ Scanned 153 files in 1.4s
 
 React Doctor — diffly
 Score disabled by --no-score. Want something custom to your company? Contact us at https://react.doctor/enterprise.
