@@ -33,6 +33,12 @@ dist/
 # Verification runtime artifacts
 .agents/skills/**/.pids/
 .agents/skills/**/.logs/
+.agents/skills/**/.screenshots/
+.agents/skills/**/evidence/*.png
+.agents/skills/**/evidence/*.jpg
+.agents/skills/**/evidence/*.jpeg
+.agents/skills/**/evidence/*.webp
+.agents/skills/**/evidence/*.gif
 
 # IDE & OS files
 .DS_Store

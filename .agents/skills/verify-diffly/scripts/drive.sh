@@ -6,6 +6,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
 COMMON_ROOT="$(cd "$(git -C "$REPO_ROOT" rev-parse --git-common-dir 2>/dev/null || echo "$REPO_ROOT/.git")/.." && pwd)"
 PID_DIR="$REPO_ROOT/.agents/skills/verify-diffly/.pids"
 EVIDENCE_DIR="$REPO_ROOT/.agents/skills/verify-diffly/evidence"
+SCREENSHOT_ROOT="$REPO_ROOT/.agents/skills/verify-diffly/.screenshots"
 mkdir -p "$EVIDENCE_DIR"
 
 resolve_bin() {
@@ -59,24 +60,28 @@ case "$FEATURE" in
         echo "==> Driving Feature: Strict Code Hygiene & Formatting Verification"
         OUT="$EVIDENCE_DIR/${TIMESTAMP}_formatting.txt"
         RUFF_BIN="$(resolve_bin ruff)"
+        FORMATTING_STATUS=0
+        run_hygiene_check() {
+            local label="$1"
+            shift
+            echo "=== $label ==="
+            if ! "$@"; then
+                FORMATTING_STATUS=1
+            fi
+        }
         {
-            echo "=== Ruff Check ==="
-            "$RUFF_BIN" check "$REPO_ROOT/api" "$REPO_ROOT/backend" "$REPO_ROOT/tests"
-            echo "=== Ruff Format Check ==="
-            "$RUFF_BIN" format --check "$REPO_ROOT/api" "$REPO_ROOT/backend" "$REPO_ROOT/tests"
-            echo "=== Prettier Check ==="
-            pnpm --prefix "$REPO_ROOT" format:check
-            echo "=== Oxlint Check ==="
-            pnpm --prefix "$REPO_ROOT" lint:oxlint
-            echo "=== React Doctor Check ==="
-            pnpm --prefix "$REPO_ROOT" lint:doctor
-            echo "=== ESLint Check ==="
-            pnpm --prefix "$REPO_ROOT" lint:js
-            echo "=== TypeScript Check ==="
-            pnpm --prefix "$REPO_ROOT" typecheck
+            run_hygiene_check "Ruff Check" "$RUFF_BIN" check "$REPO_ROOT/api" "$REPO_ROOT/backend" "$REPO_ROOT/tests"
+            run_hygiene_check "Ruff Format Check" "$RUFF_BIN" format --check "$REPO_ROOT/api" "$REPO_ROOT/backend" "$REPO_ROOT/tests"
+            run_hygiene_check "Prettier Check" pnpm --prefix "$REPO_ROOT" format:check
+            run_hygiene_check "Oxlint Check" pnpm --prefix "$REPO_ROOT" lint:oxlint
+            run_hygiene_check "React Doctor Check" pnpm --prefix "$REPO_ROOT" lint:doctor
+            run_hygiene_check "ESLint Check" pnpm --prefix "$REPO_ROOT" lint:js
+            run_hygiene_check "Screenshot Hygiene Check" pnpm --prefix "$REPO_ROOT" lint:screenshots
+            run_hygiene_check "TypeScript Check" pnpm --prefix "$REPO_ROOT" typecheck
         } > "$OUT" 2>&1
         cat "$OUT"
         echo "Evidence recorded to $OUT"
+        exit "$FORMATTING_STATUS"
         ;;
     gemini-live)
         echo "==> Driving Feature: Live Google Gemini API Integration & Structured Challenge Output"
@@ -196,10 +201,45 @@ sys.exit(1)
         fi
 
         echo "==> Frontend ready at http://localhost:$FRONTEND_PORT (proxying /api to $BASE_URL)"
-        node "$SCRIPT_DIR/capture_visual.mjs" \
-            --base-url "http://localhost:$FRONTEND_PORT" \
-            --evidence-dir "$EVIDENCE_DIR" \
+        EPHEMERAL="${VERIFY_EPHEMERAL_SCREENSHOTS:-0}"
+        if [ "${2:-}" = "--ephemeral" ]; then
+            EPHEMERAL=1
+        elif [ -n "${2:-}" ]; then
+            echo "Unknown option '${2}' for visual drive. Supported: --ephemeral" >&2
+            exit 1
+        fi
+
+        rm -rf "$SCREENSHOT_ROOT"
+        SCREENSHOT_DIR="$SCREENSHOT_ROOT/$TIMESTAMP"
+        mkdir -p "$SCREENSHOT_DIR"
+
+        CAPTURE_ARGS=(
+            --base-url "http://localhost:$FRONTEND_PORT"
+            --evidence-dir "$EVIDENCE_DIR"
+            --screenshot-dir "$SCREENSHOT_DIR"
             --timestamp "$TIMESTAMP"
+        )
+        if [ "$EPHEMERAL" = "1" ]; then
+            CAPTURE_ARGS+=(--ephemeral)
+        fi
+
+        MANIFEST_PATH="$EVIDENCE_DIR/${TIMESTAMP}_visual.json"
+        CAPTURE_STATUS=0
+        node "$SCRIPT_DIR/capture_visual.mjs" "${CAPTURE_ARGS[@]}" || CAPTURE_STATUS=$?
+        if [ "$EPHEMERAL" = "1" ]; then
+            rm -rf "$SCREENSHOT_ROOT"
+            if [ -f "$MANIFEST_PATH" ]; then
+                echo "Ephemeral screenshots discarded; manifest recorded in $MANIFEST_PATH"
+            else
+                echo "Visual capture failed before writing manifest; ephemeral screenshots discarded." >&2
+            fi
+        elif [ "$CAPTURE_STATUS" -eq 0 ] && [ -f "$MANIFEST_PATH" ]; then
+            echo "Transient screenshots saved to $SCREENSHOT_DIR for fresh-agent inspection."
+            echo "Run .agents/skills/verify-diffly/scripts/cleanup.sh (or --screenshots-only) after the visual audit completes."
+        else
+            echo "Visual capture exited with status $CAPTURE_STATUS. Inspect logs or run .agents/skills/verify-diffly/scripts/cleanup.sh --screenshots-only to clear partial captures." >&2
+        fi
+        exit "$CAPTURE_STATUS"
         ;;
     *)
         echo "Unknown feature '$FEATURE'. Options: health, auth-isolation, challenge-ownership, visual, formatting, gemini-live" >&2

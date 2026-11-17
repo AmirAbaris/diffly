@@ -35,6 +35,7 @@ Levels follow pstack `/correct` in descending strength: `architecture`, `types/l
 | Backend unit & API tests (>= 85% coverage) | `pytest --cov=api --cov=backend --cov-fail-under=85` (`.github/workflows/ci.yml`) | `test` |
 | Read design skills before UI work & name them in subagent briefs (`.agents/rules/design-work.md`) | None | `doc-only` (`unenforced`) |
 | Visual verification via `verify-diffly` `visual` drive & fresh-agent judge (`.agents/rules/design-work.md`) | `.agents/skills/verify-diffly/` `visual` drive; fresh-agent judge has no automated enforcer | `doc-only` (`semi-enforced`) |
+| No committed verification screenshots (`.agents/skills/verify-diffly/.screenshots/` gitignored, cleaned via `cleanup.sh`) | `scripts/check-no-screenshots.sh` (`pnpm lint:screenshots`), `lefthook.yml` (`no-screenshots`), `.github/workflows/ci.yml`, `.gitignore` | `types/lint/CI` |
 | Security-sensitive code abuse-case list, data owner, `/interrogate`, `pro` models, fresh verifier, `ask` triage (`.agents/rules/security-sensitive-code.md`) | None | `doc-only` (`unenforced`) |
 | Authorization matrix for auth and ownership endpoints (`.agents/rules/security-sensitive-code.md`) | `tests/test_authorization_matrix.py`, `pytest` (`.github/workflows/ci.yml`) | `test` |
 | Live `auth-isolation` and `challenge-ownership` verification (`.agents/rules/security-sensitive-code.md`) | `.agents/skills/verify-diffly/` `auth-isolation` and `challenge-ownership` drives | `doc-only` (`manual drive`) |
