@@ -1,8 +1,9 @@
 """Centralized ownership rules for submissions and private custom challenges.
 
 Ownership rules:
-- Claimed rows (user_id IS NOT NULL) are never visible via session_id.
-- Guest rows (user_id IS NULL) are only visible via session_id AND user_id IS NULL.
+- Claimed rows (user_id IS NOT NULL) are never visible via session_id and must
+  always have session_id = NULL.
+- Guest rows (user_id IS NULL) are only visible via a verified signed guest cookie.
 - Private custom challenges (is_public IS False) are only visible and modifiable
   by their owning user_id or owning unclaimed guest session.
 """
@@ -10,42 +11,63 @@ Ownership rules:
 from dataclasses import dataclass
 from typing import Any
 
-from sqlmodel import Session, and_, col, or_, select
+from sqlmodel import Session, and_, func, or_, select, text
 
+from backend.core.guest_session import GuestSession
 from backend.models.challenge import Challenge
 from backend.models.submission import Submission
 from backend.models.user import User
 
 
+CUSTOM_CHALLENGE_QUOTA = 5
+
+
+class CustomQuotaExceeded(Exception):
+    """Raised when creating or claiming custom challenges exceeds the quota."""
+
+    def __init__(
+        self,
+        owned: int,
+        incoming: int,
+        limit: int = CUSTOM_CHALLENGE_QUOTA,
+    ) -> None:
+        self.owned = owned
+        self.incoming = incoming
+        self.limit = limit
+        self.message = (
+            f"Cannot claim {incoming} guest custom challenge(s): "
+            f"{owned} already owned + {incoming} incoming exceeds limit of {limit}."
+        )
+        super().__init__(self.message)
+
+
+@dataclass(frozen=True, slots=True)
+class ClaimResult:
+    """Count of guest rows transferred to an authenticated user."""
+
+    submissions: int
+    challenges: int
+
+
 @dataclass(frozen=True)
 class Actor:
-    """Resolved request identity: authenticated user_id and/or guest_session_id."""
+    """Resolved request identity: authenticated user_id or verified guest_session_id."""
 
     user_id: int | None = None
     guest_session_id: str | None = None
 
     @classmethod
-    def from_request(
+    def resolve(
         cls,
-        current_user: User | None = None,
-        *session_candidates: str | None,
+        user: User | None = None,
+        guest: GuestSession | None = None,
     ) -> "Actor":
-        user_id = (
-            current_user.id
-            if current_user is not None and current_user.id is not None
-            else None
-        )
+        user_id = user.id if user is not None and user.id is not None else None
         if user_id is not None:
             return cls(user_id=user_id, guest_session_id=None)
-
-        guest_session_id: str | None = None
-        for candidate in session_candidates:
-            if candidate:
-                cleaned = candidate.strip()
-                if 1 <= len(cleaned) <= 128:
-                    guest_session_id = cleaned
-                    break
-        return cls(user_id=None, guest_session_id=guest_session_id)
+        if guest is not None:
+            return cls(user_id=None, guest_session_id=guest.id)
+        return cls(user_id=None, guest_session_id=None)
 
 
 def submission_owner_filter(actor: Actor) -> Any | None:
@@ -98,40 +120,96 @@ def can_access_challenge(challenge: Challenge, actor: Actor) -> bool:
     return challenge.is_public or is_challenge_owner(challenge, actor)
 
 
-def claim_guest_records(
+def _lock_actor_scope(session: Session, actor: Actor) -> None:
+    if actor.user_id is not None:
+        session.exec(
+            select(User.id).where(User.id == actor.user_id).with_for_update()
+        ).first()
+        return
+
+    if (
+        actor.guest_session_id is not None
+        and session.get_bind().dialect.name == "postgresql"
+    ):
+        session.exec(
+            text("SELECT pg_advisory_xact_lock(hashtext(:guest_id))").bindparams(
+                guest_id=actor.guest_session_id
+            )
+        )
+
+
+def ensure_custom_quota(
+    session: Session,
+    actor: Actor,
+    adding: int = 1,
+    *,
+    lock: bool = True,
+) -> None:
+    """Ensure actor can hold `adding` more private custom challenges."""
+    if lock:
+        _lock_actor_scope(session, actor)
+
+    owner_filter = challenge_owner_filter(actor)
+    owned = 0
+    if owner_filter is not None:
+        owned = session.exec(
+            select(func.count(Challenge.id)).where(
+                Challenge.is_public.is_(False),
+                owner_filter,
+            )
+        ).one()
+
+    if owned + adding > CUSTOM_CHALLENGE_QUOTA:
+        raise CustomQuotaExceeded(
+            owned=owned,
+            incoming=adding,
+            limit=CUSTOM_CHALLENGE_QUOTA,
+        )
+
+
+def claim_guest_session(
     session: Session,
     user_id: int,
-    session_ids: set[str],
-) -> tuple[int, int]:
-    """Claim unclaimed guest submissions and private challenges for user_id.
-
-    Returns (claimed_submissions_count, claimed_challenges_count).
-    """
-    valid_ids = {s.strip() for s in session_ids if s and 1 <= len(s.strip()) <= 128}
-    if not valid_ids:
-        return (0, 0)
-
-    unclaimed_subs = session.exec(
-        select(Submission).where(
-            col(Submission.session_id).in_(valid_ids),
-            Submission.user_id.is_(None),
-        )
-    ).all()
-    for sub in unclaimed_subs:
-        sub.user_id = user_id
+    guest: GuestSession,
+) -> ClaimResult:
+    """Atomically transfer unclaimed guest rows to user_id and scrub session_id."""
+    user_actor = Actor(user_id=user_id)
+    _lock_actor_scope(session, user_actor)
 
     unclaimed_challenges = session.exec(
         select(Challenge).where(
-            col(Challenge.session_id).in_(valid_ids),
+            Challenge.session_id == guest.id,
             Challenge.user_id.is_(None),
             Challenge.is_public.is_(False),
         )
     ).all()
+
+    if len(unclaimed_challenges) > 0:
+        ensure_custom_quota(
+            session,
+            user_actor,
+            adding=len(unclaimed_challenges),
+            lock=False,
+        )
+
+    unclaimed_subs = session.exec(
+        select(Submission).where(
+            Submission.session_id == guest.id,
+            Submission.user_id.is_(None),
+        )
+    ).all()
+
+    for sub in unclaimed_subs:
+        sub.user_id = user_id
+        sub.session_id = None
+
     for challenge in unclaimed_challenges:
         challenge.user_id = user_id
+        challenge.session_id = None
 
     sub_count = len(unclaimed_subs)
     ch_count = len(unclaimed_challenges)
     if sub_count > 0 or ch_count > 0:
         session.commit()
-    return (sub_count, ch_count)
+
+    return ClaimResult(submissions=sub_count, challenges=ch_count)

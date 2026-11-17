@@ -44,4 +44,3 @@ class UserCreate(SQLModel):
     username: str
     password: str
     avatar_url: str | None = None
-    session_id: str | None = None

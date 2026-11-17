@@ -130,6 +130,57 @@ def _ensure_postgres_enum_values(target_engine: Engine) -> None:
         connection.execute(text("ALTER TYPE language ADD VALUE IF NOT EXISTS 'JAVA'"))
 
 
+def _scrub_claimed_session_ids(target_engine: Engine) -> None:
+    """Clear leftover session_id on claimed rows so single-owner invariant holds."""
+    with target_engine.begin() as connection:
+        connection.execute(
+            text(
+                "UPDATE challenges SET session_id = NULL "
+                "WHERE user_id IS NOT NULL AND session_id IS NOT NULL"
+            )
+        )
+        connection.execute(
+            text(
+                "UPDATE submissions SET session_id = NULL "
+                "WHERE user_id IS NOT NULL AND session_id IS NOT NULL"
+            )
+        )
+
+
+def _ensure_single_owner_constraints(target_engine: Engine) -> None:
+    """Install single-owner CHECK constraints on existing PostgreSQL tables."""
+    if target_engine.dialect.name != "postgresql":
+        return
+
+    with target_engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM pg_constraint
+                        WHERE conname = 'ck_challenges_single_owner'
+                    ) THEN
+                        ALTER TABLE challenges
+                        ADD CONSTRAINT ck_challenges_single_owner
+                        CHECK (user_id IS NULL OR session_id IS NULL);
+                    END IF;
+                    IF NOT EXISTS (
+                        SELECT 1 FROM pg_constraint
+                        WHERE conname = 'ck_submissions_single_owner'
+                    ) THEN
+                        ALTER TABLE submissions
+                        ADD CONSTRAINT ck_submissions_single_owner
+                        CHECK (user_id IS NULL OR session_id IS NULL);
+                    END IF;
+                END
+                $$;
+                """
+            )
+        )
+
+
 def init_db() -> None:
     import backend.models  # noqa: F401
 
@@ -147,6 +198,8 @@ def init_db() -> None:
             raise
 
     _ensure_postgres_enum_values(engine)
+    _scrub_claimed_session_ids(engine)
+    _ensure_single_owner_constraints(engine)
 
 
 def get_session() -> Generator[Session, None, None]:

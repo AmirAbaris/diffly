@@ -1,22 +1,20 @@
 """Authentication API routes: registration, login, logout, and current user profile."""
 
-from typing import Annotated
-
-from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
+from fastapi import APIRouter, HTTPException, Response, status
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, func, or_, select
 
-from api.deps import get_current_user
+from api.deps import CurrentUserDep, GuestSessionDep, SessionDep
 from backend.core.config import settings
-from backend.core.db import get_session
+from backend.core.guest_session import GuestSession, clear_guest_cookie
 from backend.core.security import (
     create_access_token,
     hash_password,
     verify_password,
 )
 from backend.models.user import User, UserRead
-from backend.services.ownership import claim_guest_records
+from backend.services.ownership import CustomQuotaExceeded, claim_guest_session
 
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -28,7 +26,6 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     username: str = Field(min_length=3, max_length=50)
     password: str = Field(min_length=6, max_length=128)
-    session_id: str | None = None
 
 
 class LoginRequest(BaseModel):
@@ -38,21 +35,24 @@ class LoginRequest(BaseModel):
     email: str | None = None
     identifier: str | None = None
     password: str
-    session_id: str | None = None
 
 
-def claim_guest_submissions(
+def adopt_guest_on_sign_in(
     session: Session,
-    user_id: int,
-    session_ids: set[str],
-) -> int:
-    """Migrate guest submissions and private custom challenges to the user."""
-    sub_count, ch_count = claim_guest_records(
-        session=session,
-        user_id=user_id,
-        session_ids=session_ids,
-    )
-    return sub_count + ch_count
+    response: Response,
+    user: User,
+    guest: GuestSession | None,
+) -> None:
+    """Adopt verified guest records on sign-in without ever failing auth on quota."""
+    if guest is None or user.id is None:
+        return
+    try:
+        claim_guest_session(session=session, user_id=user.id, guest=guest)
+    except CustomQuotaExceeded:
+        session.rollback()
+        response.headers["X-Diffly-Claim-Status"] = "quota_exceeded"
+        return
+    clear_guest_cookie(response)
 
 
 def set_auth_cookie(response: Response, user: User) -> str:
@@ -85,11 +85,8 @@ def set_auth_cookie(response: Response, user: User) -> str:
 def register(
     payload: RegisterRequest,
     response: Response,
-    session: Annotated[Session, Depends(get_session)],
-    header_session_id: Annotated[
-        str | None,
-        Header(alias="X-Diffly-Session-Id", description="Guest session identifier"),
-    ] = None,
+    session: SessionDep,
+    guest: GuestSessionDep,
 ) -> UserRead:
     """Register a new user account, claim guest records, and issue auth cookie."""
     normalized_email = payload.email.lower().strip()
@@ -129,14 +126,7 @@ def register(
         ) from exc
     session.refresh(user)
 
-    if user.id is not None:
-        candidate_sessions = {payload.session_id, header_session_id}
-        claim_guest_submissions(
-            session=session,
-            user_id=user.id,
-            session_ids={s for s in candidate_sessions if s is not None},
-        )
-
+    adopt_guest_on_sign_in(session=session, response=response, user=user, guest=guest)
     set_auth_cookie(response, user)
     return UserRead.model_validate(user)
 
@@ -149,11 +139,8 @@ def register(
 def login(
     payload: LoginRequest,
     response: Response,
-    session: Annotated[Session, Depends(get_session)],
-    header_session_id: Annotated[
-        str | None,
-        Header(alias="X-Diffly-Session-Id", description="Guest session identifier"),
-    ] = None,
+    session: SessionDep,
+    guest: GuestSessionDep,
 ) -> UserRead:
     """Authenticate user with email/username and password, claim guest records."""
     identifier = (payload.identifier or payload.username or payload.email or "").strip()
@@ -183,14 +170,7 @@ def login(
             detail="User account is inactive",
         )
 
-    if user.id is not None:
-        candidate_sessions = {payload.session_id, header_session_id}
-        claim_guest_submissions(
-            session=session,
-            user_id=user.id,
-            session_ids={s for s in candidate_sessions if s is not None},
-        )
-
+    adopt_guest_on_sign_in(session=session, response=response, user=user, guest=guest)
     set_auth_cookie(response, user)
     return UserRead.model_validate(user)
 
@@ -201,7 +181,7 @@ def login(
     status_code=status.HTTP_200_OK,
 )
 def get_me(
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: CurrentUserDep,
 ) -> UserRead:
     """Return currently authenticated user profile."""
     return UserRead.model_validate(current_user)

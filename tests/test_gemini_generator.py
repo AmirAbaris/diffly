@@ -248,6 +248,7 @@ def test_generate_custom_challenge_success_and_persisted_to_db(
     mock_post: AsyncMock,
     client: TestClient,
     session: Session,
+    as_guest,
 ):
     """Generates challenge, saves to PostgreSQL, excludes from public catalog."""
     gemini_payload = {
@@ -260,7 +261,7 @@ def test_generate_custom_challenge_success_and_persisted_to_db(
         json_data=gemini_payload,
     )
 
-    session_id = "test-guest-session-byok"
+    session_id = as_guest(client, "test-guest-session-byok")
     response = client.post(
         "/api/challenges/generate-custom",
         json={
@@ -268,10 +269,7 @@ def test_generate_custom_challenge_success_and_persisted_to_db(
             "language": "typescript",
             "difficulty": "medium",
         },
-        headers={
-            "X-Gemini-Key": "AIzaSyValidKeyWorking",
-            "X-Diffly-Session-Id": session_id,
-        },
+        headers={"X-Gemini-Key": "AIzaSyValidKeyWorking"},
     )
 
     assert response.status_code == 200
@@ -311,6 +309,7 @@ def test_strict_5_challenge_quota_enforcement(
     mock_post: AsyncMock,
     client: TestClient,
     session: Session,
+    as_guest,
 ):
     """Users can create up to 5 custom challenges; 6th attempt is rejected with 400."""
     gemini_payload = {
@@ -323,11 +322,8 @@ def test_strict_5_challenge_quota_enforcement(
         json_data=gemini_payload,
     )
 
-    session_id = "quota-test-session"
-    headers = {
-        "X-Gemini-Key": "AIzaSyKey123",
-        "X-Diffly-Session-Id": session_id,
-    }
+    as_guest(client, "quota-test-session")
+    headers = {"X-Gemini-Key": "AIzaSyKey123"}
 
     # Generate 5 custom challenges
     for i in range(5):
@@ -376,7 +372,7 @@ def test_strict_5_challenge_quota_enforcement(
     assert retry_res.status_code == 200
 
 
-def test_cannot_delete_public_challenge(client: TestClient, session: Session):
+def test_cannot_delete_public_challenge(client: TestClient, session: Session, as_guest):
     """Attempting to delete a public challenge returns 403 Forbidden."""
     public_ch = Challenge(
         slug="public-official-scenario",
@@ -391,10 +387,8 @@ def test_cannot_delete_public_challenge(client: TestClient, session: Session):
     session.add(public_ch)
     session.commit()
 
-    res = client.delete(
-        f"/api/challenges/custom/{public_ch.slug}",
-        headers={"X-Diffly-Session-Id": "any-session"},
-    )
+    as_guest(client, "any-session")
+    res = client.delete(f"/api/challenges/custom/{public_ch.slug}")
     assert res.status_code == 403
     assert "cannot delete public" in res.json()["detail"].lower()
 
@@ -402,6 +396,7 @@ def test_cannot_delete_public_challenge(client: TestClient, session: Session):
 def test_cannot_delete_another_users_custom_challenge(
     client: TestClient,
     session: Session,
+    as_guest,
 ):
     """Attempting to delete another user's private challenge returns 404."""
     other_ch = Challenge(
@@ -419,17 +414,16 @@ def test_cannot_delete_another_users_custom_challenge(
     session.commit()
 
     # Different user tries to delete
-    res = client.delete(
-        f"/api/challenges/custom/{other_ch.slug}",
-        headers={"X-Diffly-Session-Id": "attacker-session"},
-    )
+    as_guest(client, "attacker-session")
+    res = client.delete(f"/api/challenges/custom/{other_ch.slug}")
     assert res.status_code == 404
     assert "not found" in res.json()["detail"].lower()
 
 
 def test_unauthorized_user_cannot_view_private_challenge(
-    client: TestClient,
+    client_factory,
     session: Session,
+    as_guest,
 ):
     """Private challenge returns 404 to users other than the owner."""
     private_ch = Challenge(
@@ -447,17 +441,15 @@ def test_unauthorized_user_cannot_view_private_challenge(
     session.commit()
 
     # Unauthorized guest
-    res_stranger = client.get(
-        f"/api/challenges/{private_ch.slug}",
-        headers={"X-Diffly-Session-Id": "stranger-session"},
-    )
+    stranger = client_factory()
+    as_guest(stranger, "stranger-session")
+    res_stranger = stranger.get(f"/api/challenges/{private_ch.slug}")
     assert res_stranger.status_code == 404
 
     # Legitimate owner can view
-    res_owner = client.get(
-        f"/api/challenges/{private_ch.slug}",
-        headers={"X-Diffly-Session-Id": "legit-owner-session"},
-    )
+    owner = client_factory()
+    as_guest(owner, "legit-owner-session")
+    res_owner = owner.get(f"/api/challenges/{private_ch.slug}")
     assert res_owner.status_code == 200
     assert res_owner.json()["slug"] == "secret-private-challenge"
 
@@ -470,9 +462,10 @@ def test_unauthorized_user_cannot_view_private_challenge(
 def test_owner_can_review_and_view_hints_on_private_challenge(
     client: TestClient,
     session: Session,
+    as_guest,
 ):
     """Owner can interact with their private challenge in the Arena seamlessly."""
-    session_id = "arena-owner-session"
+    session_id = as_guest(client, "arena-owner-session")
     challenge = Challenge(
         slug="private-review-arena-test",
         title="Private Review Arena Test",
@@ -502,10 +495,8 @@ def test_owner_can_review_and_view_hints_on_private_challenge(
     session.add(challenge)
     session.commit()
 
-    headers = {"X-Diffly-Session-Id": session_id}
-
     # 1. Fetch hints
-    hints_res = client.get(f"/api/challenges/{challenge.slug}/hints", headers=headers)
+    hints_res = client.get(f"/api/challenges/{challenge.slug}/hints")
     assert hints_res.status_code == 200
     assert len(hints_res.json()) == 1
 
@@ -516,16 +507,12 @@ def test_owner_can_review_and_view_hints_on_private_challenge(
             "flagged_lines": [1],
             "comments": "eval allows dangerous rce execution.",
         },
-        headers=headers,
     )
     assert sub_res.status_code == 200
     assert sub_res.json()["score"] == 100
 
     # 3. Fetch submissions history
-    history_res = client.get(
-        f"/api/challenges/{challenge.slug}/submissions",
-        headers=headers,
-    )
+    history_res = client.get(f"/api/challenges/{challenge.slug}/submissions")
     assert history_res.status_code == 200
     assert len(history_res.json()) == 1
 
@@ -717,6 +704,7 @@ def test_generate_custom_challenge_java_endpoint(
     mock_post: AsyncMock,
     client: TestClient,
     session: Session,
+    as_guest,
 ):
     """POST /api/challenges/generate-custom accepts language=java and persists JAVA."""
     java_output = {
@@ -750,7 +738,7 @@ def test_generate_custom_challenge_java_endpoint(
         json_data=gemini_payload,
     )
 
-    session_id = "test-java-session"
+    as_guest(client, "test-java-session")
     response = client.post(
         "/api/challenges/generate-custom",
         json={
@@ -758,10 +746,7 @@ def test_generate_custom_challenge_java_endpoint(
             "language": "java",
             "difficulty": "medium",
         },
-        headers={
-            "X-Gemini-Key": "AIzaSyValidJavaKey",
-            "X-Diffly-Session-Id": session_id,
-        },
+        headers={"X-Gemini-Key": "AIzaSyValidJavaKey"},
     )
 
     assert response.status_code == 200

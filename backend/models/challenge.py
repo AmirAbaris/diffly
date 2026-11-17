@@ -10,6 +10,7 @@ from pydantic import (
     field_validator,
     model_validator,
 )
+from sqlalchemy import CheckConstraint
 from sqlmodel import Field, Relationship, SQLModel
 
 
@@ -276,6 +277,12 @@ class ChallengeBase(SQLModel):
 
 class Challenge(ChallengeBase, table=True):
     __tablename__ = "challenges"
+    __table_args__ = (
+        CheckConstraint(
+            "user_id IS NULL OR session_id IS NULL",
+            name="ck_challenges_single_owner",
+        ),
+    )
 
     id: int | None = Field(default=None, primary_key=True)
     created_at: datetime = Field(default_factory=get_utc_now)

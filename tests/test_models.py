@@ -41,11 +41,9 @@ def test_user_read_and_create_schemas():
         email="newuser@diffly.dev",
         username="newuser",
         password="secretpassword",
-        session_id="guest-1",
     )
     assert user_create.email == "newuser@diffly.dev"
     assert user_create.username == "newuser"
-    assert user_create.session_id == "guest-1"
 
     now = datetime.now(UTC)
     user_read = UserRead(

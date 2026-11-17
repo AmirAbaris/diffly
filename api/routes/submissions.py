@@ -1,18 +1,16 @@
 """Submission and review evaluation API routes."""
 
 from datetime import datetime
-from typing import Annotated, Any
-from uuid import uuid4
+from typing import Any
 
-from fastapi import APIRouter, Depends, Header, Query, Response, status
+from fastapi import APIRouter, Response, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlmodel import Session, select
+from sqlmodel import select
 
-from api.deps import get_optional_current_user
+from api.deps import ActorDep, SessionDep
 from api.routes.challenges import get_challenge_or_404
-from backend.core.db import get_session
+from backend.core.guest_session import mint_guest_session, write_guest_cookie
 from backend.models.submission import Submission
-from backend.models.user import User
 from backend.services.evaluation_service import evaluate_review
 from backend.services.ownership import Actor, submission_owner_filter
 
@@ -31,10 +29,6 @@ class ReviewSubmissionRequest(BaseModel):
         ...,
         min_length=5,
         description="Written review critique explaining the defect",
-    )
-    session_id: str | None = Field(
-        default=None,
-        description="Guest session identifier if unauthenticated",
     )
 
     @field_validator("flagged_lines")
@@ -94,21 +88,16 @@ def submit_review(
     identifier: str,
     payload: ReviewSubmissionRequest,
     response: Response,
-    session: Annotated[Session, Depends(get_session)],
-    current_user: Annotated[User | None, Depends(get_optional_current_user)] = None,
-    header_session_id: Annotated[
-        str | None,
-        Header(alias="X-Diffly-Session-Id", description="Guest session identifier"),
-    ] = None,
+    session: SessionDep,
+    actor: ActorDep,
 ) -> ReviewSubmissionResponse:
-    actor = Actor.from_request(current_user, header_session_id, payload.session_id)
-    if actor.user_id is None and actor.guest_session_id is None:
-        actor = Actor(user_id=None, guest_session_id=f"guest-{uuid4().hex[:12]}")
-
-    if actor.guest_session_id:
-        response.headers["X-Diffly-Session-Id"] = actor.guest_session_id
-
+    # Authorize challenge access before minting a guest cookie so 404s do not mint
     challenge = get_challenge_or_404(identifier, session, actor=actor)
+
+    if actor.user_id is None and actor.guest_session_id is None:
+        guest = mint_guest_session()
+        write_guest_cookie(response, guest)
+        actor = Actor.resolve(None, guest)
 
     eval_result = evaluate_review(
         challenge=challenge,
@@ -154,18 +143,9 @@ def submit_review(
 )
 def get_submission_history(
     identifier: str,
-    session: Annotated[Session, Depends(get_session)],
-    current_user: Annotated[User | None, Depends(get_optional_current_user)] = None,
-    header_session_id: Annotated[
-        str | None,
-        Header(alias="X-Diffly-Session-Id", description="Guest session identifier"),
-    ] = None,
-    query_session_id: Annotated[
-        str | None,
-        Query(alias="session_id", description="Guest session query parameter"),
-    ] = None,
+    session: SessionDep,
+    actor: ActorDep,
 ) -> list[SubmissionHistoryResponse]:
-    actor = Actor.from_request(current_user, header_session_id, query_session_id)
     challenge = get_challenge_or_404(identifier, session, actor=actor)
 
     owner_filter = submission_owner_filter(actor)
