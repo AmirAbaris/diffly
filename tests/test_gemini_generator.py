@@ -20,6 +20,7 @@ from backend.services.gemini_generator import (
     GeminiAuthError,
     GeminiRateLimitError,
     GeminiSchemaError,
+    build_generation_prompt,
     clean_markdown_json,
     generate_custom_challenge,
     sanitize_generated_challenge,
@@ -695,3 +696,81 @@ async def test_live_gemini_generation():
     assert len(result.code_snippet) > 50
     assert len(result.expected_issues) >= 1
     assert len(result.hints) == 3
+
+
+def test_generate_custom_challenge_java_request_and_prompt():
+    """GenerateCustomChallengeRequest and prompt builder support Java."""
+    req = GenerateCustomChallengeRequest(
+        topic="Spring Boot JPA SQL injection",
+        language="java",
+        difficulty="medium",
+    )
+    assert req.language == Language.JAVA
+
+    prompt = build_generation_prompt(req.topic, req.language, req.difficulty)
+    assert "- Language: java" in prompt
+    assert "production-grade java code" in prompt
+
+
+@patch("backend.services.gemini_generator.httpx.AsyncClient.post")
+def test_generate_custom_challenge_java_endpoint(
+    mock_post: AsyncMock,
+    client: TestClient,
+    session: Session,
+):
+    """POST /api/challenges/generate-custom accepts language=java and persists JAVA."""
+    java_output = {
+        **SAMPLE_GEMINI_OUTPUT,
+        "slug": "spring-boot-sqli-review",
+        "title": "Spring Boot JDBC Template SQL Injection",
+        "language": "java",
+        "code_snippet": (
+            "public List<User> findUsers(String username) {\n"
+            '    String sql = "SELECT * FROM users WHERE name = "'
+            ' + "\'" + username + "\'";\n'
+            "    return jdbcTemplate.query(sql, userRowMapper);\n"
+            "}\n"
+        ),
+        "expected_issues": [
+            {
+                "id": "defect-java-sqli-1",
+                "title": "SQL Injection via String Concatenation",
+                "severity": "critical",
+                "matched_lines": [2],
+                "matched_keywords": ["sql", "injection", "parameterized"],
+                "explanation": "Concatenating username directly into SQL allows SQLi.",
+            }
+        ],
+    }
+    gemini_payload = {
+        "candidates": [{"content": {"parts": [{"text": json.dumps(java_output)}]}}]
+    }
+    mock_post.return_value = make_mock_gemini_response(
+        status_code=200,
+        json_data=gemini_payload,
+    )
+
+    session_id = "test-java-session"
+    response = client.post(
+        "/api/challenges/generate-custom",
+        json={
+            "topic": "Spring Boot JDBC SQL injection",
+            "language": "java",
+            "difficulty": "medium",
+        },
+        headers={
+            "X-Gemini-Key": "AIzaSyValidJavaKey",
+            "X-Diffly-Session-Id": session_id,
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["language"] == "java"
+    assert data["slug"] == "spring-boot-sqli-review"
+
+    db_challenge = session.exec(
+        select(Challenge).where(Challenge.slug == "spring-boot-sqli-review")
+    ).first()
+    assert db_challenge is not None
+    assert db_challenge.language == Language.JAVA

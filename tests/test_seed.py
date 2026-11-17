@@ -117,6 +117,47 @@ def test_seed_challenges_specific_metadata():
     assert ch5["language"] == Language.PYTHON
     assert "asyncio.gather" in ch5["code_snippet"]
 
+    # 6-10. Curated Java challenges
+    java_expectations = [
+        (
+            "java-unclosed-jdbc-resource-leak",
+            Category.PERFORMANCE,
+            Difficulty.EASY,
+            "PreparedStatement",
+        ),
+        (
+            "java-xxe-document-builder",
+            Category.SECURITY,
+            Difficulty.MEDIUM,
+            "DocumentBuilderFactory",
+        ),
+        (
+            "java-concurrenthashmap-check-then-act",
+            Category.CONCURRENCY,
+            Difficulty.MEDIUM,
+            "ConcurrentHashMap",
+        ),
+        (
+            "java-boxed-id-reference-equality",
+            Category.LOGIC_FLAWS,
+            Difficulty.MEDIUM,
+            "Long docOwnerId",
+        ),
+        (
+            "java-agent-unsafe-deserialization",
+            Category.AGENT_ANTIPATHS,
+            Difficulty.HARD,
+            "ObjectInputStream",
+        ),
+    ]
+    for slug, expected_category, expected_difficulty, marker in java_expectations:
+        assert slug in by_slug, f"Missing Java challenge {slug}"
+        ch = by_slug[slug]
+        assert ch["category"] == expected_category
+        assert ch["difficulty"] == expected_difficulty
+        assert ch["language"] == Language.JAVA
+        assert marker in ch["code_snippet"]
+
 
 def test_idempotent_seeding(session: Session):
     """Verify that running seed_challenges multiple times does not create duplicates."""
@@ -219,7 +260,7 @@ def test_content_as_code_bundle_structure():
             f
             for f in bundle_path.iterdir()
             if f.name.startswith("snippet.")
-            and f.suffix in [".py", ".ts", ".go", ".rs"]
+            and f.suffix in [".py", ".ts", ".go", ".rs", ".java"]
         ]
         assert len(snippets) == 1, f"Expected 1 native snippet file in {slug}"
         snippet_lines = snippets[0].read_text(encoding="utf-8").splitlines()

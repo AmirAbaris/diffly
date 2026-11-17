@@ -133,6 +133,8 @@ def test_challenge_enums_case_insensitivity():
     assert Category("security") == Category.SECURITY
     assert Language("python") == Language.PYTHON
     assert Language("TYPESCRIPT") == Language.TYPESCRIPT
+    assert Language("java") == Language.JAVA
+    assert Language("JAVA") == Language.JAVA
 
 
 def test_submission_model_and_validation():

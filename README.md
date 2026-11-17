@@ -36,7 +36,7 @@ Diffly puts you in an interactive review arena against realistic code snippets, 
 - **Interactive review arena.** Inspect syntax-highlighted code with `prism-react-renderer`, click gutter lines to flag defects, write Markdown review notes with live preview (`Cmd+Enter` or `Ctrl+Enter` to submit), and consult the threat model, defect target, and three-tier progressive hints.
 - **Automated evaluation engine.** The scoring service in `backend/services/evaluation_service.py` checks your flagged lines and critique keywords against ground-truth defects, applies a false-positive penalty, and returns line precision, concept coverage, and an overall score from 0 to 100.
 - **Side-by-side debrief.** After submission, compare your findings with the canonical staff review and inspect the recommended fix diff.
-- **Curated and custom challenges.** Practice on 25+ curated challenges in `content/challenges/` or generate private custom challenges with your own Google Gemini API key via the `X-Gemini-Key` header.
+- **Curated and custom challenges.** Practice on 30+ curated challenges in `content/challenges/` or generate private custom challenges with your own Google Gemini API key via the `X-Gemini-Key` header.
 - **Interactive API documentation.** Browse and test every FastAPI endpoint through the Scalar OpenAPI UI at `/scalar`.
 - **Containerized and serverless deployment.** Run locally with `docker compose up --build` or deploy Next.js and Python serverless functions using `vercel.json`.
 
@@ -89,7 +89,7 @@ graph TD
 
 ## Challenge taxonomy
 
-Diffly ships 25+ curated challenges across 5 categories (`Agent Antipaths`, `Security`, `Concurrency`, `Performance`, `Logic Flaws`) and 4 languages (`python`, `typescript`, `go`, `rust`). Each challenge carries an `Easy`, `Medium`, or `Hard` rating.
+Diffly ships 30+ curated challenges across 5 categories (`Agent Antipaths`, `Security`, `Concurrency`, `Performance`, `Logic Flaws`) and 5 languages (`python`, `typescript`, `go`, `rust`, `java`). Each challenge carries an `Easy`, `Medium`, or `Hard` rating.
 
 | Challenge                                             | Category          | Difficulty | Language     | Focus area                                                          |
 | :---------------------------------------------------- | :---------------- | :--------- | :----------- | :------------------------------------------------------------------ |
@@ -355,7 +355,7 @@ Diffly stores every curated challenge as a standalone directory under `content/c
 
 - `meta.yaml`: Slug, title, difficulty, category, language, expected defect criteria, three-tier hints, canonical review, and recommended fix diff.
 - `description.md`: Problem context and `## Threat Model` section.
-- `snippet.<ext>`: Unsanitized code snippet in `.py`, `.ts`, `.go`, or `.rs`.
+- `snippet.<ext>`: Unsanitized code snippet in `.py`, `.ts`, `.go`, `.rs`, or `.java`.
 
 `backend/seed/loader.py` discovers those directories automatically and `backend/seed/seed_data.py` seeds them into the database on startup.
 

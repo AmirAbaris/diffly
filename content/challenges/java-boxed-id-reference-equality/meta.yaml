@@ -1,0 +1,62 @@
+order: 29
+slug: java-boxed-id-reference-equality
+title: Boxed Long Reference Equality Bug in Authorization Check
+difficulty: Medium
+category: Logic Flaws
+language: java
+estimated_minutes: 6
+defect_target: Find 1 High Severity Boxed Identity Comparison Bug in Access Guard
+expected_issues:
+  - id: high-java-boxed-reference-equality
+    title: Comparing Boxed Long Owner IDs with Reference Operator (!=/==)
+    severity: high
+    matched_lines:
+      - 34
+      - 35
+      - 36
+    matched_keywords:
+      - Objects.equals
+      - reference equality
+      - Long
+      - LongCache
+      - autoboxing
+      - "127"
+      - "128"
+      - equals
+      - cwe-595
+    line_score: 0.6
+    concept_score: 0.4
+    explanation: Comparing boxed `Long` values (`docOwnerId != requesterId`) checks object reference identity rather than numeric equality (CWE-595). Because `Long.valueOf` caches values from `-128` to `127`, unit tests with small fixture IDs pass while production IDs `>= 128` fail the authorization check.
+hints:
+  - tier: 1
+    title: Contextual Clue
+    hint: Check the types of `docOwnerId` and `requesterId` and the operator comparing them in `loadOwnedDocument`.
+  - tier: 2
+    title: Vulnerability Class
+    hint: Comparison of Object References Instead of Object Contents (CWE-595) causes subtle bugs with boxed primitives (`Long`, `Integer`) outside Java's `-128..127` wrapper cache.
+  - tier: 3
+    title: Line Pointer & Guidance
+    hint: Look at lines 34-36. Replace `docOwnerId != requesterId` with `!Objects.equals(docOwnerId, requesterId)` (keeping the `docOwnerId == null` guard) or unbox to `long` after null checks.
+canonical_review: |-
+  Senior Staff Engineer Review Critique:
+  Comparing boxed `Long` identifiers using `!=` or `==` tests JVM object reference identity rather than numeric value equality (CWE-595).
+
+  Java's `Long.valueOf(long)` caches singleton instances for values in `[-128, 127]`. Unit tests using small fixture IDs (`1L`, `42L`, `100L`) receive identical cached `Long` references from both `doc.ownerId()` and `actor.userId()`, so `docOwnerId != requesterId` evaluates to `false` and passes tests. In production, once database sequences or snowflake IDs reach `128` or higher, distinct `Long` objects are allocated on the heap and `docOwnerId != requesterId` evaluates to `true`, erroneously denying legitimate document owners.
+
+  Recommendation:
+  Always compare boxed numeric identifiers with `Objects.equals(docOwnerId, requesterId)` (while preserving explicit null checks so two `null` IDs never match) or compare primitive `long` values via `.longValue()`.
+recommended_fix_diff: |
+  --- a/docs/authz/DocumentAccessGuard.java
+  +++ b/docs/authz/DocumentAccessGuard.java
+  @@ -3,3 +3,4 @@
+   import java.time.Instant;
+   import java.util.List;
+  +import java.util.Objects;
+   import java.util.Optional;
+  @@ -34,5 +35,5 @@
+           Long docOwnerId = doc.ownerId();
+           Long requesterId = actor.userId();
+  -        if (docOwnerId == null || docOwnerId != requesterId) {
+  +        if (docOwnerId == null || !Objects.equals(docOwnerId, requesterId)) {
+               throw new SecurityException("Access denied for document " + documentId);
+           }

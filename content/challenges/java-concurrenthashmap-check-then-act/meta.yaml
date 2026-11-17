@@ -1,0 +1,67 @@
+order: 28
+slug: java-concurrenthashmap-check-then-act
+title: Non-Atomic Check-Then-Act Race on ConcurrentHashMap
+difficulty: Medium
+category: Concurrency
+language: java
+estimated_minutes: 6
+defect_target: Find 1 High Severity Check-Then-Act Race Condition in Idempotency Cache
+expected_issues:
+  - id: high-java-chm-check-then-act
+    title: Non-Atomic containsKey/get Followed by put on ConcurrentHashMap
+    severity: high
+    matched_lines:
+      - 29
+      - 30
+      - 31
+      - 33
+      - 38
+    matched_keywords:
+      - check-then-act
+      - race condition
+      - ConcurrentHashMap
+      - computeIfAbsent
+      - putIfAbsent
+      - atomic
+      - idempotency
+      - cwe-362
+    line_score: 0.6
+    concept_score: 0.4
+    explanation: Calling `containsKey()`/`get()` and later `put()` on a `ConcurrentHashMap` is a non-atomic compound check-then-act sequence (CWE-362). Two concurrent webhook deliveries with the same `idempotencyKey` can both pass the check and execute `ledger.settleTransfer()` twice.
+hints:
+  - tier: 1
+    title: Contextual Clue
+    hint: Trace how `processedEvents` is queried and updated when two threads invoke `handleTransferWebhook` simultaneously with the same `idempotencyKey`.
+  - tier: 2
+    title: Vulnerability Class
+    hint: A compound Check-Then-Act Race Condition (CWE-362) occurs when individual thread-safe operations on a concurrent collection are combined without atomicity across the whole sequence.
+  - tier: 3
+    title: Line Pointer & Guidance
+    hint: Look at lines 29-39. Replace the `containsKey` / `get` / `put` sequence with an atomic `ConcurrentHashMap.computeIfAbsent(idempotencyKey, key -> ...)` (or `putIfAbsent` with an in-flight state placeholder if you want to avoid holding a bin lock during I/O).
+canonical_review: |-
+  Senior Staff Engineer Review Critique:
+  Using `ConcurrentHashMap` guarantees thread safety for individual method calls (`containsKey`, `get`, `put`), not for multi-step compound logic spanning those calls.
+
+  Between `processedEvents.containsKey(idempotencyKey)` on line 29 and `processedEvents.put(idempotencyKey, result)` on line 38, another worker thread processing a retried webhook with the same `idempotencyKey` will also observe `containsKey == false`, call `ledger.settleTransfer()`, and settle the same transfer a second time.
+
+  Recommendation:
+  Use `processedEvents.computeIfAbsent(idempotencyKey, key -> ...)` so check, execution, and insertion occur atomically per key bucket. If `ledger.settleTransfer()` involves slow network I/O and holding the map bin lock is undesirable under high key-collision contention, reserve the key atomically with `putIfAbsent` using a `CompletableFuture` or pending token before executing the transfer.
+recommended_fix_diff: |
+  --- a/payments/idempotency/WebhookIdempotencyService.java
+  +++ b/payments/idempotency/WebhookIdempotencyService.java
+  @@ -29,11 +29,4 @@
+  -        if (processedEvents.containsKey(idempotencyKey)) {
+  -            return processedEvents.get(idempotencyKey);
+  -        }
+  -
+  -        String settlementStatus = ledger.settleTransfer(idempotencyKey, amountCents);
+  -        ProcessingResult result = new ProcessingResult(
+  -                idempotencyKey,
+  -                settlementStatus,
+  -                Instant.now());
+  -        processedEvents.put(idempotencyKey, result);
+  -        return result;
+  +        return processedEvents.computeIfAbsent(idempotencyKey, key -> {
+  +            String settlementStatus = ledger.settleTransfer(key, amountCents);
+  +            return new ProcessingResult(key, settlementStatus, Instant.now());
+  +        });

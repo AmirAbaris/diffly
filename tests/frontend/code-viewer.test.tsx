@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { CodeViewer } from "@/components/review/code-viewer"
+import { MarkdownPreview } from "@/components/review/markdown-preview"
 
 describe("CodeViewer Component", () => {
   afterEach(() => {
@@ -201,5 +202,55 @@ describe("CodeViewer Component", () => {
     const unflagButton = screen.getByRole("button", { name: "Unflag line 2" })
     await user.click(unflagButton)
     expect(onToggleLineMock).toHaveBeenCalledWith(2)
+  })
+
+  it("normalizes java language, defaults to Solution.java, and highlights Java keywords", async () => {
+    const sampleJavaCode = `public class OrderController {
+  public String getOrder(String id) {
+    return id;
+  }
+}`
+
+    const { container } = render(
+      <CodeViewer
+        code={sampleJavaCode}
+        language="java"
+        flaggedLines={[]}
+        onToggleLine={vi.fn()}
+      />
+    )
+
+    expect(await screen.findByText("Solution.java")).toBeInTheDocument()
+    expect(screen.getByText(/^java$/i)).toBeInTheDocument()
+
+    const keywordTokens = Array.from(
+      container.querySelectorAll(".token.keyword")
+    ).map((el) => el.textContent)
+    expect(keywordTokens).toContain("public")
+    expect(keywordTokens).toContain("class")
+  })
+
+  it("highlights fenced java code blocks in MarkdownPreview", async () => {
+    const markdown = [
+      "Review fix:",
+      "",
+      "```java",
+      "public class AuthService {",
+      "  private final String secret;",
+      "}",
+      "```",
+    ].join("\n")
+
+    const { container } = render(<MarkdownPreview content={markdown} />)
+
+    expect(await screen.findByTestId("markdown-preview")).toBeInTheDocument()
+    expect(screen.getByText(/^java$/i)).toBeInTheDocument()
+
+    const keywordTokens = Array.from(
+      container.querySelectorAll(".token.keyword")
+    ).map((el) => el.textContent)
+    expect(keywordTokens).toContain("public")
+    expect(keywordTokens).toContain("class")
+    expect(keywordTokens).toContain("private")
   })
 })

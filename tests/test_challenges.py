@@ -128,6 +128,7 @@ def test_list_challenges_filter_by_language(client: TestClient, session: Session
     expected_py = sum(1 for ch in CHALLENGES_DATA if ch["language"] == Language.PYTHON)
     expected_go = sum(1 for ch in CHALLENGES_DATA if ch["language"] == Language.GO)
     expected_rs = sum(1 for ch in CHALLENGES_DATA if ch["language"] == Language.RUST)
+    expected_java = sum(1 for ch in CHALLENGES_DATA if ch["language"] == Language.JAVA)
 
     res = client.get("/api/challenges?language=typescript")
     assert res.status_code == 200
@@ -146,6 +147,12 @@ def test_list_challenges_filter_by_language(client: TestClient, session: Session
     res_rs = client.get("/api/challenges?language=rust")
     assert res_rs.status_code == 200
     assert len(res_rs.json()) == expected_rs
+
+    res_java = client.get("/api/challenges?language=java")
+    assert res_java.status_code == 200
+    java_items = res_java.json()
+    assert len(java_items) == expected_java
+    assert all(item["language"] == "java" for item in java_items)
 
 
 def test_list_challenges_filter_by_search(client: TestClient, session: Session):
@@ -216,6 +223,20 @@ def test_list_challenges_filter_combinations(client: TestClient, session: Sessio
     res_empty = client.get("/api/challenges?difficulty=Easy&language=rust")
     assert res_empty.status_code == 200
     assert len(res_empty.json()) == expected_easy_rust
+
+    expected_easy_java = sum(
+        1
+        for ch in CHALLENGES_DATA
+        if ch["difficulty"] == Difficulty.EASY and ch["language"] == Language.JAVA
+    )
+    res_easy_java = client.get("/api/challenges?difficulty=Easy&language=java")
+    assert res_easy_java.status_code == 200
+    easy_java_items = res_easy_java.json()
+    assert len(easy_java_items) == expected_easy_java
+    assert all(
+        item["difficulty"] == "Easy" and item["language"] == "java"
+        for item in easy_java_items
+    )
 
     res_none = client.get("/api/challenges?search=no-such-challenge-xyz-999")
     assert res_none.status_code == 200

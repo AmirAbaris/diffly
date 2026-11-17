@@ -1,0 +1,92 @@
+order: 26
+slug: java-unclosed-jdbc-resource-leak
+title: Unclosed JDBC Connection and Statement Resource Leak
+difficulty: Easy
+category: Performance
+language: java
+estimated_minutes: 5
+defect_target: Find 1 High Severity JDBC Resource Leak in Repository Query
+expected_issues:
+  - id: high-java-jdbc-resource-leak
+    title: Unclosed JDBC Connection, PreparedStatement, and ResultSet on Exception Path
+    severity: high
+    matched_lines:
+      - 34
+      - 35
+      - 39
+      - 53
+      - 54
+      - 55
+    matched_keywords:
+      - try-with-resources
+      - resource leak
+      - connection pool
+      - connection leak
+      - unclosed
+      - autocloseable
+      - finally
+      - cwe-404
+    line_score: 0.6
+    concept_score: 0.4
+    explanation: Opening `Connection`, `PreparedStatement`, and `ResultSet` without `try-with-resources` (or a `finally` cleanup block) leaks pooled database connections whenever a `SQLException` or runtime exception is thrown before lines 53-55, eventually exhausting the connection pool.
+hints:
+  - tier: 1
+    title: Contextual Clue
+    hint: Trace how `Connection`, `PreparedStatement`, and `ResultSet` are opened and closed in `findRecentEntries`.
+  - tier: 2
+    title: Vulnerability Class
+    hint: Improper Resource Shutdown or Release (CWE-404) occurs when `AutoCloseable` database resources are closed only on the happy path instead of in deterministic cleanup blocks.
+  - tier: 3
+    title: Line Pointer & Guidance
+    hint: Look at lines 34-55. Wrap `Connection`, `PreparedStatement`, and `ResultSet` in `try-with-resources` blocks (`try (Connection conn = ...; PreparedStatement stmt = ...)`) so the JVM closes every handle even when an exception occurs.
+canonical_review: |-
+  Senior Staff Engineer Review Critique:
+  Manually calling `rs.close()`, `stmt.close()`, and `conn.close()` at the end of a method is a classic JDBC resource leak (CWE-404). If `prepareStatement()`, `executeQuery()`, `rs.next()`, or `rs.getBigDecimal()` throws an exception—or if `rs.close()` itself throws—subsequent `close()` statements never execute.
+
+  In production services backed by a connection pool (such as HikariCP), each leaked `Connection` remains checked out until its leak-detection or max-lifetime threshold expires. A burst of transient SQL errors or query timeouts rapidly drains the pool and causes cascading outages across unrelated endpoints.
+
+  Recommendation:
+  Always declare `Connection`, `PreparedStatement`, and `ResultSet` inside `try-with-resources` statements. Because all three interfaces extend `AutoCloseable`, the JVM guarantees deterministic reverse-order closure on both normal returns and exception paths.
+recommended_fix_diff: |
+  --- a/repository/LedgerAuditRepository.java
+  +++ b/repository/LedgerAuditRepository.java
+  @@ -34,23 +34,22 @@
+  -        Connection conn = dataSource.getConnection();
+  -        PreparedStatement stmt = conn.prepareStatement(SELECT_ENTRIES_SQL);
+  -        stmt.setString(1, accountId);
+  -        stmt.setInt(2, limit);
+  +        List<LedgerEntry> entries = new ArrayList<>();
+   
+  -        ResultSet rs = stmt.executeQuery();
+  -        List<LedgerEntry> entries = new ArrayList<>();
+  +        try (Connection conn = dataSource.getConnection();
+  +             PreparedStatement stmt = conn.prepareStatement(SELECT_ENTRIES_SQL)) {
+  +            stmt.setString(1, accountId);
+  +            stmt.setInt(2, limit);
+   
+  -        while (rs.next()) {
+  -            BigDecimal amount = rs.getBigDecimal("amount_cents");
+  -            if (amount == null || amount.signum() == 0) {
+  -                continue;
+  +            try (ResultSet rs = stmt.executeQuery()) {
+  +                while (rs.next()) {
+  +                    BigDecimal amount = rs.getBigDecimal("amount_cents");
+  +                    if (amount == null || amount.signum() == 0) {
+  +                        continue;
+  +                    }
+  +                    entries.add(new LedgerEntry(
+  +                            rs.getString("entry_id"),
+  +                            amount,
+  +                            rs.getString("currency")));
+  +                }
+               }
+  -            entries.add(new LedgerEntry(
+  -                    rs.getString("entry_id"),
+  -                    amount,
+  -                    rs.getString("currency")));
+           }
+   
+  -        rs.close();
+  -        stmt.close();
+  -        conn.close();
+           return entries;

@@ -3,7 +3,7 @@ export type Difficulty = "Easy" | "Medium" | "Hard"
 export type Category =
   "Agent Antipaths" | "Security" | "Concurrency" | "Performance" | "Logic Flaws"
 
-export type Language = "python" | "typescript" | "go" | "rust"
+export type Language = "python" | "typescript" | "go" | "rust" | "java"
 
 export const CHALLENGE_DIFFICULTIES: readonly Difficulty[] = [
   "Easy",
@@ -19,6 +19,7 @@ export const CHALLENGE_LANGUAGES: ReadonlyArray<{
   { value: "typescript", label: "TypeScript" },
   { value: "go", label: "Go" },
   { value: "rust", label: "Rust" },
+  { value: "java", label: "Java" },
 ] as const
 
 const LANGUAGE_LABEL_MAP: Record<string, string> = {
@@ -26,6 +27,7 @@ const LANGUAGE_LABEL_MAP: Record<string, string> = {
   typescript: "TypeScript",
   go: "Go",
   rust: "Rust",
+  java: "Java",
 }
 
 export function formatLanguageLabel(language: string): string {
