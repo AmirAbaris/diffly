@@ -11,6 +11,7 @@ const nextConfig: NextConfig = {
     browserToTerminal: true,
   },
   experimental: {
+    agentUpgrade: "security",
     instantInsights: {
       validationLevel: "manual-warning",
     },
