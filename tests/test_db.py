@@ -4,20 +4,30 @@ from typing import Annotated
 from unittest.mock import MagicMock, patch
 
 import pytest
+from alembic.autogenerate import compare_metadata
+from alembic.config import Config
+from alembic.migration import MigrationContext
+from alembic.script import ScriptDirectory
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
-from sqlmodel import Session, create_engine, select
+from sqlalchemy import inspect, text
+from sqlalchemy.exc import IntegrityError
+from sqlmodel import Session, SQLModel, create_engine, select
 
+from alembic import command
 from backend.core.config import Settings, normalize_database_url, settings
 from backend.core.db import (
+    ALEMBIC_INI_PATH,
+    ALEMBIC_SCRIPT_LOCATION,
     build_engine_kwargs,
     create_db_engine,
     get_session,
     init_db,
     resolve_database_config,
     resolve_sqlalchemy_url,
+    run_migrations,
 )
-from backend.models import User
+from backend.models import Category, Challenge, Difficulty, Language, Submission, User
 
 
 def test_default_settings():
@@ -161,68 +171,203 @@ def test_resolve_sqlalchemy_url():
         assert resolve_sqlalchemy_url(sqlite_url) == sqlite_url
 
 
-def test_init_db_creates_all_tables():
+def test_init_db_applies_alembic_migrations():
     test_engine = create_engine("sqlite:///:memory:")
     try:
         with patch("backend.core.db.engine", test_engine):
             init_db()
-            from sqlalchemy import inspect
-
             inspector = inspect(test_engine)
             table_names = set(inspector.get_table_names())
-            assert "users" in table_names
-            assert "challenges" in table_names
-            assert "submissions" in table_names
+            assert {"users", "challenges", "submissions", "alembic_version"}.issubset(
+                table_names
+            )
+
+            cfg = Config(str(ALEMBIC_INI_PATH))
+            cfg.set_main_option("script_location", str(ALEMBIC_SCRIPT_LOCATION))
+            head_rev = ScriptDirectory.from_config(cfg).get_current_head()
+
+            with test_engine.connect() as conn:
+                current_rev = conn.execute(
+                    text("SELECT version_num FROM alembic_version")
+                ).scalar_one()
+            assert current_rev == head_rev
     finally:
         test_engine.dispose()
 
 
-def test_init_db_tolerates_duplicate_key_and_raises_unrelated_errors():
-    with patch(
-        "backend.core.db.SQLModel.metadata.create_all",
-        side_effect=RuntimeError("duplicate key value violates unique constraint"),
-    ):
-        init_db()
-
-    with (
-        patch(
-            "backend.core.db.SQLModel.metadata.create_all",
-            side_effect=RuntimeError("connection refused"),
-        ),
-        pytest.raises(RuntimeError, match="connection refused"),
-    ):
-        init_db()
+def test_alembic_upgrade_parity_with_sqlmodel_metadata(tmp_path):
+    db_url = f"sqlite:///{tmp_path / 'parity.db'}"
+    test_engine = create_db_engine(db_url)
+    try:
+        run_migrations(test_engine)
+        with test_engine.connect() as conn:
+            migration_ctx = MigrationContext.configure(
+                conn, opts={"compare_type": True}
+            )
+            diffs = compare_metadata(migration_ctx, SQLModel.metadata)
+        assert diffs == []
+    finally:
+        test_engine.dispose()
 
 
-def test_init_db_ensures_postgres_enum_values_only_for_postgresql():
-    pg_engine = MagicMock()
-    pg_engine.dialect.name = "postgresql"
-    pg_conn = MagicMock()
-    pg_autocommit_conn = MagicMock()
-    pg_engine.connect.return_value = pg_conn
-    pg_conn.execution_options.return_value.__enter__.return_value = pg_autocommit_conn
+def test_alembic_migrated_sqlite_enforces_constraints_and_foreign_keys(tmp_path):
+    db_url = f"sqlite:///{tmp_path / 'constraints.db'}"
+    test_engine = create_db_engine(db_url)
+    try:
+        init_db(test_engine)
 
-    with (
-        patch("backend.core.db.engine", pg_engine),
-        patch("backend.core.db.SQLModel.metadata.create_all"),
-    ):
-        init_db()
+        with test_engine.connect() as conn:
+            fk_enabled = conn.execute(text("PRAGMA foreign_keys")).scalar_one()
+            assert fk_enabled == 1
 
-    pg_engine.connect.assert_called_once()
-    pg_conn.execution_options.assert_called_once_with(isolation_level="AUTOCOMMIT")
-    pg_autocommit_conn.execute.assert_called_once()
-    executed_sql = str(pg_autocommit_conn.execute.call_args[0][0])
-    assert executed_sql == "ALTER TYPE language ADD VALUE IF NOT EXISTS 'JAVA'"
+        with Session(test_engine) as db:
+            user = User(
+                email="alembic_fk@diffly.dev",
+                username="alembic_fk_user",
+                hashed_password="hashed-password",
+            )
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+            assert user.id is not None
 
-    sqlite_engine = MagicMock()
-    sqlite_engine.dialect.name = "sqlite"
-    with (
-        patch("backend.core.db.engine", sqlite_engine),
-        patch("backend.core.db.SQLModel.metadata.create_all"),
-    ):
-        init_db()
+            bad_challenge = Challenge(
+                slug="bad-dual-owner-ch",
+                title="Bad Dual Owner Challenge",
+                difficulty=Difficulty.EASY,
+                category=Category.SECURITY,
+                language=Language.PYTHON,
+                description="desc",
+                code_snippet="x = 1",
+                is_public=False,
+                user_id=user.id,
+                session_id="g_dual_owner",
+            )
+            db.add(bad_challenge)
+            with pytest.raises(IntegrityError):
+                db.commit()
+            db.rollback()
 
-    sqlite_engine.connect.assert_not_called()
+            owned_challenge = Challenge(
+                slug="owned-custom-ch",
+                title="Owned Custom Challenge",
+                difficulty=Difficulty.MEDIUM,
+                category=Category.SECURITY,
+                language=Language.JAVA,
+                description="desc",
+                code_snippet="class A {}",
+                is_public=False,
+                user_id=user.id,
+            )
+            public_challenge = Challenge(
+                slug="public-cascade-ch",
+                title="Public Cascade Challenge",
+                difficulty=Difficulty.EASY,
+                category=Category.LOGIC_FLAWS,
+                language=Language.PYTHON,
+                description="desc",
+                code_snippet="x = 1",
+                is_public=True,
+            )
+            db.add(owned_challenge)
+            db.add(public_challenge)
+            db.commit()
+            db.refresh(owned_challenge)
+            db.refresh(public_challenge)
+            assert owned_challenge.id is not None
+            assert public_challenge.id is not None
+
+            bad_submission = Submission(
+                challenge_id=public_challenge.id,
+                user_id=user.id,
+                session_id="g_dual_owner",
+                flagged_lines=[1],
+                comments="Dual owner submission",
+                score=50,
+            )
+            db.add(bad_submission)
+            with pytest.raises(IntegrityError):
+                db.commit()
+            db.rollback()
+
+            user_submission = Submission(
+                challenge_id=public_challenge.id,
+                user_id=user.id,
+                flagged_lines=[1],
+                comments="Owned submission",
+                score=90,
+            )
+            db.add(user_submission)
+            db.commit()
+            db.refresh(user_submission)
+            assert user_submission.id is not None
+
+            user_id = user.id
+            owned_ch_id = owned_challenge.id
+            pub_ch_id = public_challenge.id
+            sub_id = user_submission.id
+
+        with test_engine.begin() as conn:
+            conn.execute(text("DELETE FROM users WHERE id = :id"), {"id": user_id})
+
+        with Session(test_engine) as db:
+            reloaded_ch = db.get(Challenge, owned_ch_id)
+            reloaded_sub = db.get(Submission, sub_id)
+            assert reloaded_ch is not None
+            assert reloaded_ch.user_id is None
+            assert reloaded_sub is not None
+            assert reloaded_sub.user_id is None
+
+        with test_engine.begin() as conn:
+            conn.execute(
+                text("DELETE FROM challenges WHERE id = :id"), {"id": pub_ch_id}
+            )
+
+        with Session(test_engine) as db:
+            assert db.get(Submission, sub_id) is None
+    finally:
+        test_engine.dispose()
+
+
+def test_alembic_downgrade_base_and_upgrade_head_roundtrip(tmp_path):
+    db_url = f"sqlite:///{tmp_path / 'roundtrip.db'}"
+    cfg = Config(str(ALEMBIC_INI_PATH))
+    cfg.set_main_option("script_location", str(ALEMBIC_SCRIPT_LOCATION))
+    cfg.attributes["sqlalchemy.url"] = db_url
+    cfg.attributes["configure_logger"] = False
+
+    command.upgrade(cfg, "head")
+    test_engine = create_db_engine(db_url)
+    try:
+        assert {"users", "challenges", "submissions", "alembic_version"}.issubset(
+            set(inspect(test_engine).get_table_names())
+        )
+    finally:
+        test_engine.dispose()
+
+    command.downgrade(cfg, "base")
+    test_engine = create_db_engine(db_url)
+    try:
+        table_names = set(inspect(test_engine).get_table_names())
+        assert "users" not in table_names
+        assert "challenges" not in table_names
+        assert "submissions" not in table_names
+    finally:
+        test_engine.dispose()
+
+    command.upgrade(cfg, "head")
+    test_engine = create_db_engine(db_url)
+    try:
+        assert {"users", "challenges", "submissions", "alembic_version"}.issubset(
+            set(inspect(test_engine).get_table_names())
+        )
+        with test_engine.connect() as conn:
+            migration_ctx = MigrationContext.configure(
+                conn, opts={"compare_type": True}
+            )
+            assert compare_metadata(migration_ctx, SQLModel.metadata) == []
+    finally:
+        test_engine.dispose()
 
 
 def test_get_session_yields_session():
@@ -367,3 +512,201 @@ def test_app_lifespan_fails_fast_with_unsafe_production_secret(monkeypatch):
         TestClient(app) as tc,
     ):
         assert tc is not None
+
+
+def test_app_lifespan_skips_init_db_on_vercel(monkeypatch):
+    from api.index import app
+
+    monkeypatch.setattr(settings, "VERCEL", "1")
+    with (
+        patch("api.index.init_db") as mock_init_db,
+        patch("api.index.seed_challenges_if_empty") as mock_seed,
+        TestClient(app),
+    ):
+        mock_init_db.assert_not_called()
+        mock_seed.assert_called_once()
+
+    monkeypatch.setattr(settings, "VERCEL", None)
+    with (
+        patch("api.index.init_db") as mock_init_db,
+        patch("api.index.seed_challenges_if_empty") as mock_seed,
+        TestClient(app),
+    ):
+        mock_init_db.assert_called_once()
+        mock_seed.assert_called_once()
+
+
+def test_settings_is_vercel_parsing():
+    assert Settings(VERCEL=None).is_vercel is False
+    assert Settings(VERCEL="0").is_vercel is False
+    assert Settings(VERCEL="false").is_vercel is False
+    assert Settings(VERCEL="1").is_vercel is True
+    assert Settings(VERCEL="true").is_vercel is True
+
+
+def test_run_migrations_rejects_pre_alembic_legacy_database(tmp_path):
+    db_url = f"sqlite:///{tmp_path / 'legacy.db'}"
+    test_engine = create_db_engine(db_url)
+    try:
+        with test_engine.begin() as conn:
+            conn.execute(text("CREATE TABLE users (id INTEGER PRIMARY KEY)"))
+
+        with pytest.raises(RuntimeError, match="alembic stamp head"):
+            run_migrations(test_engine)
+    finally:
+        test_engine.dispose()
+
+
+def test_alembic_autocommit_block_succeeds_in_run_migrations_and_cli_env(tmp_path):
+    import shutil
+
+    script_dir = tmp_path / "alembic"
+    shutil.copytree(ALEMBIC_SCRIPT_LOCATION, script_dir)
+    (script_dir / "versions" / "0002_autocommit_probe.py").write_text(
+        '"""Autocommit probe.\n\n'
+        "Revision ID: 0002_autocommit_probe\n"
+        "Revises: 0001_initial_schema\n"
+        '"""\n\n'
+        "from alembic import op\n\n"
+        'revision = "0002_autocommit_probe"\n'
+        'down_revision = "0001_initial_schema"\n'
+        "branch_labels = None\n"
+        "depends_on = None\n\n\n"
+        "def upgrade() -> None:\n"
+        "    with op.get_context().autocommit_block():\n"
+        '        op.execute("SELECT 1")\n\n\n'
+        "def downgrade() -> None:\n"
+        "    pass\n",
+        encoding="utf-8",
+    )
+
+    cli_db_url = f"sqlite:///{tmp_path / 'cli_autocommit.db'}"
+    cfg = Config(str(ALEMBIC_INI_PATH))
+    cfg.set_main_option("script_location", str(script_dir))
+    cfg.attributes["sqlalchemy.url"] = cli_db_url
+    cfg.attributes["configure_logger"] = False
+    command.upgrade(cfg, "head")
+
+    inproc_engine = create_db_engine(f"sqlite:///{tmp_path / 'inproc_autocommit.db'}")
+    try:
+        with patch("backend.core.db.ALEMBIC_SCRIPT_LOCATION", script_dir):
+            run_migrations(inproc_engine)
+    finally:
+        inproc_engine.dispose()
+
+
+def test_alembic_sqlite_batch_alter_preserves_foreign_key_owners(tmp_path):
+    import shutil
+
+    db_url = f"sqlite:///{tmp_path / 'batch_fk.db'}"
+    test_engine = create_db_engine(db_url)
+    try:
+        run_migrations(test_engine)
+
+        with Session(test_engine) as db:
+            user = User(
+                email="batch@diffly.dev",
+                username="batchuser",
+                hashed_password="pw",
+            )
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+            assert user.id is not None
+
+            challenge = Challenge(
+                slug="batch-owned-challenge",
+                title="Batch Owned",
+                difficulty=Difficulty.EASY,
+                category=Category.SECURITY,
+                language=Language.PYTHON,
+                description="desc",
+                code_snippet="x = 1",
+                is_public=False,
+                user_id=user.id,
+            )
+            db.add(challenge)
+            db.commit()
+            db.refresh(challenge)
+            assert challenge.id is not None
+
+            sub = Submission(
+                challenge_id=challenge.id,
+                user_id=user.id,
+                flagged_lines=[1],
+                comments="note",
+                score=80,
+            )
+            db.add(sub)
+            db.commit()
+            db.refresh(sub)
+            user_id = user.id
+            ch_id = challenge.id
+            sub_id = sub.id
+
+        script_dir = tmp_path / "alembic"
+        shutil.copytree(ALEMBIC_SCRIPT_LOCATION, script_dir)
+        (script_dir / "versions" / "0002_batch_users.py").write_text(
+            '"""Batch rebuild users.\n\n'
+            "Revision ID: 0002_batch_users\n"
+            "Revises: 0001_initial_schema\n"
+            '"""\n\n'
+            "import sqlalchemy as sa\n"
+            "from alembic import op\n\n"
+            'revision = "0002_batch_users"\n'
+            'down_revision = "0001_initial_schema"\n'
+            "branch_labels = None\n"
+            "depends_on = None\n\n\n"
+            "def upgrade() -> None:\n"
+            '    with op.batch_alter_table("users", recreate="always") as batch_op:\n'
+            "        batch_op.add_column(\n"
+            '            sa.Column("display_note", sa.String(), nullable=True)\n'
+            "        )\n\n\n"
+            "def downgrade() -> None:\n"
+            '    with op.batch_alter_table("users", recreate="always") as batch_op:\n'
+            '        batch_op.drop_column("display_note")\n',
+            encoding="utf-8",
+        )
+
+        with patch("backend.core.db.ALEMBIC_SCRIPT_LOCATION", script_dir):
+            run_migrations(test_engine)
+
+        with test_engine.connect() as conn:
+            assert conn.execute(text("PRAGMA foreign_keys")).scalar_one() == 1
+            ch_owner = conn.execute(
+                text("SELECT user_id FROM challenges WHERE id = :id"), {"id": ch_id}
+            ).scalar_one()
+            sub_owner = conn.execute(
+                text("SELECT user_id FROM submissions WHERE id = :id"), {"id": sub_id}
+            ).scalar_one()
+            assert ch_owner == user_id
+            assert sub_owner == user_id
+    finally:
+        test_engine.dispose()
+
+
+def test_alembic_postgres_offline_sql_generation_and_percent_url():
+    import io
+
+    pg_url = "postgresql://user:p%40ss%25word@ep-bold.us-east-2.aws.neon.tech/neondb"
+    upgrade_buf = io.StringIO()
+    cfg_up = Config(str(ALEMBIC_INI_PATH), stdout=upgrade_buf)
+    cfg_up.set_main_option("script_location", str(ALEMBIC_SCRIPT_LOCATION))
+    cfg_up.attributes["sqlalchemy.url"] = pg_url
+    cfg_up.attributes["configure_logger"] = False
+    command.upgrade(cfg_up, "head", sql=True)
+    up_sql = upgrade_buf.getvalue()
+    assert "CREATE TABLE users" in up_sql
+    assert "ck_challenges_single_owner" in up_sql
+    assert "ck_submissions_single_owner" in up_sql
+    assert "JAVA" in up_sql
+
+    downgrade_buf = io.StringIO()
+    cfg_down = Config(str(ALEMBIC_INI_PATH), stdout=downgrade_buf)
+    cfg_down.set_main_option("script_location", str(ALEMBIC_SCRIPT_LOCATION))
+    cfg_down.attributes["sqlalchemy.url"] = pg_url
+    cfg_down.attributes["configure_logger"] = False
+    command.downgrade(cfg_down, "0001_initial_schema:base", sql=True)
+    down_sql = downgrade_buf.getvalue()
+    assert "DROP TABLE submissions" in down_sql
+    assert "DROP TYPE language" in down_sql
