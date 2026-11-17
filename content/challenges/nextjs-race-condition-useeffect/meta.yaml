@@ -11,14 +11,10 @@ expected_issues:
   title: Unsynchronized Async State Update Race Condition in useEffect
   severity: high
   matched_lines:
-  - 16
-  - 17
-  - 18
   - 19
-  - 20
-  - 26
-  - 27
-  - 28
+  - 23
+  - 30
+  - 31
   - 32
   matched_keywords:
   - race condition
@@ -43,7 +39,7 @@ hints:
     resolving out of sequence corrupt state.
 - tier: 3
   title: Line Pointer & Guidance
-  hint: 'Lines 16-32: Implement a cleanup return function in `useEffect` using `const
+  hint: 'Lines 19-38: Implement a cleanup return function in `useEffect` using `const
     controller = new AbortController()` passed to `fetch(..., { signal: controller.signal
     })`, or maintain an `isCancelled` flag to discard outdated results.'
 canonical_review: |-

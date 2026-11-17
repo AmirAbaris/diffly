@@ -15,7 +15,6 @@ expected_issues:
   - 39
   - 40
   - 46
-  - 47
   matched_keywords:
   - ssrf
   - server-side request forgery
@@ -35,7 +34,7 @@ hints:
   hint: Server-Side Request Forgery (SSRF / CWE-918) occurs when an application fetches a remote resource without restricting internal IP addresses.
 - tier: 3
   title: Line Pointer & Guidance
-  hint: Lines 38-47 directly issue requests to `event.URL`. Implement a custom `http.Transport` with a `Control` function on `net.Dialer` that resolves DNS and rejects loopback (127.0.0.1), private ranges (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16), and link-local metadata (169.254.169.254).
+  hint: Lines 38-46 directly issue requests to `event.URL`. Implement a custom `http.Transport` with a `Control` function on `net.Dialer` that resolves DNS and rejects loopback (127.0.0.1), private ranges (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16), and link-local metadata (169.254.169.254).
 canonical_review: |-
   Senior Staff Engineer Review Critique:
   Accepting arbitrary webhook URLs from tenant configurations and delivering HTTP requests from within internal infrastructure without SSRF defenses is a dangerous security hole (OWASP Top 10 A10:2021). 

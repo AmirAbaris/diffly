@@ -13,7 +13,6 @@ def search_users(
     session: Session = Depends(get_session),
 ) -> list[dict]:
     """Search registered users matching query term."""
-    # Raw SQL query constructed with f-string interpolation
     sql_query = text(
         f"SELECT id, username, email FROM users "
         f"WHERE username LIKE '%{q}%'"

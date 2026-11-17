@@ -25,7 +25,6 @@ class CalculatorTool:
         clean_expr = expression.strip().strip("`")
 
         try:
-            # Danger: eval executes arbitrary code
             result = eval(
                 clean_expr,
                 {"__builtins__": __builtins__},

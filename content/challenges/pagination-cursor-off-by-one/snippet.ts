@@ -19,7 +19,7 @@ export async function getFeedItems(params: PaginationParams) {
     const decoded = JSON.parse(
       Buffer.from(params.afterCursor, "base64").toString("utf-8")
     );
-    // Cursor filter uses strictly greater timestamp without compound unique fallback
+    // Filter records created after the cursor timestamp
     cursorFilter = {
       createdAt: {
         gt: new Date(decoded.createdAt),
@@ -34,7 +34,6 @@ export async function getFeedItems(params: PaginationParams) {
     take: limit + 1,
   });
 
-  // Bug: Slices off first record assuming it was the cursor boundary
   const pageItems = params.afterCursor ? records.slice(1, limit + 1) : records.slice(0, limit);
   const hasMore = records.length > limit;
 

@@ -19,14 +19,12 @@ class LedgerCalculator:
         total_tax: float = 0.0
 
         for txn in transactions:
-            # Using standard IEEE 754 float arithmetic for financial amounts
             raw_amount = float(txn["amount"])
             tax = raw_amount * float(txn["tax_rate"])
 
             subtotal += raw_amount
             total_tax += tax
 
-        # Compute fee and net payout using float multiplication and division
         processor_fee = round(subtotal * self.processing_fee_pct, 2)
         net_settlement = round(subtotal + total_tax - processor_fee, 2)
 

@@ -13,8 +13,6 @@ expected_issues:
   matched_lines:
   - 19
   - 33
-  - 34
-  - 35
   matched_keywords:
   - nil error
   - error interface
@@ -34,7 +32,7 @@ hints:
   hint: In Go, an interface containing a concrete nil pointer is non-nil because its underlying type descriptor is populated.
 - tier: 3
   title: Line Pointer & Guidance
-  hint: 'Look at line 35: `return apiErr`. When no error occurs, explicitly return `nil` rather than returning a typed variable `var apiErr *APIError`.'
+  hint: 'Look at line 33: `return apiErr`. When no error occurs, explicitly return `nil` rather than returning a typed variable `var apiErr *APIError`.'
 canonical_review: |-
   Senior Staff Engineer Review Critique:
   Returning a typed nil pointer variable in a Go `error` interface is one of Go's most notorious and subtle language traps.
@@ -46,9 +44,7 @@ canonical_review: |-
 recommended_fix_diff: |
   --- a/client/validator.go
   +++ b/client/validator.go
-  @@ -33,4 +33,3 @@
-  -	// Bug: Returning a typed nil pointer (*APIError) in an interface (error)
-  -	// In Go, an interface containing (*APIError)(nil) is NOT nil!
+  @@ -33,2 +33,2 @@
   -	return apiErr
   +	return nil
    }

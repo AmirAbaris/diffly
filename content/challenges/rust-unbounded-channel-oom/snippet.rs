@@ -15,13 +15,12 @@ pub struct TelemetryPipeline {
 
 impl TelemetryPipeline {
     pub fn new() -> (Self, mpsc::UnboundedReceiver<TelemetryEvent>) {
-        // Instantiate unbounded channel between ingest workers and storage batcher
+        // Initialize channel between ingest workers and storage batcher
         let (tx, rx) = mpsc::unbounded_channel::<TelemetryEvent>();
         (Self { sender: tx }, rx)
     }
 
     pub fn enqueue_event(&self, event: TelemetryEvent) -> Result<(), &'static str> {
-        // Sends immediately without backpressure or bounded capacity check
         self.sender
             .send(event)
             .map_err(|_| "Failed to enqueue event: receiver dropped")

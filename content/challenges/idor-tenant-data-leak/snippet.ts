@@ -29,7 +29,6 @@ export async function deleteDocumentHandler(req: Request, res: Response) {
       return res.status(404).json({ error: "Document not found" });
     }
 
-    // Direct object deletion by primary key without verifying tenant ownership
     await prisma.document.delete({
       where: { id: documentId },
     });

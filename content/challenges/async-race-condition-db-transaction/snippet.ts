@@ -15,7 +15,7 @@ export async function handleWalletTransfer(req: Request, res: Response) {
     return res.status(400).json({ error: "Invalid transfer parameters" });
   }
 
-  // 1. Check sender's current available balance
+  // Check sender's current available balance
   const senderWallet = await prisma.wallet.findUnique({
     where: { userId: senderId },
   });
@@ -24,7 +24,7 @@ export async function handleWalletTransfer(req: Request, res: Response) {
     return res.status(400).json({ error: "Insufficient balance" });
   }
 
-  // Asynchronous audit logging outside atomic boundary
+  // Record transfer initiation in audit log
   await notifyAuditLog({
     event: "TRANSFER_INITIATED",
     senderId,
@@ -32,7 +32,7 @@ export async function handleWalletTransfer(req: Request, res: Response) {
     amount,
   });
 
-  // 2. Non-atomic deduction and crediting across separate queries
+  // Debit sender wallet and credit recipient wallet
   await prisma.wallet.update({
     where: { userId: senderId },
     data: { balance: senderWallet.balance - amount },

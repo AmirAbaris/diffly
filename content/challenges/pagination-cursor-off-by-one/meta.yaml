@@ -13,7 +13,6 @@ expected_issues:
   matched_lines:
   - 36
   - 37
-  - 38
   matched_keywords:
   - off-by-one
   - records.slice
@@ -33,7 +32,7 @@ hints:
   hint: Off-by-one array indexing / slicing defects cause boundary elements to be dropped or duplicated in paginated APIs.
 - tier: 3
   title: Line Pointer & Guidance
-  hint: 'Look at line 38: `records.slice(1, limit + 1)`. Because Prisma `where` already excluded the previous page cursor, the query returns only new records. Always slice `records.slice(0, limit)`.'
+  hint: 'Look at line 37: `records.slice(1, limit + 1)`. Because Prisma `where` already excluded the previous page cursor, the query returns only new records. Always slice `records.slice(0, limit)`.'
 canonical_review: |-
   Senior Staff Engineer Review Critique:
   In cursor pagination where the database `where` condition already filters out previously retrieved records, slicing `records.slice(1, limit + 1)` is a classic off-by-one indexing bug. 
@@ -45,8 +44,7 @@ canonical_review: |-
 recommended_fix_diff: |
   --- a/services/feed.ts
   +++ b/services/feed.ts
-  @@ -36,4 +36,3 @@
-  -  // Bug: Slices off first record assuming it was the cursor boundary
+  @@ -36,3 +36,3 @@
   -  const pageItems = params.afterCursor ? records.slice(1, limit + 1) : records.slice(0, limit);
   +  const pageItems = records.slice(0, limit);
      const hasMore = records.length > limit;

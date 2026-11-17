@@ -20,7 +20,7 @@ func FetchFastest(ctx context.Context, mirrors []string) (*Result, error) {
 		return nil, errors.New("no mirrors provided")
 	}
 
-	// Unbuffered channel for receiving mirror query responses
+	// Channel for receiving mirror query responses
 	ch := make(chan Result)
 
 	for _, mirror := range mirrors {

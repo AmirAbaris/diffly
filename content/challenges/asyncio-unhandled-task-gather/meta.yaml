@@ -11,9 +11,10 @@ expected_issues:
   title: Orphaned Tasks and Resource Leak in asyncio.gather
   severity: high
   matched_lines:
+  - 27
   - 28
   - 29
-  - 30
+  - 32
   matched_keywords:
   - asyncio.gather
   - return_exceptions
@@ -37,7 +38,7 @@ hints:
     cancel unfinished sibling tasks.
 - tier: 3
   title: Line Pointer & Guidance
-  hint: 'Inspect line 30: `await asyncio.gather(*tasks)` should use `return_exceptions=True`
+  hint: 'Inspect line 32: `await asyncio.gather(*tasks)` should use `return_exceptions=True`
     with result inspection, or modern `asyncio.TaskGroup` (Python 3.11+) which guarantees
     that when one task fails, remaining tasks are cleanly cancelled.'
 canonical_review: |-

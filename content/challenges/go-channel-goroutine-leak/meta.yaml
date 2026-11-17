@@ -48,6 +48,6 @@ recommended_fix_diff: |
   --- a/worker/mirror.go
   +++ b/worker/mirror.go
   @@ -23,3 +23,3 @@
-   	// Unbuffered channel for receiving mirror query responses
+   	// Channel for receiving mirror query responses
   -	ch := make(chan Result)
   +	ch := make(chan Result, len(mirrors))

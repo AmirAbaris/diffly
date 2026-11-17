@@ -16,7 +16,6 @@ expected_issues:
   - 29
   - 47
   - 51
-  - 52
   matched_keywords:
   - deadlock
   - mutex
@@ -37,7 +36,7 @@ hints:
   hint: Deadlock occurs when a non-reentrant lock is acquired multiple times by the same goroutine.
 - tier: 3
   title: Line Pointer & Guidance
-  hint: Look at line 28 and line 52. Either remove `c.mu.Lock()` from `evictOldest()` and document it as an internal helper that expects the lock to be held, or create an unlocked helper `evictOldestLocked()`.
+  hint: Look at line 28 and line 51. Either remove `c.mu.Lock()` from `evictOldest()` and document it as an internal helper that expects the lock to be held, or create an unlocked helper `evictOldestLocked()`.
 canonical_review: |-
   Senior Staff Engineer Review Critique:
   Attempting reentrant lock acquisition with Go's `sync.Mutex` is a fatal concurrency error. Unlike POSIX recursive mutexes or Java's `synchronized`, Go's `sync.Mutex` does not track goroutine ownership and deliberately forbids reentrancy.
@@ -56,7 +55,6 @@ recommended_fix_diff: |
   -	defer c.mu.Unlock()
   +// evictOldestLocked removes the least recently accessed item. Caller must hold c.mu.
   +func (c *LRUCache) evictOldestLocked() {
-  @@ -51,2 +49,2 @@
-  -		// Call evictOldest while already holding c.mu
+  @@ -50,2 +48,2 @@
   -		c.evictOldest()
   +		c.evictOldestLocked()

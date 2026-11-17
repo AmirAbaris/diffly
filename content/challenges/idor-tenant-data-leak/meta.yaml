@@ -14,9 +14,9 @@ expected_issues:
   - 24
   - 25
   - 26
+  - 32
   - 33
   - 34
-  - 35
   matched_keywords:
   - idor
   - tenantId
@@ -36,7 +36,7 @@ hints:
   hint: Insecure Direct Object Reference (IDOR / CWE-639) occurs when access control checks fail to verify that the requesting subject owns the target object.
 - tier: 3
   title: Line Pointer & Guidance
-  hint: 'Look at lines 24-26 and 33-35: `where: { id: documentId }`. Scope the query to the authenticated organization: `where: { id: documentId, tenantId: user.tenantId }`.'
+  hint: 'Look at lines 24-26 and 32-34: `where: { id: documentId }`. Scope the query to the authenticated organization: `where: { id: documentId, tenantId: user.tenantId }`.'
 canonical_review: |-
   Senior Staff Engineer Review Critique:
   Deleting records directly by primary key without scoping to the requesting tenant violates fundamental multi-tenant isolation principles (OWASP Top 10 A01:2021 Broken Access Control / BOLA).
@@ -53,7 +53,7 @@ recommended_fix_diff: |
   -      where: { id: documentId },
   +      where: { id: documentId, tenantId: user.tenantId },
        });
-  @@ -33,3 +33,3 @@
+  @@ -32,3 +32,3 @@
        await prisma.document.delete({
   -      where: { id: documentId },
   +      where: { id: documentId, tenantId: user.tenantId },

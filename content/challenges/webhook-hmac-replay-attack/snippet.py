@@ -25,7 +25,6 @@ async def handle_incoming_webhook(
         )
 
     # Compute expected HMAC signature over payload
-    # Defect: Timestamp freshness is not validated and timestamp is not bound to HMAC
     expected_sig = hmac.new(
         WEBHOOK_SECRET, msg=raw_body, digestmod=hashlib.sha256
     ).hexdigest()

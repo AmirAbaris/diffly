@@ -11,7 +11,6 @@ expected_issues:
   title: Arbitrary Code Execution via Unsanitized eval()
   severity: critical
   matched_lines:
-  - 27
   - 28
   - 29
   - 30
