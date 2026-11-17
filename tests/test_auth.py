@@ -636,3 +636,196 @@ def test_x_user_id_header_always_rejected(
         headers={"x-user-id": str(active_user.id)},
     )
     assert res_prod.status_code == 401
+
+
+def test_bearer_fallback_when_auth_cookie_expired_or_invalid(
+    client: TestClient, session: Session
+):
+    """Expired, invalid, or inactive cookies fall back to Authorization Bearer."""
+    active_user = User(
+        email="bearer_fallback@diffly.dev",
+        username="bearer_fallback",
+        hashed_password=hash_password("Password123!"),
+        is_active=True,
+    )
+    inactive_user = User(
+        email="inactive_cookie@diffly.dev",
+        username="inactive_cookie",
+        hashed_password=hash_password("Password123!"),
+        is_active=False,
+    )
+    session.add_all([active_user, inactive_user])
+    session.commit()
+    session.refresh(active_user)
+    session.refresh(inactive_user)
+
+    valid_bearer = create_access_token(
+        {
+            "sub": str(active_user.id),
+            "username": active_user.username,
+            "email": active_user.email,
+        }
+    )
+    expired_cookie = create_access_token(
+        {
+            "sub": str(active_user.id),
+            "username": active_user.username,
+            "email": active_user.email,
+        },
+        expires_delta=timedelta(minutes=-5),
+    )
+    inactive_cookie = create_access_token(
+        {
+            "sub": str(inactive_user.id),
+            "username": inactive_user.username,
+            "email": inactive_user.email,
+        }
+    )
+
+    for bad_cookie in (expired_cookie, "not.a.valid.jwt", inactive_cookie):
+        client.cookies.clear()
+        client.cookies.set(settings.AUTH_COOKIE_NAME, bad_cookie)
+        res = client.get(
+            "/api/auth/me",
+            headers={"Authorization": f"Bearer {valid_bearer}"},
+        )
+        assert res.status_code == 200
+        assert res.json()["id"] == active_user.id
+
+
+def test_claim_clears_session_id_and_user_delete_does_not_reexpose(
+    client: TestClient, session: Session
+):
+    """Claiming sets session_id to None so user deletion never re-exposes records."""
+    public_ch = Challenge(
+        slug="orphan-check-pub",
+        title="Orphan Check Public",
+        difficulty=Difficulty.EASY,
+        category=Category.SECURITY,
+        language=Language.PYTHON,
+        description="Public",
+        code_snippet="x = 1",
+        is_public=True,
+    )
+    session.add(public_ch)
+    session.commit()
+    session.refresh(public_ch)
+
+    sub_res = client.post(
+        f"/api/challenges/{public_ch.slug}/review",
+        json={"flagged_lines": [1], "comments": "Guest review before signup."},
+    )
+    assert sub_res.status_code == 200
+    sub_id = sub_res.json()["submission_id"]
+
+    reg_res = client.post(
+        "/api/auth/register",
+        json={
+            "email": "orphan_owner@diffly.dev",
+            "username": "orphan_owner",
+            "password": "Password123!",
+        },
+    )
+    assert reg_res.status_code == 200
+    owner_id = reg_res.json()["id"]
+
+    claimed_sub = session.get(Submission, sub_id)
+    assert claimed_sub is not None
+    assert claimed_sub.user_id == owner_id
+    assert claimed_sub.session_id is None
+
+    saved_guest_cookies = dict(client.cookies)
+    owner = session.get(User, owner_id)
+    assert owner is not None
+    session.delete(owner)
+    session.commit()
+    session.refresh(claimed_sub)
+    assert claimed_sub.user_id is None
+    assert claimed_sub.session_id is None
+
+    client.cookies.clear()
+    for k, v in saved_guest_cookies.items():
+        if k != settings.AUTH_COOKIE_NAME:
+            client.cookies.set(k, v)
+    prog_res = client.get("/api/user/progress")
+    assert prog_res.status_code == 200
+    assert prog_res.json()["total_attempted"] == 0
+
+
+def test_claim_enforces_five_challenge_quota_atomically(
+    client_factory, session: Session, register_user, login_as
+):
+    """Claiming guest challenges past 5 returns 409 without mutating records."""
+    user = register_user("quota_claim_user")
+    auth_client = login_as("quota_claim_user")
+
+    for i in range(4):
+        session.add(
+            Challenge(
+                slug=f"user-owned-quota-{i}",
+                title=f"Owned {i}",
+                difficulty=Difficulty.EASY,
+                category=Category.SECURITY,
+                language=Language.PYTHON,
+                description="Owned",
+                code_snippet="x = 1",
+                is_public=False,
+                user_id=user["id"],
+            )
+        )
+    session.commit()
+
+    guest_client = client_factory()
+    sub_res = guest_client.post(
+        "/api/challenges/nonexistent-public-check/review",
+        json={"flagged_lines": [1], "comments": "check"},
+    )
+    assert sub_res.status_code == 404
+
+    pub = Challenge(
+        slug="quota-claim-pub",
+        title="Quota Claim Pub",
+        difficulty=Difficulty.EASY,
+        category=Category.SECURITY,
+        language=Language.PYTHON,
+        description="Public",
+        code_snippet="x = 1",
+        is_public=True,
+    )
+    session.add(pub)
+    session.commit()
+
+    guest_sub_res = guest_client.post(
+        f"/api/challenges/{pub.slug}/review",
+        json={"flagged_lines": [1], "comments": "Guest public review."},
+    )
+    assert guest_sub_res.status_code == 200
+    guest_sid = guest_sub_res.json()["session_id"]
+    assert guest_sid is not None
+
+    for i in range(2):
+        session.add(
+            Challenge(
+                slug=f"guest-incoming-quota-{i}",
+                title=f"Incoming {i}",
+                difficulty=Difficulty.EASY,
+                category=Category.SECURITY,
+                language=Language.PYTHON,
+                description="Guest",
+                code_snippet="x = 1",
+                is_public=False,
+                user_id=None,
+                session_id=guest_sid,
+            )
+        )
+    session.commit()
+
+    for k, v in guest_client.cookies.items():
+        auth_client.cookies.set(k, v)
+
+    claim_res = auth_client.post("/api/user/claim-session")
+    assert claim_res.status_code == 409
+
+    list_res = auth_client.get("/api/challenges/custom")
+    assert list_res.status_code == 200
+    assert list_res.json()["total"] == 4

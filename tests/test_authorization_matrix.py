@@ -838,3 +838,42 @@ def test_evaluate_custom_rejects_invalid_and_oversized_payloads(client: TestClie
         },
     )
     assert oversized_res.status_code == 422
+
+
+def test_raw_guest_session_hijack_rejected_on_claim(
+    session: Session,
+    client_factory: Callable[[], TestClient],
+    register_user: Callable[..., dict[str, Any]],
+    login_as: Callable[..., TestClient],
+):
+    """Attacker cannot claim a guest's records using a raw unsigned session_id."""
+    victim_sid = "victim-raw-hijack-sid"
+    victim_challenge = Challenge(
+        slug="victim-private-hijack",
+        title="Victim Private Challenge",
+        difficulty=Difficulty.MEDIUM,
+        category=Category.SECURITY,
+        language=Language.PYTHON,
+        description="Private",
+        code_snippet="secret = 1",
+        is_public=False,
+        user_id=None,
+        session_id=victim_sid,
+    )
+    session.add(victim_challenge)
+    session.commit()
+    session.refresh(victim_challenge)
+
+    register_user("hijack_attacker")
+    attacker_client = login_as("hijack_attacker")
+
+    claim_res = attacker_client.post(
+        "/api/user/claim-session",
+        headers={"X-Diffly-Session-Id": victim_sid},
+        json={"session_id": victim_sid},
+    )
+    assert claim_res.status_code == 403
+
+    session.refresh(victim_challenge)
+    assert victim_challenge.user_id is None
+    assert victim_challenge.session_id == victim_sid
