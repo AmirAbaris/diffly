@@ -253,4 +253,16 @@ describe("CodeViewer Component", () => {
     expect(keywordTokens).toContain("class")
     expect(keywordTokens).toContain("private")
   })
+
+  it("renders skeleton without fake code metadata or line buttons when status is loading", () => {
+    render(<CodeViewer status="loading" lineCountHint={12} />)
+
+    const loadingViewer = screen.getByTestId("code-viewer-loading")
+    expect(loadingViewer).toBeInTheDocument()
+    expect(loadingViewer).toHaveAttribute("aria-busy", "true")
+    expect(screen.queryByTestId("code-viewer")).not.toBeInTheDocument()
+    expect(screen.queryByText("solution.py")).not.toBeInTheDocument()
+    expect(screen.queryByText("PYTHON")).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "1" })).not.toBeInTheDocument()
+  })
 })
