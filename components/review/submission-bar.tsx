@@ -10,28 +10,20 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
-import { useReviewDraft } from "@/hooks/use-review-draft"
 import { toast } from "@/hooks/use-toast"
-import { useArenaUIStore } from "@/stores/arena-ui-store"
-import { apiClient } from "@/lib/axios"
 import { cn } from "@/lib/utils"
-import type { ReviewSubmissionResponse } from "@/types/challenge"
 
 export interface SubmissionBarProps {
-  challengeSlug: string
-  challengeId?: number | string
-  flaggedLines?: number[]
-  comments?: string
-  onResetDraft?: () => void
-  onOpenFlagGuide?: () => void
-  onSubmitReview?: () => Promise<void> | void
-  onSubmitSuccess?: (result: ReviewSubmissionResponse) => void
-  onSubmitError?: (error: unknown) => void
-  onViewResults?: () => void
-  onOpenHistory?: () => void
-  attemptCount?: number
-  hasSubmitted?: boolean
-  isSubmitting?: boolean
+  flaggedLines: number[]
+  comments: string
+  onResetDraft: () => void
+  onOpenFlagGuide: () => void
+  onSubmitReview: () => Promise<unknown> | void
+  onViewResults: () => void
+  onOpenHistory: () => void
+  attemptCount: number
+  hasSubmitted: boolean
+  isSubmitting: boolean
   className?: string
 }
 
@@ -89,7 +81,10 @@ function SubmitButton({
             >
               {isSubmitting ? (
                 <>
-                  <Loader2 className="size-3.5 animate-spin" />
+                  <Loader2
+                    aria-hidden="true"
+                    className="size-3.5 animate-spin"
+                  />
                   <span>Submitting…</span>
                 </>
               ) : (
@@ -107,46 +102,18 @@ function SubmitButton({
 }
 
 export function SubmissionBar({
-  challengeSlug,
-  challengeId,
-  flaggedLines: propFlaggedLines,
-  comments: propComments,
-  onResetDraft: propOnResetDraft,
+  flaggedLines,
+  comments,
+  onResetDraft,
   onOpenFlagGuide,
-  onSubmitReview: propOnSubmitReview,
-  onSubmitSuccess,
-  onSubmitError,
+  onSubmitReview,
   onViewResults,
   onOpenHistory,
   attemptCount,
   hasSubmitted,
-  isSubmitting: propIsSubmitting,
+  isSubmitting,
   className,
 }: SubmissionBarProps) {
-  const draft = useReviewDraft(
-    propFlaggedLines === undefined || propComments === undefined
-      ? challengeSlug
-      : ""
-  )
-
-  const flaggedLines = propFlaggedLines ?? draft.flaggedLines
-  const comments = propComments ?? draft.comments
-
-  const storeSetIsResultModalOpen = useArenaUIStore(
-    (s) => s.setIsResultModalOpen
-  )
-  const storeSetIsHistoryOpen = useArenaUIStore((s) => s.setIsHistoryOpen)
-  const storeSetIsFlagGuideOpen = useArenaUIStore((s) => s.setIsFlagGuideOpen)
-
-  const handleOpenHistory = onOpenHistory ?? (() => storeSetIsHistoryOpen(true))
-  const handleViewResults =
-    onViewResults ?? (() => storeSetIsResultModalOpen(true))
-  const handleOpenFlagGuide =
-    onOpenFlagGuide ?? (() => storeSetIsFlagGuideOpen(true))
-
-  const [internalIsSubmitting, setInternalIsSubmitting] = React.useState(false)
-  const isSubmitting = propIsSubmitting ?? internalIsSubmitting
-
   const lineCount = flaggedLines.length
   const charCount = comments.length
   const summaryCount = formatDraftSummary(lineCount, charCount)
@@ -161,90 +128,29 @@ export function SubmissionBar({
   )
 
   const handleResetDraft = React.useCallback(() => {
-    if (propOnResetDraft) {
-      propOnResetDraft()
-    } else {
-      draft.resetDraft()
-    }
+    onResetDraft()
     toast({
       title: "Draft reset",
       description: "Your review draft has been cleared.",
     })
-  }, [propOnResetDraft, draft])
+  }, [onResetDraft])
 
   const handleSubmit = React.useCallback(async () => {
     if (isSubmitDisabled) return
-
-    if (propOnSubmitReview) {
-      await propOnSubmitReview()
-      return
-    }
-
-    setInternalIsSubmitting(true)
-    const targetIdentifier = challengeId ?? challengeSlug
-
-    try {
-      const response = await apiClient.post<ReviewSubmissionResponse>(
-        `/api/challenges/${targetIdentifier}/review`,
-        {
-          flagged_lines: flaggedLines,
-          comments: comments.trim(),
-        }
-      )
-
-      toast({
-        title: "Review submitted successfully",
-        description: `Score: ${response.data.score}% • Review breakdown loaded.`,
-        variant: "success",
-      })
-
-      onSubmitSuccess?.(response.data)
-
-      if (propOnResetDraft) {
-        propOnResetDraft()
-      } else {
-        draft.resetDraft()
-      }
-    } catch (err: unknown) {
-      const errorMsg =
-        (err as { response?: { data?: { detail?: string } } })?.response?.data
-          ?.detail ||
-        (err instanceof Error ? err.message : "Failed to submit review")
-
-      toast({
-        title: "Submission failed",
-        description: errorMsg,
-        variant: "destructive",
-      })
-
-      onSubmitError?.(err)
-    } finally {
-      setInternalIsSubmitting(false)
-    }
-  }, [
-    isSubmitDisabled,
-    propOnSubmitReview,
-    challengeId,
-    challengeSlug,
-    flaggedLines,
-    comments,
-    onSubmitSuccess,
-    onSubmitError,
-    propOnResetDraft,
-    draft,
-  ])
+    await onSubmitReview()
+  }, [isSubmitDisabled, onSubmitReview])
 
   return (
     <div
       data-testid="submission-bar"
       className={cn(
-        "sticky bottom-0 z-20 flex w-full shrink-0 items-center justify-between border-t border-border bg-card/95 px-4 py-2.5 backdrop-blur-md sm:px-6",
+        "sticky bottom-0 z-20 flex w-full shrink-0 flex-col gap-2 border-t border-border bg-card/95 px-4 py-2.5 backdrop-blur-md sm:flex-row sm:items-center sm:justify-between sm:px-6",
         className
       )}
     >
-      <div className="flex items-center gap-3">
+      <div className="flex w-full items-center justify-between gap-2 sm:w-auto sm:justify-start sm:gap-3">
         <div className="flex items-center gap-2 text-xs text-muted-foreground sm:text-sm">
-          <span className="font-mono text-xs font-medium text-foreground tabular-nums">
+          <span className="font-mono text-xs font-medium whitespace-nowrap text-foreground tabular-nums">
             {summaryCount}
           </span>
         </div>
@@ -254,8 +160,8 @@ export function SubmissionBar({
             type="button"
             variant="ghost"
             size="xs"
-            onClick={handleOpenFlagGuide}
-            className="text-muted-foreground hover:text-foreground"
+            onClick={onOpenFlagGuide}
+            className="shrink-0 text-muted-foreground hover:text-foreground"
             data-testid="submission-bar-guide-button"
           >
             <span>How to flag</span>
@@ -269,7 +175,7 @@ export function SubmissionBar({
         )}
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
         <Button
           type="button"
           variant="ghost"
@@ -285,13 +191,13 @@ export function SubmissionBar({
           type="button"
           variant="ghost"
           size="sm"
-          onClick={handleOpenHistory}
+          onClick={onOpenHistory}
           className="h-8 gap-1.5 px-2.5 text-xs text-muted-foreground hover:text-foreground sm:h-9 sm:px-3"
           data-testid="submission-bar-history-button"
           aria-label="View past attempts"
         >
           <span>History</span>
-          {attemptCount !== undefined && attemptCount > 0 && (
+          {attemptCount > 0 && (
             <Badge variant="secondary" size="sm" className="tabular-nums">
               {attemptCount}
             </Badge>
@@ -310,7 +216,7 @@ export function SubmissionBar({
             type="button"
             variant="outline"
             size="sm"
-            onClick={handleViewResults}
+            onClick={onViewResults}
             className="h-8 px-3 text-xs font-medium sm:h-9"
             data-testid="reopen-comparison-button"
           >
