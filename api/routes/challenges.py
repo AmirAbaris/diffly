@@ -2,11 +2,13 @@ import json
 from typing import Annotated, Any
 from uuid import uuid4
 
-from fastapi import APIRouter, Header, HTTPException, Query, status
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlmodel import Session, or_, select
+from sqlmodel.sql.expression import SelectOfScalar
 
 from api.deps import ActorDep, OwnerActorDep, SessionDep
+from backend.core.rate_limit import rate_limit
 from backend.models.challenge import (
     Category,
     Challenge,
@@ -17,6 +19,7 @@ from backend.models.challenge import (
     CustomChallengesListResponse,
     DefectCriterion,
     Difficulty,
+    FlaggedLines,
     GenerateCustomChallengeRequest,
     HintResponse,
     Language,
@@ -135,7 +138,7 @@ def list_challenges(
 class CustomEvaluationRequest(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
-    expected_issues: list[DefectCriterion | dict[str, Any]] = Field(
+    expected_issues: list[DefectCriterion] = Field(
         ...,
         max_length=20,
         description="Expected defect criteria for grading",
@@ -145,9 +148,8 @@ class CustomEvaluationRequest(BaseModel):
         max_length=50000,
         description="Code snippet of the challenge",
     )
-    flagged_lines: list[int] = Field(
+    flagged_lines: FlaggedLines = Field(
         default_factory=list,
-        max_length=500,
         description="Line numbers flagged by reviewer as defective",
     )
     comments: str = Field(
@@ -156,13 +158,13 @@ class CustomEvaluationRequest(BaseModel):
         description="User review critique explaining the defect",
     )
 
-    @field_validator("flagged_lines")
-    @classmethod
-    def validate_flagged_lines(cls, lines: list[int]) -> list[int]:
-        for line in lines:
-            if not isinstance(line, int) or line <= 0:
-                raise ValueError("Flagged lines must be valid positive integers (>= 1)")
-        return lines
+    @model_validator(mode="after")
+    def validate_flagged_lines_bounds(self) -> "CustomEvaluationRequest":
+        if self.code_snippet and self.flagged_lines:
+            line_count = len(self.code_snippet.splitlines())
+            if any(line > line_count for line in self.flagged_lines):
+                raise ValueError(f"Flagged lines must be between 1 and {line_count}")
+        return self
 
 
 class CustomEvaluationResponse(BaseModel):
@@ -187,6 +189,7 @@ class CustomEvaluationResponse(BaseModel):
     "/generate-custom",
     response_model=CustomChallengeResponse,
     status_code=status.HTTP_200_OK,
+    dependencies=[Depends(rate_limit("generate-custom", 10, 60))],
 )
 async def generate_custom_challenge_endpoint(
     payload: GenerateCustomChallengeRequest,
@@ -351,6 +354,33 @@ def list_custom_challenges(
     )
 
 
+_INT32_MAX = 2_147_483_647
+
+
+def parse_positive_int32(identifier: str) -> int | None:
+    """Parse an ASCII positive 32-bit integer identifier, or return None."""
+    if (
+        not identifier
+        or identifier[0] == "0"
+        or len(identifier) > 10
+        or not (identifier.isascii() and identifier.isdigit())
+    ):
+        return None
+    val = int(identifier)
+    if 1 <= val <= _INT32_MAX:
+        return val
+    return None
+
+
+def _challenge_lookup_statement(identifier: str) -> SelectOfScalar[Challenge]:
+    ch_id = parse_positive_int32(identifier)
+    if ch_id is not None:
+        return select(Challenge).where(
+            or_(Challenge.id == ch_id, Challenge.slug == identifier)
+        )
+    return select(Challenge).where(Challenge.slug == identifier)
+
+
 @router.delete("/custom/{identifier}")
 def delete_custom_challenge(
     identifier: str,
@@ -358,13 +388,7 @@ def delete_custom_challenge(
     actor: ActorDep,
 ) -> dict[str, Any]:
     """Delete a user's private custom challenge to free up quota."""
-    if identifier.isdigit():
-        ch_id = int(identifier)
-        stmt = select(Challenge).where(
-            or_(Challenge.id == ch_id, Challenge.slug == identifier)
-        )
-    else:
-        stmt = select(Challenge).where(Challenge.slug == identifier)
+    stmt = _challenge_lookup_statement(identifier)
 
     challenge = session.exec(stmt).first()
     if challenge is None:
@@ -405,6 +429,7 @@ def delete_custom_challenge(
     "/evaluate-custom",
     response_model=CustomEvaluationResponse,
     status_code=status.HTTP_200_OK,
+    dependencies=[Depends(rate_limit("evaluate-custom", 30, 60))],
 )
 def evaluate_custom_challenge_endpoint(
     payload: CustomEvaluationRequest,
@@ -442,13 +467,7 @@ def get_challenge_or_404(
     actor: Actor | None = None,
 ) -> Challenge:
     """Find a challenge by ID or slug, raising 404 if missing or unauthorized."""
-    if identifier.isdigit():
-        challenge_id = int(identifier)
-        statement = select(Challenge).where(
-            or_(Challenge.id == challenge_id, Challenge.slug == identifier)
-        )
-    else:
-        statement = select(Challenge).where(Challenge.slug == identifier)
+    statement = _challenge_lookup_statement(identifier)
 
     challenge = session.exec(statement).first()
     if challenge is None or not can_access_challenge(challenge, actor or Actor()):

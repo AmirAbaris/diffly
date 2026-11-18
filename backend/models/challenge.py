@@ -1,9 +1,10 @@
 import json
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Annotated, Any, Optional
 
 from pydantic import (
+    AfterValidator,
     BaseModel,
     ConfigDict,
     computed_field,
@@ -89,8 +90,8 @@ class DefectCriterion(BaseModel):
     id: str = ""
     title: str = ""
     severity: str = "medium"
-    lines: list[int] = []
-    keywords: list[str] = []
+    lines: list[int] = Field(default_factory=list)
+    keywords: list[str] = Field(default_factory=list)
     explanation: str = ""
 
     model_config = ConfigDict(extra="allow", populate_by_name=True)
@@ -116,18 +117,48 @@ class DefectCriterion(BaseModel):
                 if not d.get("explanation"):
                     d["explanation"] = str(d["defect"])
             if "line" in d and not d.get("lines"):
-                d["lines"] = [int(d["line"])]
+                raw_line = d["line"]
+                if isinstance(raw_line, bool) or not isinstance(raw_line, (int, str)):
+                    raise ValueError("line must be an integer")
+                d["lines"] = [int(raw_line)]
             if "matched_lines" in d and not d.get("lines"):
-                d["lines"] = [int(x) for x in d["matched_lines"]]
+                raw_lines = d["matched_lines"]
+                if not isinstance(raw_lines, list):
+                    raise ValueError("matched_lines must be a list of integers")
+                parsed_lines: list[int] = []
+                for item in raw_lines:
+                    if isinstance(item, bool) or not isinstance(item, (int, str)):
+                        raise ValueError("matched_lines items must be integers")
+                    parsed_lines.append(int(item))
+                d["lines"] = parsed_lines
             if "matched_keywords" in d and not d.get("keywords"):
-                d["keywords"] = [str(x) for x in d["matched_keywords"]]
+                raw_keywords = d["matched_keywords"]
+                if not isinstance(raw_keywords, list):
+                    raise ValueError("matched_keywords must be a list of strings")
+                d["keywords"] = [str(item) for item in raw_keywords]
             if "id" not in d or d["id"] == "":
+                lines_val = d.get("lines")
                 fallback_line = d.get("line") or (
-                    d["lines"][0] if d.get("lines") else "1"
+                    lines_val[0] if isinstance(lines_val, list) and lines_val else "1"
                 )
                 d["id"] = str(fallback_line)
             return d
         return data
+
+
+def validate_flagged_lines(lines: list[int]) -> list[int]:
+    """Ensure all flagged line numbers are positive integers (>= 1)."""
+    for line in lines:
+        if isinstance(line, bool) or not isinstance(line, int) or line <= 0:
+            raise ValueError("Flagged lines must be valid positive integers (>= 1)")
+    return lines
+
+
+FlaggedLines = Annotated[
+    list[int],
+    Field(max_length=500),
+    AfterValidator(validate_flagged_lines),
+]
 
 
 DEFAULT_TIER_LABELS: dict[int, str] = {
@@ -426,6 +457,7 @@ class GenerateCustomChallengeRequest(BaseModel):
     topic: str = Field(
         ...,
         min_length=3,
+        max_length=200,
         description=(
             "Topic or vulnerability scenario to generate "
             "(e.g. Next.js 15 Server Actions IDOR)"

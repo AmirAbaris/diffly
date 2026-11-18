@@ -16,6 +16,11 @@ def hash_password(password: str) -> str:
     return hashed.decode("utf-8")
 
 
+# Precomputed bcrypt hash for "diffly-dummy-password-for-timing-parity" so
+# unknown-user logins pay symmetric verification cost without import-time hashing.
+DUMMY_PASSWORD_HASH = "$2b$12$ZFkntDdVa4kdRvBD38bS4uh2teWPk9WPa.jwGpHzDR7p8zpIg.FZq"  # noqa: S105
+
+
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a plaintext password against a bcrypt hash."""
     try:

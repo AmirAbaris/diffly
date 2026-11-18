@@ -14,10 +14,18 @@ from api.index import app
 from backend.core.config import settings
 from backend.core.db import get_session
 from backend.core.guest_session import GuestSession, _encode, mint_guest_session
+from backend.core.rate_limit import reset_rate_limiter
 
 
 DEFAULT_TEST_PASSWORD = "TestPassword123!"
 _USER_COUNTER = count(1)
+
+
+@pytest.fixture(autouse=True)
+def reset_rate_limiter_fixture() -> Generator[None, None, None]:
+    reset_rate_limiter()
+    yield
+    reset_rate_limiter()
 
 
 @pytest.fixture(name="engine")

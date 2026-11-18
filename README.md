@@ -208,7 +208,7 @@ Requests to `http://localhost:3000/api/health` proxy through the Next.js rewrite
 | `AUTH_COOKIE_NAME`            | `diffly_access_token`                                                                     | Name of the `HttpOnly` cookie that stores the JWT session token.                                                                                     |
 | `COOKIE_SECURE`               | `false`                                                                                   | Sets the `Secure` attribute on auth cookies. Set to `true` for HTTPS deployments.                                                                    |
 | `CORS_ORIGINS`                | `http://localhost:3000,http://127.0.0.1:3000,http://localhost:8000,http://127.0.0.1:8000` | Allowed cross-origin origins as a comma-separated list or JSON array.                                                                                |
-| `CORS_ORIGIN_REGEX`           | `^https://.*\.vercel\.app$`                                                               | Regex pattern for dynamic Vercel preview deployment origins.                                                                                         |
+| `CORS_ORIGIN_REGEX`           | `^https://diffly(?:-[a-z0-9]+)*-amirabaris\.vercel\.app$\|^https://diffly(?:-sigma)?\.vercel\.app$` | Regex pattern for dynamic Vercel preview deployment origins. |
 | `ENVIRONMENT`                 | `development`                                                                             | Backend environment mode (`development`, `production`, or `test`). Enables strict JWT validation when set to `production`.                           |
 | `NODE_ENV`                    | `development`                                                                             | Node.js and Next.js environment mode (`development`, `production`, or `test`).                                                                       |
 | `PORT`                        | `8000`                                                                                    | Backend port (`next dev` listens on `3000`).                                                                                                         |
@@ -255,7 +255,7 @@ For future PostgreSQL enum value additions (such as `ALTER TYPE ... ADD VALUE`),
    - `JWT_SECRET_KEY`: Random 256-bit hex secret from `openssl rand -hex 32`.
    - `COOKIE_SECURE`: `true`.
    - `ENVIRONMENT`: `production`.
-   - `CORS_ORIGIN_REGEX`: `^https://.*\.vercel\.app$`.
+   - `CORS_ORIGIN_REGEX`: `^https://diffly(?:-[a-z0-9]+)*-amirabaris\.vercel\.app$|^https://diffly(?:-sigma)?\.vercel\.app$`.
    - `BACKEND_URL` (optional): Leave unset when using Vercel Python serverless functions, or set to an external API origin if you host FastAPI separately.
 3. Deploy with `vercel --prod` or push to your production branch, then verify that `/api/health` returns `"status": "healthy"` and `"database": "connected"`.
 

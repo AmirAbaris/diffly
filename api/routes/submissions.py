@@ -3,13 +3,15 @@
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlmodel import select
 
 from api.deps import ActorDep, SessionDep
 from api.routes.challenges import get_challenge_or_404
 from backend.core.guest_session import mint_guest_session, write_guest_cookie
+from backend.core.rate_limit import rate_limit
+from backend.models.challenge import FlaggedLines
 from backend.models.submission import Submission
 from backend.services.evaluation_service import evaluate_review
 from backend.services.ownership import Actor, submission_owner_filter
@@ -21,23 +23,16 @@ router = APIRouter(prefix="/api/challenges", tags=["submissions"])
 class ReviewSubmissionRequest(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
-    flagged_lines: list[int] = Field(
+    flagged_lines: FlaggedLines = Field(
         default_factory=list,
         description="Line numbers flagged as defective in the code snippet",
     )
     comments: str = Field(
         ...,
         min_length=5,
+        max_length=20000,
         description="Written review critique explaining the defect",
     )
-
-    @field_validator("flagged_lines")
-    @classmethod
-    def validate_flagged_lines(cls, lines: list[int]) -> list[int]:
-        for line in lines:
-            if not isinstance(line, int) or line <= 0:
-                raise ValueError("Flagged lines must be valid positive integers (>= 1)")
-        return lines
 
     @field_validator("comments")
     @classmethod
@@ -83,6 +78,7 @@ class SubmissionHistoryResponse(BaseModel):
     "/{identifier}/review",
     response_model=ReviewSubmissionResponse,
     status_code=status.HTTP_200_OK,
+    dependencies=[Depends(rate_limit("review", 30, 60))],
 )
 def submit_review(
     identifier: str,
@@ -93,6 +89,19 @@ def submit_review(
 ) -> ReviewSubmissionResponse:
     # Authorize challenge access before minting a guest cookie so 404s do not mint
     challenge = get_challenge_or_404(identifier, session, actor=actor)
+
+    snippet_line_count = len(challenge.code_snippet.splitlines())
+    if payload.flagged_lines:
+        if snippet_line_count == 0:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Challenge has no code lines to flag",
+            )
+        if any(line > snippet_line_count for line in payload.flagged_lines):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=f"Flagged lines must be between 1 and {snippet_line_count}",
+            )
 
     if actor.user_id is None and actor.guest_session_id is None:
         guest = mint_guest_session()

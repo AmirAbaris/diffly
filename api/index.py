@@ -1,3 +1,4 @@
+import logging
 import time
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -19,6 +20,7 @@ from backend.seed.seed_data import seed_missing_challenges
 
 
 SERVER_START_TIME = time.time()
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -53,7 +55,7 @@ cors_kwargs: dict[str, Any] = {
     "allow_credentials": True,
     "allow_methods": ["*"],
     "allow_headers": ["*"],
-    "expose_headers": ["X-Diffly-Claim-Status"],
+    "expose_headers": ["X-Diffly-Claim-Status", "X-Diffly-Session-Id"],
 }
 if settings.CORS_ORIGIN_REGEX:
     cors_kwargs["allow_origin_regex"] = settings.CORS_ORIGIN_REGEX
@@ -80,8 +82,9 @@ def health_check(
             select(func.count(Challenge.id)).where(Challenge.is_public.is_(True))
         ).one()
         db_status = "connected"
-    except Exception as exc:
-        db_status = f"disconnected: {exc}"
+    except Exception:
+        logger.exception("Health check database query failed")
+        db_status = "disconnected"
         challenge_count = 0
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
 
