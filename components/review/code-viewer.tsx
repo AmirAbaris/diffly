@@ -4,21 +4,37 @@ import * as React from "react"
 import { Check, CircleHelp, Copy, FileCode, Flag } from "lucide-react"
 import { Highlight, themes, type RenderProps } from "prism-react-renderer"
 import { useTheme } from "next-themes"
+import { CodeViewerSkeleton } from "@/components/review/code-viewer/code-viewer-skeleton"
+import {
+  normalizeCodeLanguage,
+  resolveCodeFileName,
+} from "@/components/review/code-viewer/language"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Prism } from "@/lib/prism-languages"
 import { cn } from "@/lib/utils"
+import type { Language } from "@/types/challenge"
 
-export interface CodeViewerProps {
-  code: string
-  language?: "python" | "typescript" | "java" | string
-  flaggedLines: number[]
-  onToggleLine: (line: number) => void
-  onOpenGuide?: () => void
-  fileName?: string
-  className?: string
-  readOnly?: boolean
-}
+export type CodeViewerProps =
+  | {
+      status: "loading"
+      fileName?: string
+      lineCountHint?: number
+      className?: string
+    }
+  | {
+      status?: "ready"
+      code: string
+      language?: Language | string
+      flaggedLines: number[]
+      onToggleLine: (line: number) => void
+      onOpenGuide?: () => void
+      fileName?: string
+      className?: string
+      readOnly?: boolean
+    }
+
+type ReadyCodeViewerProps = Extract<CodeViewerProps, { code: string }>
 
 const emptySubscribe = () => () => {}
 
@@ -40,7 +56,7 @@ interface HighlightedLine {
   }>
 }
 
-export function CodeViewer({
+function ReadyCodeViewer({
   code,
   language = "python",
   flaggedLines,
@@ -49,37 +65,16 @@ export function CodeViewer({
   fileName,
   className,
   readOnly = false,
-}: CodeViewerProps) {
+}: ReadyCodeViewerProps) {
   const { resolvedTheme } = useTheme()
   const mounted = useMounted()
   const [copied, setCopied] = React.useState(false)
 
-  // Normalize language for Prism highlighting
-  const normalizedLanguage = React.useMemo(() => {
-    const lang = (language || "python").toLowerCase().trim()
-    if (lang === "py" || lang === "python") return "python"
-    if (lang === "ts" || lang === "typescript") return "typescript"
-    if (lang === "js" || lang === "javascript") return "javascript"
-    if (lang === "tsx") return "tsx"
-    if (lang === "jsx") return "jsx"
-    if (lang === "go") return "go"
-    if (lang === "rust" || lang === "rs") return "rust"
-    if (lang === "java") return "java"
-    return "python"
-  }, [language])
-
-  const resolvedFileName =
-    fileName ||
-    (normalizedLanguage === "python"
-      ? "solution.py"
-      : normalizedLanguage === "go"
-        ? "solution.go"
-        : normalizedLanguage === "rust"
-          ? "solution.rs"
-          : normalizedLanguage === "java"
-            ? "Solution.java"
-            : "solution.ts")
-
+  const normalizedLanguage = React.useMemo(
+    () => normalizeCodeLanguage(language),
+    [language]
+  )
+  const resolvedFileName = resolveCodeFileName(normalizedLanguage, fileName)
   const flaggedSet = React.useMemo(() => new Set(flaggedLines), [flaggedLines])
 
   const handleCopy = React.useCallback(async () => {
@@ -104,7 +99,6 @@ export function CodeViewer({
         className
       )}
     >
-      {/* File bar header */}
       <div className="flex h-10 shrink-0 items-center justify-between border-b border-border bg-muted/40 px-3">
         <div className="flex items-center gap-2">
           <FileCode
@@ -171,7 +165,6 @@ export function CodeViewer({
         </div>
       </div>
 
-      {/* Code container with syntax highlighting and line flagging */}
       <div className="overflow-x-auto p-1">
         <Highlight
           prism={Prism}
@@ -213,7 +206,6 @@ export function CodeViewer({
                             : "hover:bg-muted/50"
                         )}
                       >
-                        {/* Line Number Button Cell */}
                         <td className="w-12 px-2 py-0.5 text-right align-top select-none">
                           <button
                             type="button"
@@ -240,7 +232,6 @@ export function CodeViewer({
                           </button>
                         </td>
 
-                        {/* Marker badge indicator cell */}
                         <td className="w-10 px-1 py-0.5 text-center align-top select-none">
                           {isFlagged ? (
                             <button
@@ -275,7 +266,6 @@ export function CodeViewer({
                           )}
                         </td>
 
-                        {/* Syntax Highlighted Code Cell */}
                         <td
                           className={cn(
                             "px-2 py-0.5 align-top font-mono text-xs leading-5 whitespace-pre text-foreground",
@@ -309,4 +299,18 @@ export function CodeViewer({
       </div>
     </div>
   )
+}
+
+export function CodeViewer(props: CodeViewerProps) {
+  if (props.status === "loading") {
+    return (
+      <CodeViewerSkeleton
+        fileName={props.fileName}
+        lineCountHint={props.lineCountHint}
+        className={props.className}
+      />
+    )
+  }
+
+  return <ReadyCodeViewer {...props} />
 }

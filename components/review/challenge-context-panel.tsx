@@ -11,16 +11,15 @@ import {
 import { ScenarioOverviewSection } from "@/components/review/context-panel/scenario-overview"
 import { ThreatModelSection } from "@/components/review/context-panel/threat-model"
 import { Button } from "@/components/ui/button"
-import { Skeleton } from "@/components/ui/skeleton"
-import { useChallengeHints } from "@/hooks/use-challenge-hints"
 import { cn } from "@/lib/utils"
+import type { AsyncSlice } from "@/types/arena-session"
 import type { ChallengeDetail, ChallengeHint } from "@/types/challenge"
 
 export { DEFAULT_TIER_META }
 
 export interface ChallengeContextPanelProps {
-  challenge?: ChallengeDetail | null
-  isLoading?: boolean
+  challenge: ChallengeDetail
+  hints: AsyncSlice<ChallengeHint[]>
   className?: string
   initialUnlockedTiers?: number[]
   onUnlockHint?: (tier: number) => void
@@ -28,22 +27,18 @@ export interface ChallengeContextPanelProps {
 
 export function ChallengeContextPanel({
   challenge,
-  isLoading,
+  hints,
   className,
   initialUnlockedTiers,
   onUnlockHint,
 }: ChallengeContextPanelProps) {
-  const slug = challenge?.slug
-  const { hints: apiHints, isLoading: hintsLoading } = useChallengeHints(slug)
-
-  // Local storage persistence key for unlocked tiers per challenge
-  const storageKey = slug ? `diffly_hints_${slug}` : null
+  const storageKey = `diffly_hints_${challenge.slug}`
 
   const [unlockedTiers, setUnlockedTiers] = React.useState<number[]>(() => {
     if (initialUnlockedTiers && initialUnlockedTiers.length > 0) {
       return initialUnlockedTiers
     }
-    if (typeof window !== "undefined" && storageKey) {
+    if (typeof window !== "undefined") {
       try {
         const saved = window.localStorage.getItem(storageKey)
         if (saved) {
@@ -57,15 +52,11 @@ export function ChallengeContextPanel({
     return []
   })
 
-  // Accordion open items state
   const [openAccordions, setOpenAccordions] = React.useState<string[]>([])
-
-  // Mobile / Small screen collapse toggle
   const [isMobileCollapsed, setIsMobileCollapsed] = React.useState(false)
 
-  // Save unlocked tiers to localStorage outside state updaters
   React.useEffect(() => {
-    if (!storageKey || typeof window === "undefined") return
+    if (typeof window === "undefined") return
     try {
       window.localStorage.setItem(storageKey, JSON.stringify(unlockedTiers))
     } catch {
@@ -89,50 +80,25 @@ export function ChallengeContextPanel({
     [onUnlockHint]
   )
 
-  // Normalize hints list
+  const apiHints = React.useMemo(
+    () => (hints.status === "ready" ? hints.data : []),
+    [hints]
+  )
+  const hintsLoading = hints.status === "loading"
+
   const tiers: Array<{ tier: number; hint?: ChallengeHint }> =
     React.useMemo(() => {
-      return [1, 2, 3].map((tierNum) => {
-        const found = apiHints.find((h) => h.tier === tierNum)
-        return {
-          tier: tierNum,
-          hint: found,
-        }
-      })
+      return [1, 2, 3].map((tierNum) => ({
+        tier: tierNum,
+        hint: apiHints.find((h) => h.tier === tierNum),
+      }))
     }, [apiHints])
-
-  if (isLoading || !challenge) {
-    return (
-      <div
-        data-testid="challenge-context-panel-loading"
-        className={cn("flex flex-col gap-6 p-4 sm:p-6", className)}
-      >
-        <div className="flex flex-col gap-2">
-          <Skeleton className="h-5 w-36" />
-          <Skeleton className="h-24 w-full rounded-lg" />
-        </div>
-        <div className="flex flex-col gap-2">
-          <Skeleton className="h-5 w-40" />
-          <Skeleton className="h-20 w-full rounded-lg" />
-        </div>
-        <div className="flex flex-col gap-2">
-          <Skeleton className="h-5 w-32" />
-          <Skeleton className="h-16 w-full rounded-lg" />
-        </div>
-        <div className="flex flex-col gap-2">
-          <Skeleton className="h-5 w-44" />
-          <Skeleton className="h-32 w-full rounded-lg" />
-        </div>
-      </div>
-    )
-  }
 
   return (
     <div
       data-testid="challenge-context-panel"
       className={cn("flex flex-col gap-6 p-4 sm:p-6", className)}
     >
-      {/* Mobile Collapsible Header Banner (visible on screens below lg) */}
       <div className="flex items-center justify-between rounded-lg border border-border bg-muted/20 px-3 py-2 lg:hidden">
         <span className="truncate text-xs font-semibold text-foreground">
           {challenge.title}

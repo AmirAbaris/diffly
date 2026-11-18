@@ -6,8 +6,11 @@ import type { SubmissionHistoryItem } from "@/types/challenge"
 export function useSubmissionHistory(slug: string | null | undefined) {
   const endpoint = slug ? `/api/challenges/${slug}/submissions` : null
 
-  const { data, error, isLoading, isValidating, mutate } =
-    useSWR<SubmissionHistoryItem[]>(endpoint)
+  const { data, error, isLoading, isValidating, mutate } = useSWR<
+    SubmissionHistoryItem[]
+  >(endpoint, {
+    keepPreviousData: false,
+  })
 
   return {
     submissions: data ?? [],

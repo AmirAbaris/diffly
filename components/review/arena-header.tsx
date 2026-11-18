@@ -3,17 +3,15 @@
 import * as React from "react"
 import Link from "next/link"
 import { ArrowLeft } from "lucide-react"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { Skeleton } from "@/components/ui/skeleton"
 import { NavStats } from "@/components/layout/nav-stats"
 import { UserNav } from "@/components/layout/user-nav"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { useArenaUIStore } from "@/stores/arena-ui-store"
 import type { ChallengeDetail, Difficulty } from "@/types/challenge"
 
 export interface ArenaHeaderProps {
-  challenge?: ChallengeDetail | null
-  isLoading?: boolean
+  challenge: ChallengeDetail
   onOpenHistory?: () => void
   attemptCount?: number
 }
@@ -30,20 +28,20 @@ function DifficultyBadge({ difficulty }: { difficulty: Difficulty }) {
 
 export function ArenaHeader({
   challenge,
-  isLoading,
   onOpenHistory,
   attemptCount = 0,
 }: ArenaHeaderProps) {
   const setHistoryOpen = useArenaUIStore((s) => s.setIsHistoryOpen)
   const handleOpenHistory = onOpenHistory ?? (() => setHistoryOpen(true))
+
   return (
-    <header className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-background px-4 sm:px-6">
-      <div className="flex min-w-0 items-center gap-2.5">
+    <header className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-border bg-background px-4 sm:px-6">
+      <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden sm:gap-2.5">
         <Button
           asChild
           variant="ghost"
           size="sm"
-          className="h-8 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
+          className="h-8 shrink-0 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
         >
           <Link href="/challenges">
             <ArrowLeft aria-hidden="true" className="size-3.5" />
@@ -51,35 +49,28 @@ export function ArenaHeader({
           </Link>
         </Button>
 
-        <span aria-hidden="true" className="text-sm text-border select-none">
+        <span
+          aria-hidden="true"
+          className="hidden text-sm text-border select-none sm:inline"
+        >
           /
         </span>
 
-        {isLoading || !challenge ? (
-          <div className="flex items-center gap-2">
-            <Skeleton className="h-5 w-44" />
-            <Skeleton className="h-5 w-20" />
-            <Skeleton className="h-5 w-14" />
+        <div className="flex min-w-0 items-center gap-2">
+          <h1 className="hidden truncate text-sm font-semibold tracking-tight text-foreground sm:block">
+            {challenge.title}
+          </h1>
+          <Badge variant="outline" className="hidden shrink-0 sm:inline-flex">
+            {challenge.category}
+          </Badge>
+          <div className="hidden shrink-0 sm:block">
+            <DifficultyBadge difficulty={challenge.difficulty} />
           </div>
-        ) : (
-          <div className="flex min-w-0 items-center gap-2">
-            <h1 className="truncate text-sm font-semibold tracking-tight text-foreground">
-              {challenge.title}
-            </h1>
-            <Badge variant="outline" className="hidden shrink-0 sm:inline-flex">
-              {challenge.category}
-            </Badge>
-            <div className="shrink-0">
-              <DifficultyBadge difficulty={challenge.difficulty} />
-            </div>
-          </div>
-        )}
+        </div>
       </div>
 
       <div className="flex shrink-0 items-center gap-2">
-        {isLoading || !challenge ? (
-          <Skeleton className="h-5 w-20" />
-        ) : challenge.is_solved ? (
+        {challenge.is_solved ? (
           <Badge variant="success">Solved</Badge>
         ) : challenge.best_score !== null ? (
           <Badge variant="warning" className="tabular-nums">
