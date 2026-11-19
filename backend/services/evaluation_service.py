@@ -8,11 +8,17 @@ import functools
 import json
 import re
 import time
+from collections import deque
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from backend.models.challenge import Challenge, DefectCriterion
+
+
+PASS_SCORE_THRESHOLD = 80
+MAX_BLIND_ATTEMPTS = 3
+OFF_BY_ONE_PROXIMITY_SCORE = 0.5
 
 
 class EvaluationInput(BaseModel):
@@ -119,6 +125,42 @@ def get_tolerated_lines(
             else:
                 tolerated.add(start)
     return tolerated
+
+
+def get_proximity_lines(
+    lines: list[int],
+    tolerance: int = 1,
+    allow_single_line_tolerance: bool = False,
+) -> set[int]:
+    """Return off-by-one proximity lines around single-line defects."""
+    if not lines or tolerance <= 0 or allow_single_line_tolerance:
+        return set()
+    tolerated = get_tolerated_lines(
+        lines,
+        tolerance=tolerance,
+        allow_single_line_tolerance=False,
+    )
+    all_near = get_tolerated_lines(
+        lines,
+        tolerance=tolerance,
+        allow_single_line_tolerance=True,
+    )
+    return all_near - tolerated
+
+
+def redact_missed_issues(missed_issues: list[MissedIssue]) -> list[MissedIssue]:
+    """Strip spoiler details from missed issues while retaining title and severity."""
+    return [
+        MissedIssue(
+            id=issue.id,
+            title=issue.title,
+            severity=issue.severity,
+            expected_lines=[],
+            missing_keywords=[],
+            explanation="",
+        )
+        for issue in missed_issues
+    ]
 
 
 @functools.lru_cache(maxsize=1024)
@@ -283,16 +325,122 @@ def generate_critique(
     if missed_issues:
         parts.append("Missed Defects:")
         for issue in missed_issues:
-            lines_str = ", ".join(str(ln) for ln in issue.expected_lines)
-            parts.append(
-                f"  ✗ {issue.title} [{issue.severity.upper()}] "
-                f"(Expected line(s): {lines_str})"
-            )
+            if issue.expected_lines:
+                lines_str = ", ".join(str(ln) for ln in issue.expected_lines)
+                parts.append(
+                    f"  ✗ {issue.title} [{issue.severity.upper()}] "
+                    f"(Expected line(s): {lines_str})"
+                )
+            else:
+                parts.append(f"  ✗ {issue.title} [{issue.severity.upper()}]")
             if issue.explanation:
                 parts.append(f"    Root Cause: {issue.explanation}")
 
     critique = "\n".join(parts)
     return summary_phrase, critique
+
+
+def _match_lines_one_to_one(
+    candidate_lines: list[int],
+    defect_indices: list[int],
+    defect_exact: list[set[int]],
+    defect_tolerated: list[set[int]],
+    defect_proximity: list[set[int]],
+    raw_concept_scores: list[float],
+) -> tuple[dict[int, int], dict[int, float]]:
+    """Find a maximum-weight 1-to-1 matching between flagged lines and defects.
+
+    Returns:
+        Tuple of (defect_idx -> matched_line, defect_idx -> line_score).
+    """
+    if not candidate_lines or not defect_indices:
+        return {}, {}
+
+    num_u = len(candidate_lines)
+    num_d = len(defect_indices)
+    source = 0
+    sink = 1 + num_u + num_d
+    total_nodes = sink + 1
+    adj: list[list[list[int]]] = [[] for _ in range(total_nodes)]
+
+    def add_edge(frm: int, to: int, cap: int, cost: int) -> None:
+        adj[frm].append([to, cap, cost, len(adj[to])])
+        adj[to].append([frm, 0, -cost, len(adj[frm]) - 1])
+
+    for u_pos in range(num_u):
+        add_edge(source, 1 + u_pos, 1, 0)
+
+    for d_pos in range(num_d):
+        add_edge(1 + num_u + d_pos, sink, 1, 0)
+
+    edge_credits: dict[tuple[int, int], float] = {}
+    for u_pos, line_no in enumerate(candidate_lines):
+        for d_pos, d_idx in enumerate(defect_indices):
+            if line_no in defect_tolerated[d_idx]:
+                credit = 1.0
+            elif line_no in defect_proximity[d_idx]:
+                credit = OFF_BY_ONE_PROXIMITY_SCORE
+            else:
+                continue
+
+            is_exact = line_no in defect_exact[d_idx]
+            kw_bonus = int(round(raw_concept_scores[d_idx] * 100))
+            weight = (
+                int(round(credit * 1_000_000)) + (1_000 if is_exact else 0) + kw_bonus
+            )
+            add_edge(1 + u_pos, 1 + num_u + d_pos, 1, -weight)
+            edge_credits[(u_pos, d_pos)] = credit
+
+    # Successive shortest augmenting path (SPFA) maximizes total weight.
+    inf = 10**18
+    while True:
+        dist = [inf] * total_nodes
+        in_queue = [False] * total_nodes
+        parent_node = [-1] * total_nodes
+        parent_edge = [-1] * total_nodes
+        dist[source] = 0
+        queue: deque[int] = deque([source])
+        in_queue[source] = True
+
+        while queue:
+            u = queue.popleft()
+            in_queue[u] = False
+            for idx, edge in enumerate(adj[u]):
+                v, cap, cost, _ = edge
+                if cap > 0 and dist[u] + cost < dist[v]:
+                    dist[v] = dist[u] + cost
+                    parent_node[v] = u
+                    parent_edge[v] = idx
+                    if not in_queue[v]:
+                        queue.append(v)
+                        in_queue[v] = True
+
+        if dist[sink] >= 0 or parent_node[sink] == -1:
+            break
+
+        curr = sink
+        while curr != source:
+            p = parent_node[curr]
+            e_idx = parent_edge[curr]
+            rev_idx = adj[p][e_idx][3]
+            adj[p][e_idx][1] -= 1
+            adj[curr][rev_idx][1] += 1
+            curr = p
+
+    assigned_line: dict[int, int] = {}
+    assigned_score: dict[int, float] = {}
+    for u_pos, line_no in enumerate(candidate_lines):
+        u_node = 1 + u_pos
+        for edge in adj[u_node]:
+            v, cap, _, _ = edge
+            if cap == 0 and 1 + num_u <= v < sink:
+                d_pos = v - (1 + num_u)
+                d_idx = defect_indices[d_pos]
+                assigned_line[d_idx] = line_no
+                assigned_score[d_idx] = edge_credits[(u_pos, d_pos)]
+                break
+
+    return assigned_line, assigned_score
 
 
 def evaluate_review(
@@ -307,6 +455,10 @@ def evaluate_review(
     concept_weight: float = 0.5,
     target_keyword_matches: int = 2,
     allow_single_line_tolerance: bool = False,
+    pass_threshold: int = PASS_SCORE_THRESHOLD,
+    attempt_number: int = 1,
+    max_attempts: int = MAX_BLIND_ATTEMPTS,
+    reveal_solution: bool = False,
 ) -> EvaluationResult:
     """Evaluate a code review submission against expected challenge defects.
 
@@ -321,6 +473,10 @@ def evaluate_review(
         concept_weight: Weight of keyword matching in base score (default 0.5).
         target_keyword_matches: Number of matching keywords for full concept score.
         allow_single_line_tolerance: If True, allows +/- 1 tolerance for single lines.
+        pass_threshold: Minimum score required to reveal missed-issue details.
+        attempt_number: Current 1-based attempt count for this challenge and actor.
+        max_attempts: Attempt count at or after which missed details are unlocked.
+        reveal_solution: If True, bypasses spoiler gating on missed_issues.
 
     Returns:
         EvaluationResult containing normalized score, detected/missed issues,
@@ -346,17 +502,15 @@ def evaluate_review(
 
     expected_issues = extract_expected_issues(challenge)
 
-    # Edge case: No expected defects configured
+    # Edge case: No expected defects configured cannot award 100/100.
     if not expected_issues:
         elapsed = round((time.perf_counter() - start_time) * 1000, 2)
-        penalty = len(user_lines) * false_positive_penalty_per_line
-        score = 100 if not user_lines else max(0, 100 - int(round(penalty)))
         return EvaluationResult(
-            score=score,
-            line_precision_score=100.0 if not user_lines else 0.0,
-            concept_score=100.0 if comments_str else 0.0,
-            false_positive_penalty=penalty,
-            false_positive_lines=user_lines,
+            score=0,
+            line_precision_score=0.0,
+            concept_score=0.0,
+            false_positive_penalty=0.0,
+            false_positive_lines=[],
             detected_issues=[],
             missed_issues=[],
             summary="No expected defects configured for this challenge.",
@@ -364,24 +518,99 @@ def evaluate_review(
             execution_time_ms=elapsed,
         )
 
-    # Determine tolerated lines per defect (indexed by position to avoid ID collisions)
+    # Precompute line sets and raw keyword matches per defect
+    defect_exact: list[set[int]] = []
     defect_tolerated: list[set[int]] = []
-    all_tolerated_lines: set[int] = set()
+    defect_proximity: list[set[int]] = []
+    all_eligible_lines: set[int] = set()
+    line_defect_indices: list[int] = []
 
-    for defect in expected_issues:
+    matched_keywords_by_defect: list[list[str]] = []
+    missing_keywords_by_defect: list[list[str]] = []
+    raw_concept_scores: list[float] = []
+
+    for idx, defect in enumerate(expected_issues):
+        positive_lines = [ln for ln in defect.lines if ln > 0]
+        exact_set = set(positive_lines)
         tolerated = get_tolerated_lines(
-            defect.lines,
+            positive_lines,
             tolerance=tolerance,
             allow_single_line_tolerance=allow_single_line_tolerance,
         )
+        proximity = get_proximity_lines(
+            positive_lines,
+            tolerance=tolerance,
+            allow_single_line_tolerance=allow_single_line_tolerance,
+        )
+        defect_exact.append(exact_set)
         defect_tolerated.append(tolerated)
-        all_tolerated_lines.update(tolerated)
+        defect_proximity.append(proximity)
+        all_eligible_lines.update(tolerated)
+        all_eligible_lines.update(proximity)
+        if exact_set:
+            line_defect_indices.append(idx)
+
+        matched_kws = [
+            kw for kw in defect.keywords if is_keyword_matched(kw, comments_str)
+        ]
+        missing_kws = [kw for kw in defect.keywords if kw not in matched_kws]
+        matched_keywords_by_defect.append(matched_kws)
+        missing_keywords_by_defect.append(missing_kws)
+
+        if not defect.keywords:
+            raw_concept = 1.0 if (exact_set and comments_str) else 0.0
+        else:
+            required_target = min(target_keyword_matches, len(defect.keywords))
+            raw_concept = (
+                1.0
+                if required_target == 0
+                else min(1.0, len(matched_kws) / required_target)
+            )
+        raw_concept_scores.append(raw_concept)
 
     # Compute false positive lines (clean/unrelated lines flagged by user)
     false_positive_lines = [
-        line_num for line_num in user_lines if line_num not in all_tolerated_lines
+        line_num for line_num in user_lines if line_num not in all_eligible_lines
     ]
     false_positive_penalty = len(false_positive_lines) * false_positive_penalty_per_line
+
+    candidate_lines = [
+        line_num for line_num in user_lines if line_num in all_eligible_lines
+    ]
+    assigned_line, assigned_line_score = _match_lines_one_to_one(
+        candidate_lines=candidate_lines,
+        defect_indices=line_defect_indices,
+        defect_exact=defect_exact,
+        defect_tolerated=defect_tolerated,
+        defect_proximity=defect_proximity,
+        raw_concept_scores=raw_concept_scores,
+    )
+
+    # Group all non-FP lines under matched defects for display without double-counting.
+    matched_lines_by_defect: dict[int, list[int]] = {
+        d_idx: [line_no] for d_idx, line_no in assigned_line.items()
+    }
+    used_anchor_lines = set(assigned_line.values())
+    matched_defect_ids = list(assigned_line.keys())
+    for line_no in candidate_lines:
+        if line_no in used_anchor_lines:
+            continue
+        best_defect: int | None = None
+        best_rank = -1
+        for d_idx in matched_defect_ids:
+            if line_no in defect_exact[d_idx]:
+                rank = 3
+            elif line_no in defect_tolerated[d_idx]:
+                rank = 2
+            elif line_no in defect_proximity[d_idx]:
+                rank = 1
+            else:
+                continue
+            if rank > best_rank:
+                best_rank = rank
+                best_defect = d_idx
+        if best_defect is not None:
+            matched_lines_by_defect[best_defect].append(line_no)
 
     detected_issues: list[DetectedIssue] = []
     missed_issues: list[MissedIssue] = []
@@ -390,39 +619,36 @@ def evaluate_review(
     total_concept_score = 0.0
 
     for idx, defect in enumerate(expected_issues):
-        tolerated = defect_tolerated[idx]
-        matched_lines = [line_num for line_num in user_lines if line_num in tolerated]
-        has_line_match = len(matched_lines) > 0
+        has_lines = bool(defect_exact[idx])
+        matched_kws = matched_keywords_by_defect[idx]
+        missing_kws = missing_keywords_by_defect[idx]
+        raw_concept = raw_concept_scores[idx]
 
-        # Line precision for this defect
-        line_score = 1.0 if has_line_match else 0.0
-
-        # Keyword matching for this defect
-        matched_keywords = [
-            kw for kw in defect.keywords if is_keyword_matched(kw, comments_str)
-        ]
-        missing_keywords = [kw for kw in defect.keywords if kw not in matched_keywords]
-
-        if not defect.keywords:
-            concept_score = 1.0 if comments_str else 0.0
+        if has_lines:
+            line_score = assigned_line_score.get(idx, 0.0)
+            # Anchor concept credit to line proximity to block keyword stuffing.
+            concept_score = raw_concept if line_score > 0.0 else 0.0
+            matched_lines = sorted(matched_lines_by_defect.get(idx, []))
+            is_detected = line_score > 0.0
         else:
-            required_target = min(target_keyword_matches, len(defect.keywords))
-            if required_target == 0:
-                concept_score = 1.0
-            else:
-                concept_score = min(1.0, len(matched_keywords) / required_target)
+            # Defects without configured lines are scored by concept matching so they
+            # do not cap valid reviews below 100/100.
+            is_detected = bool(defect.keywords) and raw_concept > 0.0
+            line_score = 1.0 if is_detected else 0.0
+            concept_score = raw_concept if is_detected else 0.0
+            matched_lines = []
 
         total_line_score += line_score
         total_concept_score += concept_score
 
-        if has_line_match:
+        if is_detected:
             detected_issues.append(
                 DetectedIssue(
                     id=defect.id,
                     title=defect.title or defect.id,
                     severity=defect.severity,
                     matched_lines=matched_lines,
-                    matched_keywords=matched_keywords,
+                    matched_keywords=matched_kws,
                     line_score=line_score,
                     concept_score=concept_score,
                     explanation=defect.explanation,
@@ -435,7 +661,7 @@ def evaluate_review(
                     title=defect.title or defect.id,
                     severity=defect.severity,
                     expected_lines=defect.lines,
-                    missing_keywords=missing_keywords,
+                    missing_keywords=missing_kws,
                     explanation=defect.explanation,
                 )
             )
@@ -450,6 +676,14 @@ def evaluate_review(
     # Apply false positive penalty and normalize to 0..100
     raw_final_score = base_score - false_positive_penalty
     normalized_score = max(0, min(100, int(round(raw_final_score))))
+
+    reveal_missed_details = (
+        reveal_solution
+        or normalized_score >= pass_threshold
+        or attempt_number >= max_attempts
+    )
+    if not reveal_missed_details and missed_issues:
+        missed_issues = redact_missed_issues(missed_issues)
 
     summary_phrase, critique = generate_critique(
         score=normalized_score,
