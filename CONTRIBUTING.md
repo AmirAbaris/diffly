@@ -86,7 +86,7 @@ Common types include `feat`, `fix`, `docs`, `chore`, `refactor`, and `test` (for
 
 ## Pull request checklist
 
-- Branch from an up-to-date `main` with a clear scope.
+- Branch from an up-to-date `main` with a clear scope. Lefthook installs a `pre-push` hook (`scripts/check-no-push-main.sh`) that blocks direct pushes to `main` unless `ALLOW_PUSH_MAIN=1` is set.
 - Confirm `pnpm verify` and `pnpm typecheck` pass with zero errors.
 - Confirm `pnpm lint:py` passes if you modified Python files.
 - Register any new or changed FastAPI route in `tests/test_authorization_matrix.py`.

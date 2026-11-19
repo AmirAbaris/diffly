@@ -40,4 +40,5 @@ Levels follow pstack `/correct` in descending strength: `architecture`, `types/l
 | Authorization matrix for auth and ownership endpoints (`.agents/rules/security-sensitive-code.md`) | `tests/test_authorization_matrix.py`, `pytest` (`.github/workflows/ci.yml`) | `test` |
 | Live `auth-isolation` and `challenge-ownership` verification (`.agents/rules/security-sensitive-code.md`) | `.agents/skills/verify-diffly/` `auth-isolation` and `challenge-ownership` drives | `doc-only` (`manual drive`) |
 | pstack per-role model routing (`.agents/rules/pstack-models.md`) | None | `doc-only` (`unenforced`) |
+| Never push directly to `main` without explicit user approval (`.agents/rules/git-workflow.md`) | `scripts/check-no-push-main.sh`, `lefthook.yml` (`pre-push`), `.agents/rules/git-workflow.md` | `architecture` (`git hook`) |
 
