@@ -1040,3 +1040,166 @@ def test_generate_custom_challenge_enforces_locked_quota_after_gemini_io(
         )
     ).all()
     assert len(owned) == 5
+
+
+def test_sanitize_grounds_drifted_lines_using_anchor_lines():
+    """Anchor lines override drifted matched_lines and align hints and diff hunks."""
+    code = (
+        '"""User service."""\n'
+        "\n"
+        "def get_user(db, user_id):\n"
+        "    # Fetch user record\n"
+        "    \n"
+        '    query = f"SELECT * FROM users WHERE id = {user_id}"\n'
+        "    # Execute query\n"
+        "    return db.execute(query)\n"
+    )
+    raw = {
+        **SAMPLE_GEMINI_OUTPUT,
+        "language": "python",
+        "code_snippet": code,
+        "expected_issues": [
+            {
+                "id": "sqli-1",
+                "title": "SQL Injection",
+                "severity": "critical",
+                "matched_lines": [1, 4, 5],
+                "anchor_lines": [
+                    'query = f"SELECT * FROM users WHERE id = {user_id}"',
+                    "return db.execute(query)",
+                ],
+                "matched_keywords": ["execute", "SELECT"],
+                "explanation": "String interpolation in SQL query.",
+            }
+        ],
+        "hints": [
+            {"tier": 1, "text": "Inspect how SQL queries are built."},
+            {"tier": 2, "text": "This is a SQL injection vulnerability."},
+            {"tier": 3, "text": "Check lines 1, 4, and 5 for the query."},
+        ],
+        "recommended_fix_diff": (
+            "@@ -1,3 +1,3 @@\n"
+            '-    query = f"SELECT * FROM users WHERE id = {user_id}"\n'
+            '+    query = "SELECT * FROM users WHERE id = ?"\n'
+            "     # Execute query\n"
+            "-    return db.execute(query)\n"
+            "+    return db.execute(query, (user_id,))\n"
+        ),
+    }
+    req = GenerateCustomChallengeRequest(
+        topic="SQL injection",
+        language=Language.PYTHON,
+        difficulty=Difficulty.MEDIUM,
+    )
+    result = sanitize_generated_challenge(raw, req)
+    assert result.expected_issues[0].lines == [6, 8]
+    assert "6" in result.hints[2].text and "8" in result.hints[2].text
+    assert "1, 4, and 5" not in result.hints[2].text
+    assert result.recommended_fix_diff.splitlines()[0].startswith("@@ -6,3 +6,3 @@")
+
+
+def test_sanitize_reresolves_trivial_matched_lines_via_diff_anchors():
+    """Trivial matched_lines (docstring/comment/blank) re-resolve via diff anchors."""
+    code = (
+        '"""\n'
+        "User lookup helper.\n"
+        '"""\n'
+        "def get_user(db, user_id):\n"
+        "    # Build query\n"
+        "    \n"
+        '    return db.execute(f"SELECT * FROM users WHERE id = {user_id}")\n'
+    )
+    raw = {
+        **SAMPLE_GEMINI_OUTPUT,
+        "language": "python",
+        "code_snippet": code,
+        "expected_issues": [
+            {
+                "id": "sqli-2",
+                "title": "SQL Injection",
+                "severity": "critical",
+                "matched_lines": [1, 5, 6],
+                "matched_keywords": ["nonexistent_kw"],
+                "explanation": "Unsafely formatted SQL.",
+            }
+        ],
+        "hints": [
+            {"tier": 1, "text": "Check database queries."},
+            {"tier": 2, "text": "SQL injection."},
+            {"tier": 3, "text": "Inspect lines 1, 5, and 6."},
+        ],
+        "recommended_fix_diff": (
+            "@@ -1,1 +1,1 @@\n"
+            '-    return db.execute(f"SELECT * FROM users WHERE id = {user_id}")\n'
+            '+    return db.execute("SELECT * FROM users WHERE id = ?", (user_id,))\n'
+        ),
+    }
+    req = GenerateCustomChallengeRequest(
+        topic="SQL injection",
+        language=Language.PYTHON,
+        difficulty=Difficulty.EASY,
+    )
+    result = sanitize_generated_challenge(raw, req)
+    assert result.expected_issues[0].lines == [7]
+    assert "7" in result.hints[2].text
+    assert result.recommended_fix_diff.splitlines()[0].startswith("@@ -7,1 +7,1 @@")
+
+
+def test_sanitize_drops_trivial_lines_from_mixed_matched_lines():
+    """Comment and blank lines are stripped when mixed with valid defect lines."""
+    code = (
+        "def run(cmd):\n"
+        "    # Dangerous call\n"
+        "    \n"
+        "    return eval(cmd)\n"
+    )
+    raw = {
+        **SAMPLE_GEMINI_OUTPUT,
+        "language": "python",
+        "code_snippet": code,
+        "expected_issues": [
+            {
+                "id": "eval-mixed",
+                "title": "Code Injection",
+                "severity": "critical",
+                "matched_lines": [2, 3, 4],
+                "matched_keywords": ["eval"],
+                "explanation": "eval executes arbitrary input.",
+            }
+        ],
+    }
+    req = GenerateCustomChallengeRequest(
+        topic="Code injection",
+        language=Language.PYTHON,
+        difficulty=Difficulty.EASY,
+    )
+    result = sanitize_generated_challenge(raw, req)
+    assert result.expected_issues[0].lines == [4]
+
+
+def test_sanitize_rejects_trivial_only_code_snippet():
+    """Raises GeminiSchemaError when snippet has no non-trivial code lines."""
+    code = '"""\nDocstring only.\n"""\n# Just a comment\n\n'
+    raw = {
+        **SAMPLE_GEMINI_OUTPUT,
+        "language": "python",
+        "code_snippet": code,
+        "expected_issues": [
+            {
+                "id": "trivial-only",
+                "title": "Empty Defect",
+                "severity": "low",
+                "matched_lines": [1, 4],
+                "matched_keywords": ["comment"],
+                "explanation": "Nothing executable.",
+            }
+        ],
+    }
+    req = GenerateCustomChallengeRequest(
+        topic="Trivial snippet",
+        language=Language.PYTHON,
+        difficulty=Difficulty.EASY,
+    )
+    with pytest.raises(GeminiSchemaError, match="unresolvable line numbers"):
+        sanitize_generated_challenge(raw, req)
+
