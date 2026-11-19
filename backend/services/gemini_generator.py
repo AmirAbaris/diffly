@@ -9,6 +9,7 @@ import re
 from typing import Any
 
 import httpx
+from pydantic import ValidationError
 
 from backend.models.challenge import (
     DEFAULT_TIER_LABELS,
@@ -123,7 +124,10 @@ def get_response_schema() -> dict[str, Any]:
                 "type": "STRING",
                 "enum": ["Easy", "Medium", "Hard"],
             },
-            "category": {"type": "STRING"},
+            "category": {
+                "type": "STRING",
+                "enum": [member.value for member in Category],
+            },
             "language": {"type": "STRING"},
             "description": {"type": "STRING"},
             "threat_model": {"type": "STRING"},
@@ -191,19 +195,116 @@ def clean_markdown_json(raw_text: str) -> str:
     return trimmed
 
 
+_TIER_PATTERN = re.compile(r"(?:tier[\s_-]*)?([1-3])", re.IGNORECASE)
+_CATEGORY_KEYWORDS: tuple[tuple[str, Category], ...] = (
+    ("concurren", Category.CONCURRENCY),
+    ("race", Category.CONCURRENCY),
+    ("deadlock", Category.CONCURRENCY),
+    ("perf", Category.PERFORMANCE),
+    ("logic", Category.LOGIC_FLAWS),
+    ("agent", Category.AGENT_ANTIPATHS),
+    ("secur", Category.SECURITY),
+)
+_MAX_SCHEMA_ATTEMPTS = 2
+
+
+def _normalize_category(category_val: Any) -> Category:
+    """Normalize arbitrary Gemini category strings to a valid Category."""
+    if isinstance(category_val, Category):
+        return category_val
+    if isinstance(category_val, str) and category_val.strip():
+        try:
+            return Category(category_val)
+        except ValueError:
+            lowered = category_val.lower()
+            for keyword, cat in _CATEGORY_KEYWORDS:
+                if keyword in lowered:
+                    return cat
+    return Category.SECURITY
+
+
+def _parse_hint_tier(raw_tier: Any, used_tiers: set[int]) -> int | None:
+    """Parse Gemini hint tier values ('Tier 1', 1, null) safely into 1..3."""
+    if raw_tier is None:
+        for candidate in (1, 2, 3):
+            if candidate not in used_tiers:
+                return candidate
+        return None
+    if isinstance(raw_tier, bool):
+        return None
+    if isinstance(raw_tier, int):
+        return raw_tier if 1 <= raw_tier <= 3 else None
+    if isinstance(raw_tier, float):
+        if raw_tier.is_integer() and 1 <= int(raw_tier) <= 3:
+            return int(raw_tier)
+        return None
+    if isinstance(raw_tier, str):
+        match = _TIER_PATTERN.fullmatch(raw_tier.strip())
+        if match:
+            return int(match.group(1))
+    return None
+
+
+def _resolve_valid_lines(
+    item: dict[str, Any],
+    code_lines: list[str],
+    line_count: int,
+    defect_index: int,
+) -> list[int]:
+    """Resolve 1-indexed defect lines from Gemini output or keyword match."""
+    raw_lines = item.get("matched_lines") or item.get("lines") or []
+    if not isinstance(raw_lines, list):
+        raw_lines = [raw_lines] if isinstance(raw_lines, (int, str)) else []
+
+    valid_lines = list(
+        dict.fromkeys(
+            int(str(ln).strip())
+            for ln in raw_lines
+            if not isinstance(ln, bool)
+            and isinstance(ln, (int, str))
+            and str(ln).strip().isdigit()
+            and 1 <= int(str(ln).strip()) <= line_count
+        )
+    )
+
+    if not valid_lines:
+        keywords = item.get("matched_keywords") or item.get("keywords") or []
+        if isinstance(keywords, list):
+            for ln_idx, line_str in enumerate(code_lines, start=1):
+                if any(
+                    kw.strip().lower() in line_str.lower()
+                    for kw in keywords
+                    if isinstance(kw, str) and len(kw.strip()) > 2
+                ):
+                    valid_lines.append(ln_idx)
+                    break
+
+    if not valid_lines:
+        raise GeminiSchemaError(
+            f"Defect {defect_index} has unresolvable line numbers "
+            f"outside 1..{line_count}"
+        )
+
+    return valid_lines
+
+
 def sanitize_generated_challenge(
     raw_data: dict[str, Any],
     request: GenerateCustomChallengeRequest,
 ) -> CustomChallengeResponse:
-    """Validate, normalize, and clamp line numbers for generated challenge."""
-    code_snippet = str(raw_data.get("code_snippet") or "").strip()
-    if not code_snippet:
+    """Validate and normalize challenge output without shifting line indices."""
+    if not isinstance(raw_data, dict):
+        raise GeminiSchemaError("Generated payload must be a JSON object")
+
+    raw_code = raw_data.get("code_snippet")
+    if not isinstance(raw_code, str) or not raw_code.strip():
         raise GeminiSchemaError("Generated code_snippet is empty")
 
+    # Preserve leading blank lines and indentation so 1-indexed lines stay aligned.
+    code_snippet = raw_code.rstrip()
     code_lines = code_snippet.splitlines()
     line_count = max(len(code_lines), 1)
 
-    # Slug validation & fallback
     slug = str(raw_data.get("slug") or "").strip().lower()
     if not slug:
         title = str(raw_data.get("title") or request.topic).lower()
@@ -220,14 +321,8 @@ def sanitize_generated_challenge(
     defect_target = str(raw_data.get("defect_target") or "").strip()
     canonical_review = str(raw_data.get("canonical_review") or "").strip()
     recommended_fix_diff = str(raw_data.get("recommended_fix_diff") or "").strip()
+    category = _normalize_category(raw_data.get("category"))
 
-    # Category normalization
-    category_val = raw_data.get("category")
-    category = Category(category_val) if category_val else Category.SECURITY
-    if category is None:
-        category = Category.SECURITY
-
-    # Process and clamp expected issues
     raw_expected = raw_data.get("expected_issues") or []
     if not isinstance(raw_expected, list) or len(raw_expected) == 0:
         raise GeminiSchemaError("Generated challenge missing expected_issues")
@@ -237,34 +332,18 @@ def sanitize_generated_challenge(
         if not isinstance(item, dict):
             continue
 
-        raw_lines = item.get("matched_lines") or item.get("lines") or []
-        valid_lines = [
-            int(ln)
-            for ln in raw_lines
-            if isinstance(ln, (int, str))
-            and str(ln).isdigit()
-            and 1 <= int(ln) <= line_count
-        ]
+        valid_lines = _resolve_valid_lines(item, code_lines, line_count, idx)
 
-        # If Gemini gave out-of-range lines, try to find a keyword line or fallback
-        if not valid_lines:
-            keywords = item.get("matched_keywords") or item.get("keywords") or []
-            for ln_idx, line_str in enumerate(code_lines, start=1):
-                if any(
-                    kw.lower() in line_str.lower()
-                    for kw in keywords
-                    if isinstance(kw, str) and len(kw) > 2
-                ):
-                    valid_lines.append(ln_idx)
-                    break
-        if not valid_lines:
-            valid_lines = [min(line_count, max(1, idx * 5))]
-
-        keywords = [
-            str(kw)
-            for kw in (item.get("matched_keywords") or item.get("keywords") or [])
-            if str(kw).strip()
-        ]
+        raw_keywords = item.get("matched_keywords") or item.get("keywords") or []
+        keywords = (
+            [
+                str(kw).strip()
+                for kw in raw_keywords
+                if kw is not None and str(kw).strip()
+            ]
+            if isinstance(raw_keywords, list)
+            else []
+        )
         if not keywords:
             keywords = [request.topic.lower()]
 
@@ -277,40 +356,41 @@ def sanitize_generated_challenge(
         ).strip()
         defect_id = str(item.get("id") or f"defect-{idx}").strip()
 
-        expected_issues.append(
-            DefectCriterion(
-                id=defect_id,
-                title=defect_title,
-                severity=severity,
-                lines=valid_lines,
-                keywords=keywords,
-                explanation=explanation,
+        try:
+            expected_issues.append(
+                DefectCriterion(
+                    id=defect_id,
+                    title=defect_title,
+                    severity=severity,
+                    lines=valid_lines,
+                    keywords=keywords,
+                    explanation=explanation,
+                )
             )
-        )
+        except (ValidationError, ValueError, TypeError) as exc:
+            raise GeminiSchemaError(f"Invalid defect criterion {idx}: {exc}") from exc
 
     if not expected_issues:
         raise GeminiSchemaError("Failed to parse valid defect criteria")
 
-    # Process hints: ensure 3 tiers
     raw_hints = raw_data.get("hints") or []
     hints_by_tier: dict[int, HintResponse] = {}
     if isinstance(raw_hints, list):
         for h in raw_hints:
-            if isinstance(h, dict):
-                tier = int(h.get("tier", 1))
-                if 1 <= tier <= 3 and tier not in hints_by_tier:
-                    text = str(h.get("text") or h.get("hint") or "").strip()
-                    label = str(
-                        h.get("label") or DEFAULT_TIER_LABELS.get(tier, f"Tier {tier}")
-                    )
-                    if text:
-                        hints_by_tier[tier] = HintResponse(
-                            tier=tier,
-                            label=label,
-                            text=text,
-                        )
+            if not isinstance(h, dict):
+                continue
+            tier = _parse_hint_tier(h.get("tier"), set(hints_by_tier))
+            if tier is None or tier in hints_by_tier:
+                continue
+            text = str(h.get("text") or h.get("hint") or "").strip()
+            label = str(h.get("label") or DEFAULT_TIER_LABELS.get(tier, f"Tier {tier}"))
+            if text:
+                hints_by_tier[tier] = HintResponse(
+                    tier=tier,
+                    label=label,
+                    text=text,
+                )
 
-    # Fill in any missing progressive hints
     default_hint_texts = {
         1: (
             f"Inspect how {request.language.value} handles inputs or "
@@ -329,26 +409,107 @@ def sanitize_generated_challenge(
 
     sorted_hints = [hints_by_tier[t] for t in (1, 2, 3)]
 
-    return CustomChallengeResponse(
-        id=0,
-        slug=slug,
-        title=title,
-        difficulty=request.difficulty,
-        category=category,
-        language=request.language,
-        description=description,
-        threat_model=threat_model,
-        defect_target=defect_target,
-        code_snippet=code_snippet,
-        expected_issues=expected_issues,
-        hints=sorted_hints,
-        canonical_review=canonical_review,
-        recommended_fix_diff=recommended_fix_diff,
-        estimated_minutes=5,
-        line_count=line_count,
-        total_hints=len(sorted_hints),
-        is_custom=True,
-    )
+    try:
+        return CustomChallengeResponse(
+            id=0,
+            slug=slug,
+            title=title,
+            difficulty=request.difficulty,
+            category=category,
+            language=request.language,
+            description=description,
+            threat_model=threat_model,
+            defect_target=defect_target,
+            code_snippet=code_snippet,
+            expected_issues=expected_issues,
+            hints=sorted_hints,
+            canonical_review=canonical_review,
+            recommended_fix_diff=recommended_fix_diff,
+            estimated_minutes=5,
+            line_count=line_count,
+            total_hints=len(sorted_hints),
+            is_custom=True,
+        )
+    except (ValidationError, ValueError, TypeError) as exc:
+        raise GeminiSchemaError(f"Invalid challenge payload: {exc}") from exc
+
+
+async def _request_and_sanitize_once(
+    http_client: httpx.AsyncClient,
+    models_to_try: list[str],
+    payload: dict[str, Any],
+    headers: dict[str, str],
+    request: GenerateCustomChallengeRequest,
+) -> CustomChallengeResponse:
+    """Execute one Gemini model-fallback pass and validate the generated challenge."""
+    last_response: httpx.Response | None = None
+    for current_model in models_to_try:
+        url = f"{GEMINI_API_BASE_URL}/{current_model}:generateContent"
+        try:
+            response = await http_client.post(url, json=payload, headers=headers)
+            last_response = response
+        except httpx.RequestError as exc:
+            if current_model == models_to_try[-1]:
+                raise GeminiAPIError(
+                    f"Failed to communicate with Gemini API: {exc.__class__.__name__}"
+                ) from exc
+            continue
+
+        # If model is deprecated (404) or busy (503), try next fallback
+        if response.status_code in {404, 503} and current_model != models_to_try[-1]:
+            continue
+        break
+
+    if last_response is None:
+        raise GeminiAPIError("No response received from Gemini API")
+
+    response = last_response
+
+    if response.status_code == 400:
+        err_body = response.text
+        if (
+            "API_KEY_INVALID" in err_body
+            or "API key not valid" in err_body
+            or "INVALID_ARGUMENT" in err_body
+        ):
+            raise GeminiAuthError("Invalid Gemini API key or unauthorized request.")
+        raise GeminiAPIError(f"Gemini API bad request: {err_body}")
+
+    if response.status_code in {401, 403}:
+        raise GeminiAuthError("Invalid Gemini API key or unauthorized request.")
+
+    if response.status_code == 429:
+        raise GeminiRateLimitError(
+            "Gemini API rate limit exceeded. Please try again later."
+        )
+
+    if response.status_code != 200:
+        raise GeminiAPIError(
+            f"Gemini API request failed with status code {response.status_code}"
+        )
+
+    try:
+        res_json = response.json()
+        candidates = res_json.get("candidates") or []
+        if not candidates or not isinstance(candidates, list):
+            raise GeminiSchemaError("Gemini returned empty candidate response")
+
+        content = candidates[0].get("content") or {}
+        parts = content.get("parts") or [{}]
+        first_part = parts[0] if isinstance(parts, list) and parts else {}
+        raw_text = first_part.get("text") or ""
+        clean_text = clean_markdown_json(raw_text)
+        parsed_data = json.loads(clean_text)
+    except (
+        json.JSONDecodeError,
+        KeyError,
+        IndexError,
+        AttributeError,
+        TypeError,
+    ) as exc:
+        raise GeminiSchemaError(f"Failed to parse Gemini output: {exc}") from exc
+
+    return sanitize_generated_challenge(parsed_data, request)
 
 
 async def generate_custom_challenge(
@@ -369,7 +530,6 @@ async def generate_custom_challenge(
         )
 
     clean_key = api_key.strip()
-    url = f"{GEMINI_API_BASE_URL}/{model}:generateContent"
     headers = {
         "Content-Type": "application/json",
         "x-goog-api-key": clean_key,
@@ -404,71 +564,21 @@ async def generate_custom_challenge(
     owns_client = client is None
     http_client = client or httpx.AsyncClient(timeout=30.0)
 
-    last_response: httpx.Response | None = None
     try:
-        for current_model in models_to_try:
-            url = f"{GEMINI_API_BASE_URL}/{current_model}:generateContent"
+        for attempt in range(_MAX_SCHEMA_ATTEMPTS):
             try:
-                response = await http_client.post(url, json=payload, headers=headers)
-                last_response = response
-            except httpx.RequestError as exc:
-                if current_model == models_to_try[-1]:
-                    raise GeminiAPIError(
-                        "Failed to communicate with Gemini API: "
-                        f"{exc.__class__.__name__}"
-                    ) from exc
-                continue
-
-            # If model is deprecated (404) or busy (503), try next fallback
-            if (
-                response.status_code in {404, 503}
-                and current_model != models_to_try[-1]
-            ):
-                continue
-            break
+                return await _request_and_sanitize_once(
+                    http_client,
+                    models_to_try,
+                    payload,
+                    headers,
+                    request,
+                )
+            except GeminiSchemaError:
+                if attempt == _MAX_SCHEMA_ATTEMPTS - 1:
+                    raise
     finally:
         if owns_client:
             await http_client.aclose()
 
-    if last_response is None:
-        raise GeminiAPIError("No response received from Gemini API")
-
-    response = last_response
-
-    if response.status_code == 400:
-        err_body = response.text
-        if (
-            "API_KEY_INVALID" in err_body
-            or "API key not valid" in err_body
-            or "INVALID_ARGUMENT" in err_body
-        ):
-            raise GeminiAuthError("Invalid Gemini API key or unauthorized request.")
-        raise GeminiAPIError(f"Gemini API bad request: {err_body}")
-
-    if response.status_code in {401, 403}:
-        raise GeminiAuthError("Invalid Gemini API key or unauthorized request.")
-
-    if response.status_code == 429:
-        raise GeminiRateLimitError(
-            "Gemini API rate limit exceeded. Please try again later."
-        )
-
-    if response.status_code != 200:
-        raise GeminiAPIError(
-            f"Gemini API request failed with status code {response.status_code}"
-        )
-
-    try:
-        res_json = response.json()
-        candidates = res_json.get("candidates") or []
-        if not candidates:
-            raise GeminiSchemaError("Gemini returned empty candidate response")
-
-        first_part = candidates[0].get("content", {}).get("parts", [{}])[0]
-        raw_text = first_part.get("text", "")
-        clean_text = clean_markdown_json(raw_text)
-        parsed_data = json.loads(clean_text)
-    except (json.JSONDecodeError, KeyError, IndexError) as exc:
-        raise GeminiSchemaError(f"Failed to parse Gemini output: {exc}") from exc
-
-    return sanitize_generated_challenge(parsed_data, request)
+    raise GeminiSchemaError("Failed to generate valid challenge schema")

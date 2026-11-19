@@ -4,6 +4,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, or_, select
 from sqlmodel.sql.expression import SelectOfScalar
 
@@ -245,48 +246,71 @@ async def generate_custom_challenge_endpoint(
             detail=str(exc),
         ) from exc
 
-    try:
-        ensure_custom_quota(session, actor, lock=True)
-    except CustomQuotaExceeded as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=_QUOTA_REACHED_DETAIL,
-        ) from exc
-
+    max_persist_attempts = 5
+    new_challenge: Challenge | None = None
     base_slug = generated.slug
-    candidate_slug = base_slug
-    while (
-        session.exec(
-            select(Challenge.id).where(Challenge.slug == candidate_slug)
-        ).first()
-        is not None
-    ):
-        candidate_slug = f"{base_slug}-{uuid4().hex[:6]}"
-
-    new_challenge = Challenge(
-        slug=candidate_slug,
-        title=generated.title,
-        difficulty=generated.difficulty,
-        category=generated.category,
-        language=generated.language,
-        description=generated.description,
-        threat_model=generated.threat_model,
-        defect_target=generated.defect_target,
-        code_snippet=generated.code_snippet,
-        expected_issues=json.dumps(
-            [issue.model_dump() for issue in generated.expected_issues]
-        ),
-        hints=json.dumps([h.model_dump() for h in generated.hints]),
-        canonical_review=generated.canonical_review,
-        recommended_fix_diff=generated.recommended_fix_diff,
-        estimated_minutes=generated.estimated_minutes,
-        is_public=False,
-        user_id=actor.user_id,
-        session_id=actor.guest_session_id,
+    expected_issues_json = json.dumps(
+        [issue.model_dump() for issue in generated.expected_issues]
     )
-    session.add(new_challenge)
-    session.commit()
-    session.refresh(new_challenge)
+    hints_json = json.dumps([h.model_dump() for h in generated.hints])
+
+    for attempt in range(max_persist_attempts):
+        try:
+            ensure_custom_quota(session, actor, lock=True)
+        except CustomQuotaExceeded as exc:
+            session.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=_QUOTA_REACHED_DETAIL,
+            ) from exc
+
+        candidate_slug = base_slug if attempt == 0 else f"{base_slug}-{uuid4().hex[:6]}"
+        while (
+            session.exec(
+                select(Challenge.id).where(Challenge.slug == candidate_slug)
+            ).first()
+            is not None
+        ):
+            candidate_slug = f"{base_slug}-{uuid4().hex[:6]}"
+
+        candidate = Challenge(
+            slug=candidate_slug,
+            title=generated.title,
+            difficulty=generated.difficulty,
+            category=generated.category,
+            language=generated.language,
+            description=generated.description,
+            threat_model=generated.threat_model,
+            defect_target=generated.defect_target,
+            code_snippet=generated.code_snippet,
+            expected_issues=expected_issues_json,
+            hints=hints_json,
+            canonical_review=generated.canonical_review,
+            recommended_fix_diff=generated.recommended_fix_diff,
+            estimated_minutes=generated.estimated_minutes,
+            is_public=False,
+            user_id=actor.user_id,
+            session_id=actor.guest_session_id,
+        )
+        session.add(candidate)
+        try:
+            session.commit()
+            session.refresh(candidate)
+            new_challenge = candidate
+            break
+        except IntegrityError as exc:
+            session.rollback()
+            if attempt == max_persist_attempts - 1:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Failed to allocate a unique challenge slug. Please retry.",
+                ) from exc
+
+    if new_challenge is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Failed to allocate a unique challenge slug. Please retry.",
+        )
 
     return CustomChallengeResponse(
         id=new_challenge.id or 0,
