@@ -1147,12 +1147,7 @@ def test_sanitize_reresolves_trivial_matched_lines_via_diff_anchors():
 
 def test_sanitize_drops_trivial_lines_from_mixed_matched_lines():
     """Comment and blank lines are stripped when mixed with valid defect lines."""
-    code = (
-        "def run(cmd):\n"
-        "    # Dangerous call\n"
-        "    \n"
-        "    return eval(cmd)\n"
-    )
+    code = "def run(cmd):\n    # Dangerous call\n    \n    return eval(cmd)\n"
     raw = {
         **SAMPLE_GEMINI_OUTPUT,
         "language": "python",
@@ -1202,4 +1197,3 @@ def test_sanitize_rejects_trivial_only_code_snippet():
     )
     with pytest.raises(GeminiSchemaError, match="unresolvable line numbers"):
         sanitize_generated_challenge(raw, req)
-
