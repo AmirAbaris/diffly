@@ -220,6 +220,14 @@ def test_submit_review_validation_errors(client: TestClient, session: Session):
     )
     assert res_str.status_code == 422
 
+    # Missing flagged lines on non-empty snippet
+    res_no_lines = client.post(
+        f"/api/challenges/{ch.slug}/review",
+        json={"flagged_lines": [], "comments": "Valid review comments."},
+    )
+    assert res_no_lines.status_code == 422
+    assert res_no_lines.json()["detail"] == "At least one line must be flagged"
+
 
 def test_get_submissions_history_guest(client: TestClient, session: Session):
     """GET /submissions filters attempts by guest cookie and returns descending."""
