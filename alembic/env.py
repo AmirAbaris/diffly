@@ -2,7 +2,7 @@ from contextlib import contextmanager
 from logging.config import fileConfig
 from typing import Any, Literal
 
-from sqlalchemy import Connection, create_engine, pool
+from sqlalchemy import Connection, create_engine, pool, text
 from sqlmodel import SQLModel
 from sqlmodel.sql.sqltypes import AutoString, UTCDateTime
 
@@ -88,6 +88,10 @@ def _configure_and_run(connection: Connection) -> None:
             render_item=_render_item,
         )
         with context.begin_transaction():
+            if connection.dialect.name == "postgresql":
+                connection.execute(
+                    text("SELECT pg_advisory_xact_lock(7482910475829104)")
+                )
             context.run_migrations()
 
 

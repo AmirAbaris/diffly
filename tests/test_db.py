@@ -578,7 +578,7 @@ def test_app_lifespan_fails_fast_with_unsafe_production_secret(monkeypatch):
         assert tc is not None
 
 
-def test_app_lifespan_skips_init_db_on_vercel(monkeypatch):
+def test_app_lifespan_runs_init_db_on_vercel(monkeypatch):
     from api.index import app
 
     monkeypatch.setattr(settings, "VERCEL", "1")
@@ -587,7 +587,7 @@ def test_app_lifespan_skips_init_db_on_vercel(monkeypatch):
         patch("api.index.seed_missing_challenges") as mock_seed,
         TestClient(app),
     ):
-        mock_init_db.assert_not_called()
+        mock_init_db.assert_called_once()
         mock_seed.assert_called_once()
 
     monkeypatch.setattr(settings, "VERCEL", None)
@@ -598,6 +598,18 @@ def test_app_lifespan_skips_init_db_on_vercel(monkeypatch):
     ):
         mock_init_db.assert_called_once()
         mock_seed.assert_called_once()
+
+
+def test_run_migrations_skips_upgrade_when_already_at_head(tmp_path):
+    db_url = f"sqlite:///{tmp_path / 'at_head.db'}"
+    test_engine = create_db_engine(db_url)
+    try:
+        run_migrations(test_engine)
+        with patch("backend.core.db.command.upgrade") as mock_upgrade:
+            run_migrations(test_engine)
+            mock_upgrade.assert_not_called()
+    finally:
+        test_engine.dispose()
 
 
 def test_settings_is_vercel_parsing():
