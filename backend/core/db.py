@@ -6,7 +6,8 @@ from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
 from alembic.config import Config
-from sqlalchemy import Engine, event, inspect
+from alembic.script import ScriptDirectory
+from sqlalchemy import Engine, event, inspect, text
 from sqlalchemy.pool import NullPool
 from sqlmodel import Session, create_engine
 
@@ -185,6 +186,18 @@ def run_migrations(target_engine: Engine | None = None, revision: str = "head") 
                 "missing alembic_version). Verify schema constraints and enums, then "
                 "run `alembic stamp head` (or recreate a local dev database)."
             )
+        if revision == "head" and "alembic_version" in table_names:
+            current_versions = {
+                row[0]
+                for row in connection.execute(
+                    text("SELECT version_num FROM alembic_version")
+                ).fetchall()
+            }
+            head_versions = set(ScriptDirectory.from_config(alembic_cfg).get_heads())
+            if connection.in_transaction():
+                connection.rollback()
+            if current_versions and current_versions == head_versions:
+                return
         alembic_cfg.attributes["connection"] = connection
         command.upgrade(alembic_cfg, revision)
 

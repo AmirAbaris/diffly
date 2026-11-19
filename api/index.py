@@ -26,8 +26,7 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     settings.validate_runtime_security()
-    if not settings.is_vercel:
-        init_db()
+    init_db()
     seed_missing_challenges()
     yield
 
