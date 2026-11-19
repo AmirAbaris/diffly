@@ -3,10 +3,11 @@ from collections.abc import Generator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 from alembic.config import Config
 from sqlalchemy import Engine, event, inspect
+from sqlalchemy.pool import NullPool
 from sqlmodel import Session, create_engine
 
 from alembic import command
@@ -24,6 +25,8 @@ class DatabaseConfig:
     driver: str
     is_neon: bool
     is_pooled_endpoint: bool
+    is_serverless: bool
+    use_null_pool: bool
     connect_args: dict[str, Any]
     pool_pre_ping: bool
     pool_recycle: int | None
@@ -50,6 +53,7 @@ def resolve_database_config(source: Settings | str | None = None) -> DatabaseCon
     is_sqlite = scheme.startswith("sqlite")
     is_neon = hostname.endswith(".neon.tech")
     is_pooled = "-pooler" in hostname
+    is_serverless = cfg_settings.is_vercel
 
     if is_sqlite:
         return DatabaseConfig(
@@ -57,7 +61,34 @@ def resolve_database_config(source: Settings | str | None = None) -> DatabaseCon
             driver="sqlite",
             is_neon=False,
             is_pooled_endpoint=False,
+            is_serverless=is_serverless,
+            use_null_pool=False,
             connect_args={"check_same_thread": False, "timeout": 30},
+            pool_pre_ping=False,
+            pool_recycle=None,
+            pool_size=None,
+            max_overflow=None,
+        )
+
+    use_null_pool = is_pooled or is_serverless
+    connect_args: dict[str, Any] = {}
+    qs = parse_qs(parsed.query, keep_blank_values=True)
+    if (
+        (is_pooled or is_neon or is_serverless)
+        and not scheme.endswith("+asyncpg")
+        and "connect_timeout" not in qs
+    ):
+        connect_args["connect_timeout"] = cfg_settings.DB_CONNECT_TIMEOUT
+
+    if use_null_pool:
+        return DatabaseConfig(
+            url=normalized_url,
+            driver="postgresql",
+            is_neon=is_neon,
+            is_pooled_endpoint=is_pooled,
+            is_serverless=is_serverless,
+            use_null_pool=True,
+            connect_args=connect_args,
             pool_pre_ping=False,
             pool_recycle=None,
             pool_size=None,
@@ -69,7 +100,9 @@ def resolve_database_config(source: Settings | str | None = None) -> DatabaseCon
         driver="postgresql",
         is_neon=is_neon,
         is_pooled_endpoint=is_pooled,
-        connect_args={},
+        is_serverless=is_serverless,
+        use_null_pool=False,
+        connect_args=connect_args,
         pool_pre_ping=cfg_settings.DB_POOL_PRE_PING,
         pool_recycle=cfg_settings.DB_POOL_RECYCLE_SECONDS,
         pool_size=cfg_settings.DB_POOL_SIZE,
@@ -83,6 +116,10 @@ def build_engine_kwargs(source: Settings | str | None = None) -> dict[str, Any]:
         "echo": False,
         "connect_args": dict(config.connect_args),
     }
+
+    if config.use_null_pool:
+        kwargs["poolclass"] = NullPool
+        return kwargs
 
     if config.pool_pre_ping:
         kwargs["pool_pre_ping"] = True
@@ -101,6 +138,7 @@ def _register_sqlite_listeners(target_engine: Engine) -> None:
     def _set_sqlite_pragma(dbapi_connection: Any, _connection_record: Any) -> None:
         cursor = dbapi_connection.cursor()
         cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.execute("PRAGMA journal_mode=WAL")
         cursor.close()
 
 

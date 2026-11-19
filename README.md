@@ -144,8 +144,8 @@ Once both containers pass health checks, open these URLs:
 python3 -m venv .venv
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
-# Install Python runtime and test dependencies
-pip install -r requirements.txt
+# Install Python runtime and dev/test dependencies
+pip install -r requirements-dev.txt
 
 # Or install the project in editable mode with dev extras
 pip install -e ".[dev]"

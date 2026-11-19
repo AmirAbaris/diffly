@@ -24,8 +24,8 @@ Set up the backend virtual environment, frontend packages, git hooks, and enviro
 python3 -m venv .venv
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
-# 2. Install Python dependencies
-pip install -r requirements.txt
+# 2. Install Python runtime and dev/test dependencies
+pip install -r requirements-dev.txt
 
 # 3. Install Node dependencies and Lefthook git hooks
 pnpm install

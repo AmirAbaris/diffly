@@ -12,6 +12,7 @@ from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import inspect, text
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.pool import NullPool
 from sqlmodel import Session, SQLModel, create_engine, select
 
 from alembic import command
@@ -120,22 +121,81 @@ def test_resolve_database_config_neon_pooled():
     assert cfg.driver == "postgresql"
     assert cfg.is_neon is True
     assert cfg.is_pooled_endpoint is True
-    assert cfg.pool_pre_ping is True
-    assert cfg.pool_recycle == 300
-    assert cfg.pool_size == 5
-    assert cfg.max_overflow == 10
+    assert cfg.use_null_pool is True
+    assert cfg.connect_args == {"connect_timeout": 10}
+    assert cfg.pool_pre_ping is False
+    assert cfg.pool_recycle is None
+    assert cfg.pool_size is None
+    assert cfg.max_overflow is None
 
     kwargs = build_engine_kwargs(neon_url)
-    assert kwargs["pool_pre_ping"] is True
-    assert kwargs["pool_recycle"] == 300
-    assert kwargs["pool_size"] == 5
-    assert kwargs["max_overflow"] == 10
+    assert kwargs["poolclass"] is NullPool
+    assert kwargs["connect_args"] == {"connect_timeout": 10}
+    assert "pool_size" not in kwargs
+    assert "max_overflow" not in kwargs
+    assert "pool_recycle" not in kwargs
+    assert "pool_pre_ping" not in kwargs
+
+    pooled_engine = create_db_engine(neon_url)
+    try:
+        assert isinstance(pooled_engine.pool, NullPool)
+    finally:
+        pooled_engine.dispose()
+
+
+def test_resolve_database_config_serverless_and_direct_postgres():
+    direct_neon = (
+        "postgresql://user:pass@ep-bold.us-east-2.aws.neon.tech/neondb?sslmode=require"
+    )
+    direct_cfg = resolve_database_config(direct_neon)
+    assert direct_cfg.is_neon is True
+    assert direct_cfg.is_pooled_endpoint is False
+    assert direct_cfg.use_null_pool is False
+    assert direct_cfg.connect_args == {"connect_timeout": 10}
+    assert direct_cfg.pool_size == 5
+    assert direct_cfg.max_overflow == 10
+
+    direct_kwargs = build_engine_kwargs(direct_neon)
+    assert "poolclass" not in direct_kwargs
+    assert direct_kwargs["pool_pre_ping"] is True
+    assert direct_kwargs["pool_recycle"] == 300
+    assert direct_kwargs["pool_size"] == 5
+    assert direct_kwargs["max_overflow"] == 10
+    assert direct_kwargs["connect_args"] == {"connect_timeout": 10}
+
+    vercel_settings = Settings(DATABASE_URL=direct_neon, VERCEL="1")
+    vercel_cfg = resolve_database_config(vercel_settings)
+    assert vercel_cfg.is_serverless is True
+    assert vercel_cfg.use_null_pool is True
+    vercel_kwargs = build_engine_kwargs(vercel_settings)
+    assert vercel_kwargs["poolclass"] is NullPool
+    assert vercel_kwargs["connect_args"] == {"connect_timeout": 10}
+    assert "pool_size" not in vercel_kwargs
+
+    explicit_timeout_url = (
+        "postgresql://user:pass@ep-bold-pooler.us-east-2.aws.neon.tech/neondb"
+        "?sslmode=require&connect_timeout=5"
+    )
+    assert resolve_database_config(explicit_timeout_url).connect_args == {}
 
 
 def test_create_db_engine_sqlite():
     test_eng = create_db_engine("sqlite:///:memory:")
     assert test_eng.name == "sqlite"
     test_eng.dispose()
+
+
+def test_create_db_engine_sqlite_enables_wal_and_foreign_keys(tmp_path):
+    db_url = f"sqlite:///{tmp_path / 'wal_mode.db'}"
+    test_eng = create_db_engine(db_url)
+    try:
+        with test_eng.connect() as conn:
+            journal_mode = conn.execute(text("PRAGMA journal_mode")).scalar_one()
+            foreign_keys = conn.execute(text("PRAGMA foreign_keys")).scalar_one()
+            assert str(journal_mode).lower() == "wal"
+            assert foreign_keys == 1
+    finally:
+        test_eng.dispose()
 
 
 def test_resolve_sqlalchemy_url():
@@ -730,6 +790,7 @@ def test_alembic_postgres_offline_sql_generation_and_percent_url():
     assert "JAVA" in up_sql
     assert "ix_users_email_lower" in up_sql
     assert "ix_users_username_lower" in up_sql
+    assert "content_hash" in up_sql
 
     downgrade_buf = io.StringIO()
     cfg_down = Config(str(ALEMBIC_INI_PATH), stdout=downgrade_buf)
@@ -738,6 +799,7 @@ def test_alembic_postgres_offline_sql_generation_and_percent_url():
     cfg_down.attributes["configure_logger"] = False
     command.downgrade(cfg_down, "head:base", sql=True)
     down_sql = downgrade_buf.getvalue()
+    assert "DROP COLUMN content_hash" in down_sql
     assert "DROP INDEX ix_users_email_lower" in down_sql
     assert "DROP INDEX ix_users_username_lower" in down_sql
     assert "DROP TABLE submissions" in down_sql
@@ -781,3 +843,61 @@ def test_alembic_0002_backfills_existing_users_unicode_lowercase(tmp_path):
             assert row.username_lower == "üsername"
     finally:
         test_engine.dispose()
+
+
+def test_alembic_0003_adds_content_hash_and_preserves_challenges(tmp_path):
+    db_url = f"sqlite:///{tmp_path / 'content_hash_mig.db'}"
+    cfg = Config(str(ALEMBIC_INI_PATH))
+    cfg.set_main_option("script_location", str(ALEMBIC_SCRIPT_LOCATION))
+    cfg.attributes["sqlalchemy.url"] = db_url
+    cfg.attributes["configure_logger"] = False
+
+    command.upgrade(cfg, "0002_case_insensitive_user_indexes")
+
+    test_engine = create_db_engine(db_url)
+    try:
+        with test_engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO challenges "
+                    "(slug, title, difficulty, category, language, description, "
+                    "threat_model, defect_target, code_snippet, expected_issues, "
+                    "hints, canonical_review, recommended_fix_diff, "
+                    "estimated_minutes, is_public, created_at) "
+                    "VALUES ('legacy-ch', 'Legacy', 'EASY', 'SECURITY', 'PYTHON', "
+                    "'desc', '', '', 'x = 1', '[]', '[]', '', '', 5, 1, "
+                    "'2026-01-01 00:00:00')"
+                )
+            )
+    finally:
+        test_engine.dispose()
+
+    command.upgrade(cfg, "head")
+
+    test_engine = create_db_engine(db_url)
+    try:
+        cols = {c["name"] for c in inspect(test_engine).get_columns("challenges")}
+        assert "content_hash" in cols
+        with test_engine.connect() as conn:
+            row = conn.execute(
+                text(
+                    "SELECT slug, content_hash FROM challenges WHERE slug = 'legacy-ch'"
+                )
+            ).one()
+            assert row.slug == "legacy-ch"
+            assert row.content_hash is None
+    finally:
+        test_engine.dispose()
+
+
+def test_requirements_separate_runtime_and_dev_dependencies():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    runtime_reqs = (root / "requirements.txt").read_text(encoding="utf-8")
+    dev_reqs = (root / "requirements-dev.txt").read_text(encoding="utf-8")
+
+    for dev_pkg in ("pytest", "pytest-cov", "ruff"):
+        assert dev_pkg not in runtime_reqs
+        assert dev_pkg in dev_reqs
+    assert "-r requirements.txt" in dev_reqs

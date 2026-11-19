@@ -6,8 +6,12 @@ Traverses `content/challenges/<slug>/` bundles containing:
   - snippet.<ext>: Native clean code snippet (.py, .ts, .go, .rs, .java, etc.)
 """
 
+import hashlib
+import json
 import logging
 import re
+from collections.abc import Mapping
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +25,51 @@ logger = logging.getLogger("diffly.loader")
 DEFAULT_CONTENT_DIR = (
     Path(__file__).resolve().parent.parent.parent / "content" / "challenges"
 )
+
+
+def _normalize_hash_value(value: Any) -> Any:
+    if isinstance(value, StrEnum):
+        return value.value
+    if isinstance(value, dict):
+        return {str(k): _normalize_hash_value(v) for k, v in sorted(value.items())}
+    if isinstance(value, list):
+        return [_normalize_hash_value(item) for item in value]
+    return value
+
+
+def _normalize_json_list_field(value: Any) -> Any:
+    if isinstance(value, str):
+        try:
+            return _normalize_hash_value(json.loads(value or "[]"))
+        except json.JSONDecodeError:
+            return value
+    return _normalize_hash_value(value if value is not None else [])
+
+
+def compute_challenge_content_hash(challenge_data: Mapping[str, Any]) -> str:
+    """Compute a deterministic SHA-256 hex digest for a curated challenge bundle."""
+    payload = {
+        "slug": challenge_data.get("slug", ""),
+        "title": challenge_data.get("title", ""),
+        "difficulty": _normalize_hash_value(challenge_data.get("difficulty", "")),
+        "category": _normalize_hash_value(challenge_data.get("category", "")),
+        "language": _normalize_hash_value(challenge_data.get("language", "")),
+        "description": challenge_data.get("description", ""),
+        "threat_model": challenge_data.get("threat_model", ""),
+        "defect_target": challenge_data.get("defect_target", ""),
+        "code_snippet": challenge_data.get("code_snippet", ""),
+        "expected_issues": _normalize_json_list_field(
+            challenge_data.get("expected_issues", [])
+        ),
+        "hints": _normalize_json_list_field(challenge_data.get("hints", [])),
+        "canonical_review": challenge_data.get("canonical_review", ""),
+        "recommended_fix_diff": challenge_data.get("recommended_fix_diff", ""),
+        "estimated_minutes": challenge_data.get("estimated_minutes", 5),
+    }
+    serialized = json.dumps(
+        payload, sort_keys=True, ensure_ascii=False, separators=(",", ":")
+    )
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
 
 class CleanYamlDumper(yaml.SafeDumper):
@@ -184,6 +233,7 @@ def load_challenge_bundle(challenge_dir: Path | str) -> dict[str, Any]:
     meta.setdefault("recommended_fix_diff", "")
     meta.setdefault("hints", [])
     meta.setdefault("estimated_minutes", 5)
+    meta["content_hash"] = compute_challenge_content_hash(meta)
 
     return meta
 

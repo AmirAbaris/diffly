@@ -634,3 +634,130 @@ def test_seed_missing_curated_bundles_preserves_private_slug_collision(
     assert len(second_results) == len(CHALLENGES_DATA)
     session.refresh(tampered)
     assert tampered.title == "Do Not Overwrite"
+
+
+def test_content_hash_stored_on_seeded_challenges(session: Session):
+    """Verify seeded curated challenges store deterministic SHA-256 content hashes."""
+    from backend.seed.loader import compute_challenge_content_hash
+
+    seeded = seed_challenges(session)
+    expected_by_slug = {
+        ch["slug"]: compute_challenge_content_hash(ch) for ch in CHALLENGES_DATA
+    }
+    for ch in seeded:
+        assert ch.content_hash is not None
+        assert len(ch.content_hash) == 64
+        assert ch.content_hash == expected_by_slug[ch.slug]
+
+
+def test_seed_missing_challenges_upserts_changed_bundle_and_null_hash(
+    session: Session, tmp_path
+):
+    """Verify startup sync upserts bundles when content_hash changes or is NULL."""
+    from backend.seed.seed_data import seed_missing_challenges
+
+    bundle_dir = tmp_path / "sync-test-bundle"
+    bundle_dir.mkdir()
+    (bundle_dir / "meta.yaml").write_text(
+        """
+slug: sync-test-bundle
+title: Initial Bundle Title
+difficulty: easy
+category: security
+language: python
+estimated_minutes: 5
+defect_target: Find defect
+expected_issues:
+  - id: sync-1
+    title: Hardcoded secret
+    severity: high
+    lines: [1]
+    keywords: ["SECRET"]
+    explanation: Secret hardcoded in source.
+hints:
+  - tier: 1
+    hint: Clue 1
+  - tier: 2
+    hint: Clue 2
+  - tier: 3
+    hint: Clue 3
+recommended_fix_diff: |
+  @@ -1 +1 @@
+  -SECRET = "abc"
+  +SECRET = os.environ["SECRET"]
+""",
+        encoding="utf-8",
+    )
+    (bundle_dir / "description.md").write_text("Initial description.", encoding="utf-8")
+    (bundle_dir / "snippet.py").write_text('SECRET = "abc"\n', encoding="utf-8")
+
+    # 1. Initial sync inserts bundle with content_hash
+    initial = seed_missing_challenges(session, content_dir=tmp_path)
+    assert len(initial) == 1
+    first_hash = initial[0].content_hash
+    assert first_hash is not None
+    assert initial[0].title == "Initial Bundle Title"
+
+    # 2. Mutating bundle on disk changes hash -> startup sync upserts automatically
+    (bundle_dir / "meta.yaml").write_text(
+        (bundle_dir / "meta.yaml")
+        .read_text(encoding="utf-8")
+        .replace("Initial Bundle Title", "Updated Bundle Title"),
+        encoding="utf-8",
+    )
+    (bundle_dir / "snippet.py").write_text('SECRET = "xyz"\n', encoding="utf-8")
+
+    updated = seed_missing_challenges(session, content_dir=tmp_path)
+    assert len(updated) == 1
+    assert updated[0].title == "Updated Bundle Title"
+    assert updated[0].code_snippet == 'SECRET = "xyz"\n'
+    assert updated[0].content_hash != first_hash
+
+    # 3. Pre-hash row (content_hash=None) is backfilled and updated on sync
+    row = updated[0]
+    row.title = "Legacy Stale Title"
+    row.content_hash = None
+    session.add(row)
+    session.commit()
+
+    backfilled = seed_missing_challenges(session, content_dir=tmp_path)
+    assert len(backfilled) == 1
+    assert backfilled[0].title == "Updated Bundle Title"
+    assert backfilled[0].content_hash is not None
+
+
+def test_seed_functions_surface_errors_instead_of_swallowing(tmp_path):
+    """Verify seeding functions raise DB/bundle errors rather than returning []."""
+    import pytest
+    from sqlalchemy.exc import OperationalError
+    from sqlmodel import create_engine
+
+    from backend.seed.seed_data import seed_challenges_if_empty, seed_missing_challenges
+
+    # Unmigrated empty DB -> OperationalError must surface, not return []
+    empty_engine = create_engine("sqlite:///:memory:")
+    try:
+        with Session(empty_engine) as unmigrated_session:
+            with pytest.raises(OperationalError):
+                seed_challenges_if_empty(unmigrated_session)
+            with pytest.raises(OperationalError):
+                seed_missing_challenges(unmigrated_session)
+    finally:
+        empty_engine.dispose()
+
+    # Invalid bundle -> ValueError must surface from seed_missing_challenges
+    bad_bundle = tmp_path / "broken-bundle"
+    bad_bundle.mkdir()
+    (bad_bundle / "meta.yaml").write_text("- not-a-mapping\n", encoding="utf-8")
+    empty_migrated = create_engine("sqlite:///:memory:")
+    try:
+        from sqlmodel import SQLModel
+
+        SQLModel.metadata.create_all(empty_migrated)
+        with Session(empty_migrated) as db:
+            with pytest.raises(ValueError, match="must contain a mapping"):
+                seed_missing_challenges(db, content_dir=tmp_path)
+            with pytest.raises(ValueError, match="must contain a mapping"):
+                seed_challenges_if_empty(db, content_dir=tmp_path)
+    finally:
+        empty_migrated.dispose()
