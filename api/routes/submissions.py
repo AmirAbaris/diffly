@@ -91,11 +91,17 @@ def submit_review(
     challenge = get_challenge_or_404(identifier, session, actor=actor)
 
     snippet_line_count = len(challenge.code_snippet.splitlines())
-    if payload.flagged_lines:
-        if snippet_line_count == 0:
+    if snippet_line_count == 0:
+        if payload.flagged_lines:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="Challenge has no code lines to flag",
+            )
+    else:
+        if not payload.flagged_lines:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="At least one line must be flagged",
             )
         if any(line > snippet_line_count for line in payload.flagged_lines):
             raise HTTPException(
