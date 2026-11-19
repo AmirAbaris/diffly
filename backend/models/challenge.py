@@ -350,7 +350,7 @@ class Challenge(ChallengeBase, table=True):
         cached = getattr(self, "_cached_expected_issues", None)
         raw_cached = getattr(self, "_cached_expected_issues_raw", None)
         if cached is not None and raw_cached == self.expected_issues:
-            return cached
+            return [item.model_copy(deep=True) for item in cached]
 
         if isinstance(self.expected_issues, list):
             data = self.expected_issues
@@ -364,13 +364,13 @@ class Challenge(ChallengeBase, table=True):
         ]
         object.__setattr__(self, "_cached_expected_issues", result)
         object.__setattr__(self, "_cached_expected_issues_raw", self.expected_issues)
-        return result
+        return [item.model_copy(deep=True) for item in result]
 
     def get_hints(self) -> list[HintItem]:
         cached = getattr(self, "_cached_hints", None)
         raw_cached = getattr(self, "_cached_hints_raw", None)
         if cached is not None and raw_cached == self.hints:
-            return cached
+            return [item.model_copy(deep=True) for item in cached]
 
         if isinstance(self.hints, list):
             data = self.hints
@@ -382,7 +382,7 @@ class Challenge(ChallengeBase, table=True):
         ]
         object.__setattr__(self, "_cached_hints", result)
         object.__setattr__(self, "_cached_hints_raw", self.hints)
-        return result
+        return [item.model_copy(deep=True) for item in result]
 
     def to_summary(
         self,
