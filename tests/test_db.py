@@ -37,7 +37,11 @@ def test_default_settings():
     assert settings.ACCESS_TOKEN_EXPIRE_MINUTES == 10080
     assert "http://localhost:3000" in settings.CORS_ORIGINS
     assert "http://localhost:8000" in settings.CORS_ORIGINS
-    assert settings.CORS_ORIGIN_REGEX == r"^https://.*\.vercel\.app$"
+    assert settings.CORS_ORIGIN_REGEX == (
+        r"^https://diffly(?:-[a-z0-9]+)*-amirabaris\.vercel\.app$"
+        r"|^https://diffly(?:-sigma)?\.vercel\.app$"
+    )
+    assert settings.TRUSTED_PROXY_CIDRS == []
     assert settings.DB_POOL_SIZE == 5
     assert settings.DB_MAX_OVERFLOW == 10
     assert settings.DB_POOL_RECYCLE_SECONDS == 300
@@ -562,14 +566,17 @@ def test_alembic_autocommit_block_succeeds_in_run_migrations_and_cli_env(tmp_pat
 
     script_dir = tmp_path / "alembic"
     shutil.copytree(ALEMBIC_SCRIPT_LOCATION, script_dir)
-    (script_dir / "versions" / "0002_autocommit_probe.py").write_text(
+    probe_cfg = Config(str(ALEMBIC_INI_PATH))
+    probe_cfg.set_main_option("script_location", str(script_dir))
+    head_rev = ScriptDirectory.from_config(probe_cfg).get_current_head()
+    (script_dir / "versions" / "9999_autocommit_probe.py").write_text(
         '"""Autocommit probe.\n\n'
-        "Revision ID: 0002_autocommit_probe\n"
-        "Revises: 0001_initial_schema\n"
+        "Revision ID: 9999_autocommit_probe\n"
+        f"Revises: {head_rev}\n"
         '"""\n\n'
         "from alembic import op\n\n"
-        'revision = "0002_autocommit_probe"\n'
-        'down_revision = "0001_initial_schema"\n'
+        'revision = "9999_autocommit_probe"\n'
+        f'down_revision = "{head_rev}"\n'
         "branch_labels = None\n"
         "depends_on = None\n\n\n"
         "def upgrade() -> None:\n"
@@ -646,15 +653,18 @@ def test_alembic_sqlite_batch_alter_preserves_foreign_key_owners(tmp_path):
 
         script_dir = tmp_path / "alembic"
         shutil.copytree(ALEMBIC_SCRIPT_LOCATION, script_dir)
-        (script_dir / "versions" / "0002_batch_users.py").write_text(
+        batch_cfg = Config(str(ALEMBIC_INI_PATH))
+        batch_cfg.set_main_option("script_location", str(script_dir))
+        head_rev = ScriptDirectory.from_config(batch_cfg).get_current_head()
+        (script_dir / "versions" / "9999_batch_users.py").write_text(
             '"""Batch rebuild users.\n\n'
-            "Revision ID: 0002_batch_users\n"
-            "Revises: 0001_initial_schema\n"
+            "Revision ID: 9999_batch_users\n"
+            f"Revises: {head_rev}\n"
             '"""\n\n'
             "import sqlalchemy as sa\n"
             "from alembic import op\n\n"
-            'revision = "0002_batch_users"\n'
-            'down_revision = "0001_initial_schema"\n'
+            'revision = "9999_batch_users"\n'
+            f'down_revision = "{head_rev}"\n'
             "branch_labels = None\n"
             "depends_on = None\n\n\n"
             "def upgrade() -> None:\n"
@@ -681,6 +691,24 @@ def test_alembic_sqlite_batch_alter_preserves_foreign_key_owners(tmp_path):
             ).scalar_one()
             assert ch_owner == user_id
             assert sub_owner == user_id
+
+        user_indexes = {
+            idx["name"]: idx for idx in inspect(test_engine).get_indexes("users")
+        }
+        assert user_indexes["ix_users_email_lower"]["unique"] == 1
+        assert user_indexes["ix_users_username_lower"]["unique"] == 1
+
+        with Session(test_engine) as db:
+            db.add(
+                User(
+                    email="BATCH@DIFFLY.DEV",
+                    username="other_batch_user",
+                    hashed_password="pw",
+                )
+            )
+            with pytest.raises(IntegrityError):
+                db.commit()
+            db.rollback()
     finally:
         test_engine.dispose()
 
@@ -700,13 +728,56 @@ def test_alembic_postgres_offline_sql_generation_and_percent_url():
     assert "ck_challenges_single_owner" in up_sql
     assert "ck_submissions_single_owner" in up_sql
     assert "JAVA" in up_sql
+    assert "ix_users_email_lower" in up_sql
+    assert "ix_users_username_lower" in up_sql
 
     downgrade_buf = io.StringIO()
     cfg_down = Config(str(ALEMBIC_INI_PATH), stdout=downgrade_buf)
     cfg_down.set_main_option("script_location", str(ALEMBIC_SCRIPT_LOCATION))
     cfg_down.attributes["sqlalchemy.url"] = pg_url
     cfg_down.attributes["configure_logger"] = False
-    command.downgrade(cfg_down, "0001_initial_schema:base", sql=True)
+    command.downgrade(cfg_down, "head:base", sql=True)
     down_sql = downgrade_buf.getvalue()
+    assert "DROP INDEX ix_users_email_lower" in down_sql
+    assert "DROP INDEX ix_users_username_lower" in down_sql
     assert "DROP TABLE submissions" in down_sql
     assert "DROP TYPE language" in down_sql
+
+
+def test_alembic_0002_backfills_existing_users_unicode_lowercase(tmp_path):
+    db_url = f"sqlite:///{tmp_path / 'backfill.db'}"
+    cfg = Config(str(ALEMBIC_INI_PATH))
+    cfg.set_main_option("script_location", str(ALEMBIC_SCRIPT_LOCATION))
+    cfg.attributes["sqlalchemy.url"] = db_url
+    cfg.attributes["configure_logger"] = False
+
+    command.upgrade(cfg, "0001_initial_schema")
+
+    test_engine = create_db_engine(db_url)
+    try:
+        with test_engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO users "
+                    "(email, username, avatar_url, is_active, hashed_password, "
+                    "created_at, updated_at) "
+                    "VALUES (:email, :username, NULL, 1, 'pw', "
+                    "'2026-01-01 00:00:00', '2026-01-01 00:00:00')"
+                ),
+                {"email": "  Üser@Example.COM ", "username": " ÜserName "},
+            )
+    finally:
+        test_engine.dispose()
+
+    command.upgrade(cfg, "head")
+
+    test_engine = create_db_engine(db_url)
+    try:
+        with test_engine.connect() as conn:
+            row = conn.execute(
+                text("SELECT email_lower, username_lower FROM users")
+            ).one()
+            assert row.email_lower == "üser@example.com"
+            assert row.username_lower == "üsername"
+    finally:
+        test_engine.dispose()

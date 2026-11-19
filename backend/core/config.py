@@ -1,4 +1,5 @@
 import contextlib
+import ipaddress
 import json
 import re
 from typing import Any
@@ -77,7 +78,11 @@ class Settings(BaseSettings):
         "http://localhost:8000",
         "http://127.0.0.1:8000",
     ]
-    CORS_ORIGIN_REGEX: str = r"^https://.*\.vercel\.app$"
+    CORS_ORIGIN_REGEX: str = (
+        r"^https://diffly(?:-[a-z0-9]+)*-amirabaris\.vercel\.app$"
+        r"|^https://diffly(?:-sigma)?\.vercel\.app$"
+    )
+    TRUSTED_PROXY_CIDRS: list[str] = []
     DB_POOL_SIZE: int = 5
     DB_MAX_OVERFLOW: int = 10
     DB_POOL_RECYCLE_SECONDS: int = 300
@@ -134,9 +139,8 @@ class Settings(BaseSettings):
         self.validate_runtime_security()
         return self
 
-    @field_validator("CORS_ORIGINS", mode="before")
-    @classmethod
-    def assemble_cors_origins(cls, v: Any) -> list[str]:
+    @staticmethod
+    def _parse_str_list(v: Any, field_name: str) -> list[str]:
         if isinstance(v, str):
             val = v.strip()
             if not val:
@@ -145,11 +149,26 @@ class Settings(BaseSettings):
                 with contextlib.suppress(json.JSONDecodeError, ValueError):
                     parsed = json.loads(val)
                     if isinstance(parsed, list):
-                        return [str(item).strip() for item in parsed]
-            return [origin.strip() for origin in val.split(",") if origin.strip()]
+                        return [
+                            cleaned for item in parsed if (cleaned := str(item).strip())
+                        ]
+            return [item.strip() for item in val.split(",") if item.strip()]
         if isinstance(v, (list, tuple)):
-            return [str(item).strip() for item in v]
-        raise ValueError("Invalid format for CORS_ORIGINS")
+            return [str(item).strip() for item in v if str(item).strip()]
+        raise ValueError(f"Invalid format for {field_name}")
+
+    @field_validator("CORS_ORIGINS", mode="before")
+    @classmethod
+    def assemble_cors_origins(cls, v: Any) -> list[str]:
+        return cls._parse_str_list(v, "CORS_ORIGINS")
+
+    @field_validator("TRUSTED_PROXY_CIDRS", mode="before")
+    @classmethod
+    def assemble_trusted_proxy_cidrs(cls, v: Any) -> list[str]:
+        cidrs = cls._parse_str_list(v, "TRUSTED_PROXY_CIDRS")
+        for cidr in cidrs:
+            ipaddress.ip_network(cidr, strict=False)
+        return cidrs
 
 
 settings = Settings()

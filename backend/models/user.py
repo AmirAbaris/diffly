@@ -1,7 +1,9 @@
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from pydantic import EmailStr
+from sqlalchemy import Connection, event
+from sqlalchemy.orm import Mapper
 from sqlmodel import Field, Relationship, SQLModel
 
 
@@ -25,12 +27,32 @@ class User(UserBase, table=True):
     __tablename__ = "users"
 
     id: int | None = Field(default=None, primary_key=True)
+    email_lower: str = Field(default="", unique=True, index=True)
+    username_lower: str = Field(default="", unique=True, index=True)
     hashed_password: str
     created_at: datetime = Field(default_factory=get_utc_now)
     updated_at: datetime = Field(default_factory=get_utc_now)
 
     submissions: list["Submission"] = Relationship(back_populates="user")
     challenges: list["Challenge"] = Relationship(back_populates="user")
+
+    def __init__(self, **data: Any) -> None:
+        super().__init__(**data)
+        self.email_lower = (getattr(self, "email", None) or "").strip().lower()
+        self.username_lower = (getattr(self, "username", None) or "").strip().lower()
+
+
+def _sync_user_lower_columns(
+    _mapper: Mapper[Any],
+    _connection: Connection,
+    target: User,
+) -> None:
+    target.email_lower = (target.email or "").strip().lower()
+    target.username_lower = (target.username or "").strip().lower()
+
+
+event.listen(User, "before_insert", _sync_user_lower_columns)
+event.listen(User, "before_update", _sync_user_lower_columns)
 
 
 class UserRead(UserBase):
