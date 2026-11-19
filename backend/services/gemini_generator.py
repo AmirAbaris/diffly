@@ -81,7 +81,11 @@ Constraints:
 
 2. expected_issues:
    - Exactly 1 or 2 DefectCriterion items describing each defect accurately.
-   - matched_lines: Array of 1-indexed line numbers for the defect location.
+   - anchor_lines: Array of exact verbatim non-empty, non-comment vulnerable code lines
+     copied directly from code_snippet (used to deterministically ground line numbers
+     rather than counting lines blindly).
+   - matched_lines: Array of 1-indexed line numbers for the defect location
+     corresponding to anchor_lines.
    - matched_keywords: 3-5 technical keywords/concepts reviewers should mention
      (e.g. ["idor", "authorization", "ownership"]).
    - severity: "low", "medium", "high", or "critical".
@@ -141,6 +145,10 @@ def get_response_schema() -> dict[str, Any]:
                         "id": {"type": "STRING"},
                         "title": {"type": "STRING"},
                         "severity": {"type": "STRING"},
+                        "anchor_lines": {
+                            "type": "ARRAY",
+                            "items": {"type": "STRING"},
+                        },
                         "matched_lines": {
                             "type": "ARRAY",
                             "items": {"type": "INTEGER"},
@@ -154,6 +162,7 @@ def get_response_schema() -> dict[str, Any]:
                     "required": [
                         "title",
                         "severity",
+                        "anchor_lines",
                         "matched_lines",
                         "matched_keywords",
                         "explanation",
@@ -245,39 +254,233 @@ def _parse_hint_tier(raw_tier: Any, used_tiers: set[int]) -> int | None:
     return None
 
 
+_LINE_REF_RE = re.compile(
+    r"(?i:\blines?\b)\s+\d+(?:\s*(?:[-–]|(?i:\bto\b))\s*\d+)?"
+    r"(?:\s*(?:,\s*(?:(?i:\band\b)\s+|&\s+)?|\s+(?i:\band\b)\s+|\s*&\s*)"
+    r"\s*\d+(?:\s*(?:[-–]|(?i:\bto\b))\s*\d+)?)*"
+    r"|\bL\d+(?:\s*[-–]\s*L?\d+)?\b"
+)
+_LINE_RANGE_RE = re.compile(r"(\d+)\s*(?:[-–]|to)\s*L?(\d+)", re.IGNORECASE)
+_HUNK_HEADER_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$")
+
+
+def _is_non_trivial_code_line(line: str) -> bool:
+    """Return True if a code line is non-empty and not a pure comment or docstring."""
+    stripped = line.strip()
+    if not stripped:
+        return False
+    if stripped in {'"""', "'''"}:
+        return False
+    if (stripped.startswith('"""') and stripped.endswith('"""')) or (
+        stripped.startswith("'''") and stripped.endswith("'''")
+    ):
+        return False
+    if stripped.startswith("//"):
+        return False
+    if stripped.startswith("#") and not stripped.startswith(("#[", "#![")):
+        return False
+    if stripped.startswith("/*") and (stripped.endswith("*/") or "*/" not in stripped):
+        return False
+    if stripped.endswith("*/") and "/*" not in stripped:
+        return False
+    return stripped != "*" and not stripped.startswith("* ")
+
+
+def _pick_closest_line(candidates: list[int], hint_lines: list[int]) -> int:
+    """Pick the candidate line closest to hint_lines, breaking ties by line number."""
+    if not hint_lines:
+        return candidates[0]
+    return min(
+        candidates,
+        key=lambda ln: (min(abs(ln - h) for h in hint_lines), ln),
+    )
+
+
+def _match_anchor_in_code(
+    anchor: str,
+    code_lines: list[str],
+    hint_lines: list[int],
+) -> int | None:
+    """Match a non-trivial anchor string to a 1-indexed non-trivial code line."""
+    anchor_stripped = anchor.strip()
+    if not anchor_stripped or not _is_non_trivial_code_line(anchor_stripped):
+        return None
+
+    non_trivial = [
+        (ln, line)
+        for ln, line in enumerate(code_lines, start=1)
+        if _is_non_trivial_code_line(line)
+    ]
+    if not non_trivial:
+        return None
+
+    exact_matches = [ln for ln, line in non_trivial if line.strip() == anchor_stripped]
+    if exact_matches:
+        return _pick_closest_line(exact_matches, hint_lines)
+
+    norm_anchor = " ".join(anchor_stripped.split())
+    norm_matches = [
+        ln for ln, line in non_trivial if " ".join(line.split()) == norm_anchor
+    ]
+    if norm_matches:
+        return _pick_closest_line(norm_matches, hint_lines)
+
+    if len(anchor_stripped) >= 8 or len(norm_anchor) >= 8:
+        substr_matches = [
+            ln
+            for ln, line in non_trivial
+            if anchor_stripped in line.strip()
+            or norm_anchor in " ".join(line.split())
+            or (len(line.strip()) >= 8 and line.strip() in anchor_stripped)
+        ]
+        if substr_matches:
+            return _pick_closest_line(substr_matches, hint_lines)
+
+    return None
+
+
+def _resolve_lines_from_anchors(
+    anchors: list[str],
+    code_lines: list[str],
+    hint_lines: list[int],
+) -> list[int]:
+    """Resolve sorted unique 1-indexed line numbers from anchor strings."""
+    resolved: list[int] = []
+    for entry in anchors:
+        for sub_line in str(entry).splitlines():
+            matched = _match_anchor_in_code(sub_line, code_lines, hint_lines)
+            if matched is not None and matched not in resolved:
+                resolved.append(matched)
+    return sorted(resolved)
+
+
+def _extract_diff_removed_lines(diff_text: str) -> list[str]:
+    """Extract non-trivial removed lines from a unified diff."""
+    if not diff_text:
+        return []
+    removed: list[str] = []
+    for line in diff_text.splitlines():
+        if line.startswith("-") and not line.startswith("---"):
+            content = line[1:]
+            if _is_non_trivial_code_line(content):
+                removed.append(content)
+    return removed
+
+
+def _extract_hint_line_numbers(raw_lines: list[Any]) -> list[int]:
+    """Extract positive integer line hints from raw matched_lines without clamping."""
+    hints: list[int] = []
+    for ln in raw_lines:
+        if not isinstance(ln, bool) and isinstance(ln, (int, str)):
+            token = str(ln).strip()
+            if token.isdigit():
+                val = int(token)
+                if val >= 1:
+                    hints.append(val)
+    return hints
+
+
+def _filter_diff_matches_for_defect(
+    diff_matches: list[int],
+    code_lines: list[str],
+    keywords: list[str],
+    hint_lines: list[int],
+) -> list[int]:
+    """Filter multi-defect diff matches to those belonging to a single defect."""
+    clean_kws = [
+        kw.strip().lower()
+        for kw in keywords
+        if isinstance(kw, str) and len(kw.strip()) > 2
+    ]
+    if clean_kws:
+        kw_matches = [
+            ln
+            for ln in diff_matches
+            if any(kw in code_lines[ln - 1].lower() for kw in clean_kws)
+        ]
+        if kw_matches:
+            return kw_matches
+
+    if hint_lines:
+        min_dist = min(min(abs(ln - h) for h in hint_lines) for ln in diff_matches)
+        return [
+            ln
+            for ln in diff_matches
+            if min(abs(ln - h) for h in hint_lines) == min_dist
+        ]
+
+    return []
+
+
 def _resolve_valid_lines(
     item: dict[str, Any],
     code_lines: list[str],
     line_count: int,
     defect_index: int,
+    diff_removed_lines: list[str] | None = None,
+    total_defects: int = 1,
 ) -> list[int]:
-    """Resolve 1-indexed defect lines from Gemini output or keyword match."""
+    """Resolve 1-indexed defect lines using anchors, diff lines, or keywords."""
     raw_lines = item.get("matched_lines") or item.get("lines") or []
     if not isinstance(raw_lines, list):
         raw_lines = [raw_lines] if isinstance(raw_lines, (int, str)) else []
+    hint_lines = _extract_hint_line_numbers(raw_lines)
+
+    raw_anchors = (
+        item.get("anchor_lines")
+        or item.get("target_lines")
+        or item.get("code_anchors")
+        or []
+    )
+    if isinstance(raw_anchors, str):
+        raw_anchors = [raw_anchors]
+    elif not isinstance(raw_anchors, list):
+        raw_anchors = []
+
+    if raw_anchors:
+        anchor_matches = _resolve_lines_from_anchors(
+            [str(a) for a in raw_anchors if a is not None],
+            code_lines,
+            hint_lines,
+        )
+        if anchor_matches:
+            return anchor_matches
 
     valid_lines = list(
         dict.fromkeys(
-            int(str(ln).strip())
-            for ln in raw_lines
-            if not isinstance(ln, bool)
-            and isinstance(ln, (int, str))
-            and str(ln).strip().isdigit()
-            and 1 <= int(str(ln).strip()) <= line_count
+            ln
+            for ln in hint_lines
+            if 1 <= ln <= line_count and _is_non_trivial_code_line(code_lines[ln - 1])
         )
     )
 
-    if not valid_lines:
-        keywords = item.get("matched_keywords") or item.get("keywords") or []
-        if isinstance(keywords, list):
-            for ln_idx, line_str in enumerate(code_lines, start=1):
-                if any(
-                    kw.strip().lower() in line_str.lower()
-                    for kw in keywords
-                    if isinstance(kw, str) and len(kw.strip()) > 2
-                ):
-                    valid_lines.append(ln_idx)
-                    break
+    keywords = item.get("matched_keywords") or item.get("keywords") or []
+    if not isinstance(keywords, list):
+        keywords = []
+
+    if not valid_lines and diff_removed_lines:
+        diff_matches = _resolve_lines_from_anchors(
+            diff_removed_lines, code_lines, hint_lines
+        )
+        if diff_matches:
+            if total_defects == 1:
+                valid_lines = diff_matches
+            else:
+                valid_lines = _filter_diff_matches_for_defect(
+                    diff_matches, code_lines, keywords, hint_lines
+                )
+
+    if not valid_lines and keywords:
+        for ln_idx, line_str in enumerate(code_lines, start=1):
+            if not _is_non_trivial_code_line(line_str):
+                continue
+            if any(
+                kw.strip().lower() in line_str.lower()
+                for kw in keywords
+                if isinstance(kw, str) and len(kw.strip()) > 2
+            ):
+                valid_lines.append(ln_idx)
+                break
 
     if not valid_lines:
         raise GeminiSchemaError(
@@ -286,6 +489,187 @@ def _resolve_valid_lines(
         )
 
     return valid_lines
+
+
+def _format_line_reference(lines: list[int]) -> str:
+    """Format resolved 1-indexed line numbers as 'line N' or 'lines A, B'."""
+    sorted_lines = sorted(set(lines))
+    if len(sorted_lines) == 1:
+        return f"line {sorted_lines[0]}"
+    return f"lines {', '.join(str(ln) for ln in sorted_lines)}"
+
+
+def _extract_referenced_line_numbers(ref_text: str) -> set[int]:
+    """Expand a line reference substring (including ranges) into a set of ints."""
+    nums: set[int] = set()
+    remainder = ref_text
+
+    def _collect_range(match: re.Match[str]) -> str:
+        start = int(match.group(1))
+        end = int(match.group(2))
+        if start <= end and end - start <= 1000:
+            nums.update(range(start, end + 1))
+        else:
+            nums.update((start, end))
+        return " "
+
+    remainder = _LINE_RANGE_RE.sub(_collect_range, remainder)
+    for token in re.findall(r"\d+", remainder):
+        nums.add(int(token))
+    return nums
+
+
+def _align_tier3_hint(text: str, all_resolved_lines: list[int]) -> str:
+    """Replace stale explicit line references in Tier 3 hints with resolved lines."""
+    if not text or not all_resolved_lines:
+        return text
+
+    matches = list(_LINE_REF_RE.finditer(text))
+    if not matches:
+        return text
+
+    resolved_set = set(all_resolved_lines)
+    match_sets = [_extract_referenced_line_numbers(m.group(0)) for m in matches]
+    all_referenced = set().union(*match_sets)
+    if all_referenced == resolved_set:
+        return text
+
+    formatted = _format_line_reference(all_resolved_lines)
+    replace_flags = [
+        len(matches) == 1 or not ref_set.issubset(resolved_set)
+        for ref_set in match_sets
+    ]
+    if not any(replace_flags):
+        replace_flags = [True] * len(matches)
+
+    parts: list[str] = []
+    cursor = 0
+    for match, should_replace in zip(matches, replace_flags, strict=True):
+        parts.append(text[cursor : match.start()])
+        parts.append(formatted if should_replace else match.group(0))
+        cursor = match.end()
+    parts.append(text[cursor:])
+    return "".join(parts)
+
+
+def _find_sequence_in_code(
+    needle: list[str],
+    code_lines: list[str],
+    old_start: int,
+) -> int | None:
+    """Find 1-indexed start line where needle lines match contiguously in code_lines."""
+    if not needle or len(needle) > len(code_lines):
+        return None
+
+    span = len(needle)
+    limit = len(code_lines) - span + 1
+
+    exact_hits = [
+        idx + 1
+        for idx in range(limit)
+        if all(
+            code_lines[idx + offset].strip() == needle[offset].strip()
+            for offset in range(span)
+        )
+    ]
+    if exact_hits:
+        return _pick_closest_line(exact_hits, [old_start])
+
+    norm_needle = [" ".join(line.split()) for line in needle]
+    norm_hits = [
+        idx + 1
+        for idx in range(limit)
+        if all(
+            " ".join(code_lines[idx + offset].split()) == norm_needle[offset]
+            for offset in range(span)
+        )
+    ]
+    if norm_hits:
+        return _pick_closest_line(norm_hits, [old_start])
+
+    return None
+
+
+def _find_hunk_match_start(
+    old_lines: list[str],
+    removed_lines: list[str],
+    code_lines: list[str],
+    old_start: int,
+) -> int | None:
+    """Locate actual 1-indexed start line for a diff hunk in code_lines."""
+    seq_match = _find_sequence_in_code(old_lines, code_lines, old_start)
+    if seq_match is not None:
+        return seq_match
+
+    if not removed_lines:
+        return None
+
+    rem_seq_match = _find_sequence_in_code(removed_lines, code_lines, old_start)
+    if rem_seq_match is not None:
+        return rem_seq_match
+
+    matched_positions = [
+        pos
+        for rem in removed_lines
+        if (pos := _match_anchor_in_code(rem, code_lines, [old_start])) is not None
+    ]
+    if matched_positions:
+        return min(matched_positions)
+
+    return None
+
+
+def _realign_diff_hunk_headers(diff_text: str, code_lines: list[str]) -> str:
+    """Rewrite drifted @@ hunk headers when old-side lines match elsewhere in code."""
+    if not diff_text or not code_lines or "@@" not in diff_text:
+        return diff_text
+
+    diff_lines = diff_text.splitlines()
+    output_lines: list[str] = []
+    idx = 0
+
+    while idx < len(diff_lines):
+        line = diff_lines[idx]
+        header_match = _HUNK_HEADER_RE.match(line)
+        if not header_match:
+            output_lines.append(line)
+            idx += 1
+            continue
+
+        old_start = int(header_match.group(1))
+        old_count = int(header_match.group(2) or "1")
+        new_start = int(header_match.group(3))
+        trailing = header_match.group(5)
+
+        hunk_body: list[str] = []
+        idx += 1
+        while idx < len(diff_lines) and not _HUNK_HEADER_RE.match(diff_lines[idx]):
+            hunk_body.append(diff_lines[idx])
+            idx += 1
+
+        old_lines = [ln[1:] for ln in hunk_body if ln.startswith((" ", "-"))]
+        removed_lines = [ln[1:] for ln in hunk_body if ln.startswith("-")]
+        new_lines = [ln[1:] for ln in hunk_body if ln.startswith((" ", "+"))]
+
+        match_start = _find_hunk_match_start(
+            old_lines, removed_lines, code_lines, old_start
+        )
+        window_end = old_start + max(old_count, 1) - 1
+        if match_start is not None and not (old_start <= match_start <= window_end):
+            delta = new_start - old_start
+            actual_old_start = match_start
+            actual_old_count = len(old_lines)
+            actual_new_start = max(1, match_start + delta)
+            actual_new_count = len(new_lines)
+            line = (
+                f"@@ -{actual_old_start},{actual_old_count} "
+                f"+{actual_new_start},{actual_new_count} @@{trailing}"
+            )
+
+        output_lines.append(line)
+        output_lines.extend(hunk_body)
+
+    return "\n".join(output_lines)
 
 
 def sanitize_generated_challenge(
@@ -327,12 +711,20 @@ def sanitize_generated_challenge(
     if not isinstance(raw_expected, list) or len(raw_expected) == 0:
         raise GeminiSchemaError("Generated challenge missing expected_issues")
 
-    expected_issues: list[DefectCriterion] = []
-    for idx, item in enumerate(raw_expected, start=1):
-        if not isinstance(item, dict):
-            continue
+    diff_removed_lines = _extract_diff_removed_lines(recommended_fix_diff)
+    raw_issue_dicts = [item for item in raw_expected if isinstance(item, dict)]
+    total_defects = len(raw_issue_dicts)
 
-        valid_lines = _resolve_valid_lines(item, code_lines, line_count, idx)
+    expected_issues: list[DefectCriterion] = []
+    for idx, item in enumerate(raw_issue_dicts, start=1):
+        valid_lines = _resolve_valid_lines(
+            item,
+            code_lines,
+            line_count,
+            idx,
+            diff_removed_lines=diff_removed_lines,
+            total_defects=total_defects,
+        )
 
         raw_keywords = item.get("matched_keywords") or item.get("keywords") or []
         keywords = (
@@ -373,6 +765,13 @@ def sanitize_generated_challenge(
     if not expected_issues:
         raise GeminiSchemaError("Failed to parse valid defect criteria")
 
+    if recommended_fix_diff:
+        recommended_fix_diff = _realign_diff_hunk_headers(
+            recommended_fix_diff, code_lines
+        )
+
+    all_resolved_lines = sorted({ln for issue in expected_issues for ln in issue.lines})
+
     raw_hints = raw_data.get("hints") or []
     hints_by_tier: dict[int, HintResponse] = {}
     if isinstance(raw_hints, list):
@@ -383,6 +782,8 @@ def sanitize_generated_challenge(
             if tier is None or tier in hints_by_tier:
                 continue
             text = str(h.get("text") or h.get("hint") or "").strip()
+            if tier == 3 and text:
+                text = _align_tier3_hint(text, all_resolved_lines)
             label = str(h.get("label") or DEFAULT_TIER_LABELS.get(tier, f"Tier {tier}"))
             if text:
                 hints_by_tier[tier] = HintResponse(
@@ -397,7 +798,10 @@ def sanitize_generated_challenge(
             "state in this snippet."
         ),
         2: f"Examine potential {expected_issues[0].title.lower()} patterns.",
-        3: f"Focus on lines {expected_issues[0].lines} for the primary defect.",
+        3: (
+            f"Focus on {_format_line_reference(expected_issues[0].lines)} "
+            "for the primary defect."
+        ),
     }
     for tier in (1, 2, 3):
         if tier not in hints_by_tier:
