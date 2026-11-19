@@ -66,35 +66,11 @@ describe("Lighthouse Accessibility & Best Practices Improvements", () => {
     )
   })
 
-  it("fetchCurrentUser queries /api/auth/me even when localStorage is empty and returns null on 401", async () => {
-    vi.mocked(apiClient.get).mockRejectedValueOnce({
-      response: { status: 401 },
-    })
-
+  it("fetchCurrentUser returns null without making network requests when no user is stored in localStorage", async () => {
     const user = await fetchCurrentUser()
 
-    expect(apiClient.get).toHaveBeenCalledWith("/api/auth/me")
     expect(user).toBeNull()
-  })
-
-  it("fetchCurrentUser hydrates localStorage from /api/auth/me when cookie session exists without stored user", async () => {
-    const serverUser = {
-      id: 456,
-      username: "cookieuser",
-      email: "cookie@example.com",
-    }
-
-    vi.mocked(apiClient.get).mockResolvedValueOnce({
-      data: serverUser,
-    })
-
-    const user = await fetchCurrentUser()
-
-    expect(apiClient.get).toHaveBeenCalledWith("/api/auth/me")
-    expect(user).toEqual(serverUser)
-    expect(
-      JSON.parse(localStorage.getItem("diffly_auth_user") ?? "null")
-    ).toEqual(serverUser)
+    expect(apiClient.get).not.toHaveBeenCalled()
   })
 
   it("fetchCurrentUser revalidates with server when a stored user session exists in localStorage", async () => {

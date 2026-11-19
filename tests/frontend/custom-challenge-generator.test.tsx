@@ -1,14 +1,12 @@
 import * as React from "react"
 import { cleanup, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
-import { AxiosError } from "axios"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { CustomChallengeButton } from "@/components/challenges/custom-challenge-button"
 import { CustomChallengeModal } from "@/components/challenges/generator-modal/custom-challenge-modal"
 import {
   getStoredGeminiKey,
   setStoredGeminiKey,
-  type QuotaSyncState,
 } from "@/hooks/use-custom-challenges"
 import { useCustomChallengeModalStore } from "@/stores/custom-challenge-modal-store"
 import type { ChallengeSummary } from "@/types/challenge"
@@ -32,8 +30,6 @@ let mockQuotaLimit = 5
 let mockQuotaRemaining = 5
 let mockIsQuotaFull = false
 let mockIsLoading = false
-let mockQuotaSyncState: QuotaSyncState = "idle"
-const mockResetQuotaSyncState = vi.fn()
 
 vi.mock("@/hooks/use-custom-challenges", async () => {
   const actual = await vi.importActual<
@@ -48,9 +44,6 @@ vi.mock("@/hooks/use-custom-challenges", async () => {
       quotaRemaining: mockQuotaRemaining,
       isQuotaFull: mockIsQuotaFull,
       isLoading: mockIsLoading,
-      quotaSyncState: mockQuotaSyncState,
-      isSyncingQuota: mockQuotaSyncState === "syncing",
-      resetQuotaSyncState: mockResetQuotaSyncState,
       deleteCustomChallenge: mockDeleteCustomChallenge,
       generateCustomChallenge: mockGenerateCustomChallenge,
       mutate: vi.fn(),
@@ -90,8 +83,6 @@ describe("Custom Challenge Generator & Quota Flow", () => {
     mockQuotaRemaining = 4
     mockIsQuotaFull = false
     mockIsLoading = false
-    mockQuotaSyncState = "idle"
-    mockResetQuotaSyncState.mockReset()
   })
 
   afterEach(() => {
@@ -308,33 +299,6 @@ describe("Custom Challenge Generator & Quota Flow", () => {
       expect(
         screen.getByText(/gemini api key is invalid or unauthorized/i)
       ).toBeInTheDocument()
-    })
-
-    it("surfaces timeout message and quota-sync badge when generation times out", async () => {
-      const user = userEvent.setup()
-      mockQuotaSyncState = "synced"
-      mockGenerateCustomChallenge.mockRejectedValueOnce(
-        new AxiosError("timeout of 60000ms exceeded", "ECONNABORTED")
-      )
-
-      render(<CustomChallengeModal open={true} />)
-
-      const topicInput = await screen.findByTestId("generator-topic-input")
-      const keyInput = screen.getByTestId("generator-api-key-input")
-
-      await user.type(topicInput, "FastAPI SSRF bypass")
-      await user.type(keyInput, "AIzaSyValidKey")
-
-      const submitBtn = screen.getByTestId("generate-challenge-submit-btn")
-      await user.click(submitBtn)
-
-      const errorBanner = await screen.findByTestId("generator-error-banner")
-      expect(errorBanner).toHaveTextContent(
-        /timed out waiting for gemini.*synced/i
-      )
-      expect(screen.getByTestId("quota-sync-status-badge")).toHaveTextContent(
-        "Quota synced"
-      )
     })
   })
 })

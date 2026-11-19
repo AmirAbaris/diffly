@@ -1,6 +1,5 @@
 import * as React from "react"
 import { Badge } from "@/components/ui/badge"
-import { keyByValue } from "@/lib/unique-keys"
 import type { MissedIssue } from "@/types/challenge"
 import { FormattedInlineText, SeverityBadge } from "./score-helpers"
 
@@ -34,14 +33,12 @@ export function MissedDefectsSection({ issues }: { issues: MissedIssue[] }) {
         </div>
       ) : (
         <div className="flex flex-col gap-2.5">
-          {keyByValue(
-            issues,
-            (issue) => issue.id || issue.title || "missed-issue"
-          ).map(({ key: issueKey, item: issue }) => {
+          {issues.map((issue) => {
             const expectedLinesStr =
               issue.expected_lines && issue.expected_lines.length > 0
                 ? issue.expected_lines.join(", ")
                 : null
+            const issueKey = issue.id || issue.title || "missed-issue"
 
             return (
               <div
@@ -76,12 +73,9 @@ export function MissedDefectsSection({ issues }: { issues: MissedIssue[] }) {
                         <span className="text-xs text-muted-foreground">
                           Overlooked concepts:
                         </span>
-                        {keyByValue(
-                          issue.missing_keywords,
-                          (kw) => `${issueKey}-kw-${kw}`
-                        ).map(({ key: kwKey, item: kw }) => (
+                        {issue.missing_keywords.map((kw) => (
                           <Badge
-                            key={kwKey}
+                            key={kw}
                             variant="outline"
                             size="sm"
                             className="font-mono"

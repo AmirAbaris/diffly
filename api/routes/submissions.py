@@ -1,11 +1,11 @@
 """Submission and review evaluation API routes."""
 
 from datetime import datetime
-from typing import Annotated, Any
+from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlmodel import func, select
+from sqlmodel import select
 
 from api.deps import ActorDep, SessionDep
 from api.routes.challenges import get_challenge_or_404
@@ -13,11 +13,7 @@ from backend.core.guest_session import mint_guest_session, write_guest_cookie
 from backend.core.rate_limit import rate_limit
 from backend.models.challenge import FlaggedLines
 from backend.models.submission import Submission
-from backend.services.evaluation_service import (
-    MAX_BLIND_ATTEMPTS,
-    PASS_SCORE_THRESHOLD,
-    evaluate_review,
-)
+from backend.services.evaluation_service import evaluate_review
 from backend.services.ownership import Actor, submission_owner_filter
 
 
@@ -36,10 +32,6 @@ class ReviewSubmissionRequest(BaseModel):
         min_length=5,
         max_length=20000,
         description="Written review critique explaining the defect",
-    )
-    reveal: bool = Field(
-        default=False,
-        description="Explicitly reveal missed issue details on this submission",
     )
 
     @field_validator("comments")
@@ -94,26 +86,16 @@ def submit_review(
     response: Response,
     session: SessionDep,
     actor: ActorDep,
-    reveal: Annotated[
-        bool,
-        Query(description="Explicitly reveal missed issue details"),
-    ] = False,
 ) -> ReviewSubmissionResponse:
     # Authorize challenge access before minting a guest cookie so 404s do not mint
     challenge = get_challenge_or_404(identifier, session, actor=actor)
 
     snippet_line_count = len(challenge.code_snippet.splitlines())
-    if snippet_line_count == 0:
-        if payload.flagged_lines:
+    if payload.flagged_lines:
+        if snippet_line_count == 0:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="Challenge has no code lines to flag",
-            )
-    else:
-        if not payload.flagged_lines:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail="At least one line must be flagged",
             )
         if any(line > snippet_line_count for line in payload.flagged_lines):
             raise HTTPException(
@@ -126,22 +108,10 @@ def submit_review(
         write_guest_cookie(response, guest)
         actor = Actor.resolve(None, guest)
 
-    owner_filter = submission_owner_filter(actor)
-    prior_attempts = 0
-    if owner_filter is not None and challenge.id is not None:
-        prior_attempts = session.exec(
-            select(func.count(Submission.id)).where(
-                Submission.challenge_id == challenge.id,
-                owner_filter,
-            )
-        ).one()
-
     eval_result = evaluate_review(
         challenge=challenge,
         flagged_lines=payload.flagged_lines,
         user_comments=payload.comments,
-        attempt_number=prior_attempts + 1,
-        reveal_solution=reveal or payload.reveal,
     )
 
     detected_issues_data = [issue.model_dump() for issue in eval_result.detected_issues]
@@ -176,23 +146,6 @@ def submit_review(
     )
 
 
-def _gate_history_missed_issues(missed_issues: list[Any]) -> list[Any]:
-    gated: list[Any] = []
-    for item in missed_issues:
-        if isinstance(item, dict):
-            gated.append(
-                {
-                    **item,
-                    "expected_lines": [],
-                    "missing_keywords": [],
-                    "explanation": "",
-                }
-            )
-        else:
-            gated.append(item)
-    return gated
-
-
 @router.get(
     "/{identifier}/submissions",
     response_model=list[SubmissionHistoryResponse],
@@ -201,10 +154,6 @@ def get_submission_history(
     identifier: str,
     session: SessionDep,
     actor: ActorDep,
-    reveal: Annotated[
-        bool,
-        Query(description="Explicitly reveal missed issue details"),
-    ] = False,
 ) -> list[SubmissionHistoryResponse]:
     challenge = get_challenge_or_404(identifier, session, actor=actor)
 
@@ -221,17 +170,9 @@ def get_submission_history(
         .order_by(Submission.created_at.asc(), Submission.id.asc())
     )
     submissions = session.exec(statement).all()
-    has_unlocked = (
-        reveal
-        or len(submissions) >= MAX_BLIND_ATTEMPTS
-        or any(sub.score >= PASS_SCORE_THRESHOLD for sub in submissions)
-    )
 
     history_items: list[SubmissionHistoryResponse] = []
     for index, sub in enumerate(submissions, start=1):
-        missed = sub.get_missed_issues()
-        if not has_unlocked:
-            missed = _gate_history_missed_issues(missed)
         history_items.append(
             SubmissionHistoryResponse(
                 attempt_number=index,
@@ -243,7 +184,7 @@ def get_submission_history(
                 score=sub.score,
                 feedback=sub.feedback,
                 detected_issues=sub.get_detected_issues(),
-                missed_issues=missed,
+                missed_issues=sub.get_missed_issues(),
                 created_at=sub.created_at,
             )
         )

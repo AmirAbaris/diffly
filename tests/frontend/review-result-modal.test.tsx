@@ -189,36 +189,4 @@ describe("ReviewResultModal Component", () => {
       await screen.findByTestId("canonical-solution-panel")
     ).toBeInTheDocument()
   })
-
-  it("renders gated missed issues gracefully without spoiler fields", async () => {
-    const gatedResult: ReviewSubmissionResponse = {
-      ...sampleResult,
-      score: 40,
-      missed_issues: [
-        {
-          id: "warn-input",
-          title: "Lack of input validation",
-          severity: "medium",
-          expected_lines: [],
-          missing_keywords: [],
-          explanation: "",
-        },
-      ],
-    }
-
-    render(
-      <ReviewResultModal
-        open={true}
-        onOpenChange={vi.fn()}
-        result={gatedResult}
-        challengeSlug="sample-challenge"
-      />
-    )
-
-    expect(await screen.findByTestId("review-result-modal")).toBeInTheDocument()
-    expect(screen.getByText("Lack of input validation")).toBeInTheDocument()
-    expect(screen.queryByText(/Expected line/i)).not.toBeInTheDocument()
-    expect(screen.queryByText(/Overlooked concepts/i)).not.toBeInTheDocument()
-    expect(screen.queryByText(/Hint:/i)).not.toBeInTheDocument()
-  })
 })

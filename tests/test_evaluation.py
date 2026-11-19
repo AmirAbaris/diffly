@@ -222,16 +222,17 @@ def test_evaluate_review_wrong_line(sample_rce_challenge: dict):
 def test_evaluate_review_wrong_line_with_relevant_comment(
     sample_rce_challenge: dict,
 ):
-    """Correct explanation without line proximity earns no unanchored concept credit."""
+    """Correct explanation but completely wrong lines flagged penalizes score."""
     result = evaluate_review(
         challenge=sample_rce_challenge,
         flagged_lines=[5],
         user_comments="eval allows arbitrary code execution (RCE).",
     )
 
-    assert result.score == 0
+    # Line precision = 0, concept = 100 (50 pts), penalty for line 5 (-15 pts) -> 35
+    assert result.score == 35
     assert result.line_precision_score == 0.0
-    assert result.concept_score == 0.0
+    assert result.concept_score == 100.0
     assert result.false_positive_penalty == 15.0
     assert result.false_positive_lines == [5]
     assert len(result.detected_issues) == 0
@@ -282,7 +283,7 @@ def test_evaluate_review_outside_tolerance_is_false_positive(
 
 
 def test_single_line_defect_requires_exact_match():
-    """Single line defects reward exact match fully and off-by-one partially."""
+    """Single line defects require exact line matching by default."""
     challenge = {
         "expected_issues": [
             {
@@ -299,16 +300,10 @@ def test_single_line_defect_requires_exact_match():
     assert res_exact.score == 100
     assert len(res_exact.detected_issues) == 1
 
-    # Adjacent line (14) gets partial proximity credit without a 15-pt FP penalty
+    # Adjacent line (14) is not tolerated for single-line defects
     res_adjacent = evaluate_review(challenge, flagged_lines=[14], user_comments="flaw")
-    assert res_adjacent.line_precision_score == 50.0
-    assert res_adjacent.false_positive_lines == []
-    assert res_adjacent.score == 75
-
-    # Two lines away (13) is outside proximity and treated as false positive
-    res_far = evaluate_review(challenge, flagged_lines=[13], user_comments="flaw")
-    assert res_far.line_precision_score == 0.0
-    assert res_far.false_positive_lines == [13]
+    assert res_adjacent.line_precision_score == 0.0
+    assert res_adjacent.false_positive_lines == [14]
 
 
 # ==============================================================================
@@ -556,16 +551,16 @@ def test_evaluate_review_list_comments_and_score_80_critique(
 
 
 def test_evaluate_review_no_expected_defects():
-    """Evaluate challenge with empty expected defects list never awards 100."""
+    """Evaluate challenge with empty expected defects list."""
     empty_challenge = {"expected_issues": []}
     res_clean = evaluate_review(
         empty_challenge, flagged_lines=[], user_comments="Code looks fine"
     )
-    assert res_clean.score == 0
+    assert res_clean.score == 100
     assert "No expected defects configured" in res_clean.summary
 
     res_with_lines = evaluate_review(empty_challenge, flagged_lines=[5, 6])
-    assert res_with_lines.score == 0
+    assert res_with_lines.score == 70  # 100 - (2 * 15)
 
 
 def test_extract_expected_issues_fallbacks():

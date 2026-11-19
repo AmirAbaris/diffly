@@ -220,14 +220,6 @@ def test_submit_review_validation_errors(client: TestClient, session: Session):
     )
     assert res_str.status_code == 422
 
-    # Missing flagged lines on non-empty snippet
-    res_no_lines = client.post(
-        f"/api/challenges/{ch.slug}/review",
-        json={"flagged_lines": [], "comments": "Valid review comments."},
-    )
-    assert res_no_lines.status_code == 422
-    assert res_no_lines.json()["detail"] == "At least one line must be flagged"
-
 
 def test_get_submissions_history_guest(client: TestClient, session: Session):
     """GET /submissions filters attempts by guest cookie and returns descending."""
@@ -403,67 +395,3 @@ def test_review_evaluation_high_score_and_detected_issues(
     assert len(data["detected_issues"]) > 0
     assert data["detected_issues"][0]["id"] == "crit-rce-eval"
     assert len(data["missed_issues"]) == 0
-
-
-def test_submit_review_gates_spoilers_until_exhausted_or_revealed(
-    client: TestClient, session: Session
-):
-    """Attempts 1-2 hide spoilers; attempt 3 and reveal=true unlock them."""
-    challenges = seed_challenges(session)
-    ch = next(c for c in challenges if c.slug == "agent-unsanitized-exec")
-
-    stuffing_payload = {
-        "flagged_lines": [1],
-        "comments": "eval exec rce remote code execution builtins ast arbitrary code",
-    }
-
-    # Attempt 1: keyword stuffing scores 0 and missed_issues details stay hidden
-    res1 = client.post(f"/api/challenges/{ch.slug}/review", json=stuffing_payload)
-    assert res1.status_code == 200
-    d1 = res1.json()
-    assert d1["score"] == 0
-    assert len(d1["missed_issues"]) >= 1
-    assert d1["missed_issues"][0]["expected_lines"] == []
-    assert d1["missed_issues"][0]["missing_keywords"] == []
-    assert d1["missed_issues"][0]["explanation"] == ""
-    assert "Expected line" not in d1["feedback"]
-    assert "Root Cause:" not in d1["feedback"]
-
-    # History stays gated before passing or exhausting attempts
-    hist1 = client.get(f"/api/challenges/{ch.slug}/submissions")
-    assert hist1.status_code == 200
-    assert hist1.json()[0]["missed_issues"][0]["expected_lines"] == []
-
-    # Attempt 2: still gated
-    res2 = client.post(f"/api/challenges/{ch.slug}/review", json=stuffing_payload)
-    assert res2.status_code == 200
-    d2 = res2.json()
-    assert d2["missed_issues"][0]["expected_lines"] == []
-    assert d2["missed_issues"][0]["explanation"] == ""
-
-    # Attempt 3: exhausted attempts unlock missed_issues spoilers
-    res3 = client.post(f"/api/challenges/{ch.slug}/review", json=stuffing_payload)
-    assert res3.status_code == 200
-    d3 = res3.json()
-    assert len(d3["missed_issues"][0]["expected_lines"]) > 0
-    assert len(d3["missed_issues"][0]["explanation"]) > 0
-    assert "Expected line(s):" in d3["feedback"]
-
-
-def test_submit_review_explicit_reveal_unlocks_missed_issues(
-    client_factory, session: Session
-):
-    """Passing ?reveal=true unlocks missed_issues details on the first attempt."""
-    challenges = seed_challenges(session)
-    ch = next(c for c in challenges if c.slug == "agent-unsanitized-exec")
-    fresh_client = client_factory()
-
-    res = fresh_client.post(
-        f"/api/challenges/{ch.slug}/review?reveal=true",
-        json={"flagged_lines": [1], "comments": "First blind guess on wrong line."},
-    )
-    assert res.status_code == 200
-    data = res.json()
-    assert data["score"] == 0
-    assert len(data["missed_issues"][0]["expected_lines"]) > 0
-    assert len(data["missed_issues"][0]["explanation"]) > 0

@@ -1,7 +1,6 @@
 "use client"
 
 import * as React from "react"
-import axios from "axios"
 import useSWR, { mutate as globalMutate } from "swr"
 import { apiClient } from "@/lib/axios"
 import type {
@@ -12,22 +11,6 @@ import type {
 
 export const CUSTOM_CHALLENGES_SWR_KEY = "/api/challenges/custom"
 export const GEMINI_API_KEY_STORAGE_KEY = "diffly_gemini_key"
-export const CUSTOM_CHALLENGE_GENERATE_TIMEOUT_MS = 60_000
-
-export type QuotaSyncState = "idle" | "syncing" | "synced" | "error"
-
-export function isRequestTimeoutError(err: unknown): boolean {
-  if (!axios.isAxiosError(err)) {
-    return false
-  }
-  if (err.code === "ECONNABORTED" || err.code === "ETIMEDOUT") {
-    return true
-  }
-  if (err.response?.status === 408 || err.response?.status === 504) {
-    return true
-  }
-  return err.message.toLowerCase().includes("timeout")
-}
 
 export function getStoredGeminiKey(): string {
   if (typeof window === "undefined") {
@@ -56,8 +39,6 @@ export function setStoredGeminiKey(key: string, remember: boolean): void {
 export function useCustomChallenges() {
   const { data, error, isLoading, isValidating, mutate } =
     useSWR<CustomChallengesListResponse>(CUSTOM_CHALLENGES_SWR_KEY)
-  const [quotaSyncState, setQuotaSyncState] =
-    React.useState<QuotaSyncState>("idle")
 
   const customChallenges = React.useMemo(() => data?.items ?? [], [data])
   const total = data?.total ?? customChallenges.length
@@ -65,10 +46,6 @@ export function useCustomChallenges() {
   const quotaRemaining =
     data?.quota_remaining ?? Math.max(0, quotaLimit - total)
   const isQuotaFull = total >= quotaLimit
-
-  const resetQuotaSyncState = React.useCallback(() => {
-    setQuotaSyncState("idle")
-  }, [])
 
   const deleteCustomChallenge = React.useCallback(
     async (identifier: string | number) => {
@@ -88,33 +65,18 @@ export function useCustomChallenges() {
       apiKey: string
     ): Promise<CustomChallengeResponse> => {
       const trimmedKey = apiKey.trim()
-      setQuotaSyncState("idle")
-      try {
-        const response = await apiClient.post<CustomChallengeResponse>(
-          "/api/challenges/generate-custom",
-          payload,
-          {
-            timeout: CUSTOM_CHALLENGE_GENERATE_TIMEOUT_MS,
-            headers: {
-              "X-Gemini-Key": trimmedKey,
-            },
-          }
-        )
-        await mutate()
-        void globalMutate("/api/challenges")
-        return response.data
-      } catch (err: unknown) {
-        if (isRequestTimeoutError(err)) {
-          setQuotaSyncState("syncing")
-          try {
-            await Promise.all([mutate(), globalMutate("/api/challenges")])
-            setQuotaSyncState("synced")
-          } catch {
-            setQuotaSyncState("error")
-          }
+      const response = await apiClient.post<CustomChallengeResponse>(
+        "/api/challenges/generate-custom",
+        payload,
+        {
+          headers: {
+            "X-Gemini-Key": trimmedKey,
+          },
         }
-        throw err
-      }
+      )
+      await mutate()
+      void globalMutate("/api/challenges")
+      return response.data
     },
     [mutate]
   )
@@ -127,9 +89,6 @@ export function useCustomChallenges() {
     isQuotaFull,
     isLoading,
     isValidating,
-    quotaSyncState,
-    isSyncingQuota: quotaSyncState === "syncing",
-    resetQuotaSyncState,
     error,
     mutate,
     deleteCustomChallenge,

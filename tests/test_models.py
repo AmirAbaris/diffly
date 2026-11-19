@@ -129,51 +129,10 @@ def test_challenge_enums_case_insensitivity():
     assert Difficulty("hard") == Difficulty.HARD
     assert Category("agent-antipaths") == Category.AGENT_ANTIPATHS
     assert Category("security") == Category.SECURITY
-    assert Category("  performance  ") == Category.PERFORMANCE
-    assert Category("perf") == Category.PERFORMANCE
     assert Language("python") == Language.PYTHON
     assert Language("TYPESCRIPT") == Language.TYPESCRIPT
     assert Language("java") == Language.JAVA
     assert Language("JAVA") == Language.JAVA
-
-
-def test_defect_criterion_guards_against_none_values():
-    defect = DefectCriterion.model_validate(
-        {
-            "id": None,
-            "title": None,
-            "severity": None,
-            "line": None,
-            "matched_lines": None,
-            "matched_keywords": None,
-            "lines": None,
-            "keywords": None,
-            "explanation": None,
-            "defect": None,
-        }
-    )
-    assert defect.id == "1"
-    assert defect.title == ""
-    assert defect.severity == "medium"
-    assert defect.lines == []
-    assert defect.keywords == []
-    assert defect.explanation == ""
-
-    partial = DefectCriterion.model_validate(
-        {
-            "matched_lines": [2, None, 5],
-            "matched_keywords": ["sql", None, "injection"],
-        }
-    )
-    assert partial.lines == [2, 5]
-    assert partial.keywords == ["sql", "injection"]
-    assert partial.id == "2"
-
-    with pytest.raises(ValidationError):
-        DefectCriterion.model_validate({"line": True})
-
-    with pytest.raises(ValidationError):
-        DefectCriterion.model_validate({"matched_lines": "not-a-list"})
 
 
 def test_submission_model_and_validation():

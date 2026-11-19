@@ -17,11 +17,7 @@ import {
   GeneratorForm,
   type GeneratorFormValues,
 } from "@/components/challenges/generator-modal/generator-form"
-import {
-  isRequestTimeoutError,
-  useCustomChallenges,
-  type QuotaSyncState,
-} from "@/hooks/use-custom-challenges"
+import { useCustomChallenges } from "@/hooks/use-custom-challenges"
 import { toast } from "@/hooks/use-toast"
 import {
   useCustomChallengeModalStore,
@@ -40,9 +36,6 @@ export interface CustomChallengeModalProps {
 }
 
 function resolveGenerationErrorMessage(err: unknown): string {
-  if (isRequestTimeoutError(err)) {
-    return "Generation timed out waiting for Gemini. Your quota and custom library have been synced — check Manage Library in case it finished on the server."
-  }
   if (axios.isAxiosError(err)) {
     const detail = err.response?.data?.detail
     if (typeof detail === "string") {
@@ -61,15 +54,6 @@ function resolveGenerationErrorMessage(err: unknown): string {
     return err.message
   }
   return "Failed to generate challenge. Please check your API key and try again."
-}
-
-const QUOTA_SYNC_BADGE_MAP: Record<
-  Exclude<QuotaSyncState, "idle">,
-  { variant: "info" | "success" | "warning"; label: string }
-> = {
-  syncing: { variant: "info", label: "Syncing quota…" },
-  synced: { variant: "success", label: "Quota synced" },
-  error: { variant: "warning", label: "Quota sync failed" },
 }
 
 export function CustomChallengeModal({
@@ -103,14 +87,9 @@ export function CustomChallengeModal({
     quotaLimit,
     isQuotaFull,
     isLoading,
-    quotaSyncState = "idle",
-    resetQuotaSyncState,
     deleteCustomChallenge,
     generateCustomChallenge,
   } = useCustomChallenges()
-
-  const quotaSyncBadge =
-    quotaSyncState !== "idle" ? QUOTA_SYNC_BADGE_MAP[quotaSyncState] : null
 
   const handleOpenChange = (newOpen: boolean) => {
     if (isGenerating) {
@@ -118,7 +97,6 @@ export function CustomChallengeModal({
     }
     setTabOverride(null)
     setLifecycle({ status: "idle" })
-    resetQuotaSyncState?.()
     if (isControlled) {
       onOpenChange?.(newOpen)
     } else {
@@ -183,14 +161,6 @@ export function CustomChallengeModal({
             >
               {total}/{quotaLimit} Used
             </Badge>
-            {quotaSyncBadge && (
-              <Badge
-                variant={quotaSyncBadge.variant}
-                data-testid="quota-sync-status-badge"
-              >
-                {quotaSyncBadge.label}
-              </Badge>
-            )}
           </div>
           <DialogDescription className="text-xs text-muted-foreground">
             Generate custom code review scenarios powered by Google Gemini
@@ -204,7 +174,6 @@ export function CustomChallengeModal({
             if (isGenerating) return
             setTabOverride(val as CustomChallengeTab)
             setLifecycle({ status: "idle" })
-            resetQuotaSyncState?.()
           }}
           className="w-full"
         >

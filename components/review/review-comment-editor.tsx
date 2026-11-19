@@ -6,10 +6,6 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { MarkdownPreview } from "@/components/review/markdown-preview"
-import {
-  MIN_REVIEW_COMMENT_CHARS,
-  validateReviewSubmission,
-} from "@/lib/review-validation"
 import { cn } from "@/lib/utils"
 
 export interface ReviewCommentEditorProps {
@@ -173,9 +169,7 @@ function EditorToolbar({
 interface EditorFooterProps {
   wordCount: number
   charCount: number
-  trimmedLength: number
   minCharacters: number
-  hasLines: boolean
   isMinLengthMet: boolean
   canSubmit: boolean
   isSubmitting: boolean
@@ -185,21 +179,12 @@ interface EditorFooterProps {
 function EditorFooter({
   wordCount,
   charCount,
-  trimmedLength,
   minCharacters,
-  hasLines,
   isMinLengthMet,
   canSubmit,
   isSubmitting,
   onSubmitReview,
 }: EditorFooterProps) {
-  const isValidationMet = isMinLengthMet && hasLines
-  const statusLabel = !isMinLengthMet
-    ? `${trimmedLength}/${minCharacters} chars required`
-    : hasLines
-      ? "Critique valid"
-      : "Flag at least 1 line"
-
   return (
     <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-xs">
       <div className="flex items-center gap-2 text-muted-foreground tabular-nums">
@@ -212,12 +197,14 @@ function EditorFooter({
           data-testid="validation-indicator"
           className={cn(
             "font-medium",
-            isValidationMet
+            isMinLengthMet
               ? "text-emerald-600 dark:text-emerald-400"
               : "text-amber-600 dark:text-amber-400"
           )}
         >
-          {statusLabel}
+          {isMinLengthMet
+            ? "Critique valid"
+            : `${charCount}/${minCharacters} chars required`}
         </span>
       </div>
 
@@ -243,7 +230,7 @@ export function ReviewCommentEditor({
   onOpenFlagGuide,
   comment,
   onChangeComment,
-  minCharacters = MIN_REVIEW_COMMENT_CHARS,
+  minCharacters = 30,
   placeholder = "Explain what vulnerability or antipattern is present, what risk it poses, and how to fix it…",
   disabled = false,
   readOnly = false,
@@ -263,13 +250,15 @@ export function ReviewCommentEditor({
     return trimmed ? trimmed.split(/\s+/).length : 0
   }, [comment])
 
-  const validation = validateReviewSubmission(
-    flaggedLines,
-    comment,
-    minCharacters
-  )
+  const isMinLengthMet = charCount >= minCharacters
+  const remainingChars = Math.max(0, minCharacters - charCount)
+
   const canSubmit =
-    !disabled && !readOnly && !isSubmitting && validation.canSubmit
+    !disabled &&
+    !readOnly &&
+    !isSubmitting &&
+    Boolean(comment.trim()) &&
+    isMinLengthMet
 
   return (
     <div
@@ -288,8 +277,8 @@ export function ReviewCommentEditor({
       <EditorToolbar
         activeTab={activeTab}
         onChangeTab={setActiveTab}
-        isMinLengthMet={validation.hasMinComment}
-        remainingChars={validation.remainingChars}
+        isMinLengthMet={isMinLengthMet}
+        remainingChars={remainingChars}
       />
 
       {activeTab === "write" ? (
@@ -312,10 +301,8 @@ export function ReviewCommentEditor({
       <EditorFooter
         wordCount={wordCount}
         charCount={charCount}
-        trimmedLength={validation.trimmedLength}
         minCharacters={minCharacters}
-        hasLines={validation.hasLines}
-        isMinLengthMet={validation.hasMinComment}
+        isMinLengthMet={isMinLengthMet}
         canSubmit={canSubmit}
         isSubmitting={isSubmitting}
         onSubmitReview={onSubmitReview}

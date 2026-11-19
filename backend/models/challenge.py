@@ -48,9 +48,7 @@ class Category(StrEnum):
     @classmethod
     def _missing_(cls, value: object):
         if isinstance(value, str):
-            clean_val = " ".join(
-                value.lower().replace("-", " ").replace("_", " ").split()
-            )
+            clean_val = value.lower().replace("-", " ").replace("_", " ")
             aliases = {
                 "agent antipatterns": cls.AGENT_ANTIPATHS,
                 "agent antipattern": cls.AGENT_ANTIPATHS,
@@ -61,10 +59,6 @@ class Category(StrEnum):
                 "security": cls.SECURITY,
                 "concurrency race": cls.CONCURRENCY,
                 "concurrency": cls.CONCURRENCY,
-                "performance": cls.PERFORMANCE,
-                "perf": cls.PERFORMANCE,
-                "performance issue": cls.PERFORMANCE,
-                "performance bottleneck": cls.PERFORMANCE,
                 "logic flaws": cls.LOGIC_FLAWS,
                 "logic flaw": cls.LOGIC_FLAWS,
             }
@@ -117,41 +111,32 @@ class DefectCriterion(BaseModel):
     def normalize_fields(cls, data: Any) -> Any:
         if isinstance(data, dict):
             d = dict(data)
-            for str_field in ("title", "explanation", "severity"):
-                if str_field in d and d[str_field] is None:
-                    d.pop(str_field)
-            if "lines" in d and d["lines"] is None:
-                d["lines"] = []
-            if "keywords" in d and d["keywords"] is None:
-                d["keywords"] = []
-            if d.get("defect") is not None:
+            if "defect" in d:
                 if not d.get("title"):
                     d["title"] = str(d["defect"])
                 if not d.get("explanation"):
                     d["explanation"] = str(d["defect"])
-            if d.get("line") is not None and not d.get("lines"):
+            if "line" in d and not d.get("lines"):
                 raw_line = d["line"]
                 if isinstance(raw_line, bool) or not isinstance(raw_line, (int, str)):
                     raise ValueError("line must be an integer")
                 d["lines"] = [int(raw_line)]
-            if d.get("matched_lines") is not None and not d.get("lines"):
+            if "matched_lines" in d and not d.get("lines"):
                 raw_lines = d["matched_lines"]
                 if not isinstance(raw_lines, list):
                     raise ValueError("matched_lines must be a list of integers")
                 parsed_lines: list[int] = []
                 for item in raw_lines:
-                    if item is None:
-                        continue
                     if isinstance(item, bool) or not isinstance(item, (int, str)):
                         raise ValueError("matched_lines items must be integers")
                     parsed_lines.append(int(item))
                 d["lines"] = parsed_lines
-            if d.get("matched_keywords") is not None and not d.get("keywords"):
+            if "matched_keywords" in d and not d.get("keywords"):
                 raw_keywords = d["matched_keywords"]
                 if not isinstance(raw_keywords, list):
                     raise ValueError("matched_keywords must be a list of strings")
-                d["keywords"] = [str(item) for item in raw_keywords if item is not None]
-            if not d.get("id"):
+                d["keywords"] = [str(item) for item in raw_keywords]
+            if "id" not in d or d["id"] == "":
                 lines_val = d.get("lines")
                 fallback_line = d.get("line") or (
                     lines_val[0] if isinstance(lines_val, list) and lines_val else "1"
@@ -349,7 +334,7 @@ class Challenge(ChallengeBase, table=True):
         cached = getattr(self, "_cached_expected_issues", None)
         raw_cached = getattr(self, "_cached_expected_issues_raw", None)
         if cached is not None and raw_cached == self.expected_issues:
-            return [item.model_copy(deep=True) for item in cached]
+            return cached
 
         if isinstance(self.expected_issues, list):
             data = self.expected_issues
@@ -363,13 +348,13 @@ class Challenge(ChallengeBase, table=True):
         ]
         object.__setattr__(self, "_cached_expected_issues", result)
         object.__setattr__(self, "_cached_expected_issues_raw", self.expected_issues)
-        return [item.model_copy(deep=True) for item in result]
+        return result
 
     def get_hints(self) -> list[HintItem]:
         cached = getattr(self, "_cached_hints", None)
         raw_cached = getattr(self, "_cached_hints_raw", None)
         if cached is not None and raw_cached == self.hints:
-            return [item.model_copy(deep=True) for item in cached]
+            return cached
 
         if isinstance(self.hints, list):
             data = self.hints
@@ -381,7 +366,7 @@ class Challenge(ChallengeBase, table=True):
         ]
         object.__setattr__(self, "_cached_hints", result)
         object.__setattr__(self, "_cached_hints_raw", self.hints)
-        return [item.model_copy(deep=True) for item in result]
+        return result
 
     def to_summary(
         self,

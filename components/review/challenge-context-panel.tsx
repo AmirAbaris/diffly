@@ -25,44 +25,6 @@ export interface ChallengeContextPanelProps {
   onUnlockHint?: (tier: number) => void
 }
 
-function readStoredHints(
-  slug: string,
-  initialUnlockedTiers?: number[]
-): number[] {
-  if (initialUnlockedTiers && initialUnlockedTiers.length > 0) {
-    return initialUnlockedTiers
-  }
-  if (!slug || typeof window === "undefined") {
-    return []
-  }
-  try {
-    const saved = window.localStorage.getItem(`diffly_hints_${slug}`)
-    if (saved) {
-      const parsed: unknown = JSON.parse(saved)
-      if (Array.isArray(parsed)) {
-        return parsed.filter(
-          (tier): tier is number =>
-            typeof tier === "number" && Number.isInteger(tier) && tier > 0
-        )
-      }
-    }
-  } catch {
-    // Ignore localStorage read error
-  }
-  return []
-}
-
-function writeStoredHints(slug: string, tiers: number[]): void {
-  if (!slug || typeof window === "undefined") {
-    return
-  }
-  try {
-    window.localStorage.setItem(`diffly_hints_${slug}`, JSON.stringify(tiers))
-  } catch {
-    // Ignore localStorage write error
-  }
-}
-
 export function ChallengeContextPanel({
   challenge,
   hints,
@@ -70,71 +32,52 @@ export function ChallengeContextPanel({
   initialUnlockedTiers,
   onUnlockHint,
 }: ChallengeContextPanelProps) {
-  const slug = challenge?.slug?.trim() ?? ""
+  const storageKey = `diffly_hints_${challenge.slug}`
 
-  const [hintsBySlug, setHintsBySlug] = React.useState<
-    Record<string, number[]>
-  >({})
-  const [openAccordionsBySlug, setOpenAccordionsBySlug] = React.useState<
-    Record<string, string[]>
-  >({})
+  const [unlockedTiers, setUnlockedTiers] = React.useState<number[]>(() => {
+    if (initialUnlockedTiers && initialUnlockedTiers.length > 0) {
+      return initialUnlockedTiers
+    }
+    if (typeof window !== "undefined") {
+      try {
+        const saved = window.localStorage.getItem(storageKey)
+        if (saved) {
+          const parsed = JSON.parse(saved)
+          if (Array.isArray(parsed)) return parsed
+        }
+      } catch {
+        // Ignore localStorage error
+      }
+    }
+    return []
+  })
+
+  const [openAccordions, setOpenAccordions] = React.useState<string[]>([])
   const [isMobileCollapsed, setIsMobileCollapsed] = React.useState(false)
 
-  const storedTiers = React.useMemo(
-    () => readStoredHints(slug, initialUnlockedTiers),
-    [slug, initialUnlockedTiers]
-  )
-
-  const unlockedTiers = slug ? (hintsBySlug[slug] ?? storedTiers) : []
-  const openAccordions = slug ? (openAccordionsBySlug[slug] ?? []) : []
-
-  const persistedTiers = slug ? hintsBySlug[slug] : undefined
-
   React.useEffect(() => {
-    if (!slug || persistedTiers === undefined) return
-    writeStoredHints(slug, persistedTiers)
-  }, [slug, persistedTiers])
-
-  const handleSetOpenAccordions = React.useCallback<
-    React.Dispatch<React.SetStateAction<string[]>>
-  >(
-    (action) => {
-      if (!slug) return
-      setOpenAccordionsBySlug((prev) => {
-        const current = prev[slug] ?? []
-        const next = typeof action === "function" ? action(current) : action
-        return { ...prev, [slug]: next }
-      })
-    },
-    [slug]
-  )
+    if (typeof window === "undefined") return
+    try {
+      window.localStorage.setItem(storageKey, JSON.stringify(unlockedTiers))
+    } catch {
+      // Ignore localStorage write error
+    }
+  }, [storageKey, unlockedTiers])
 
   const handleUnlockTier = React.useCallback(
     (tier: number) => {
-      if (!slug) return
-
-      setHintsBySlug((prev) => {
-        const current =
-          prev[slug] ?? readStoredHints(slug, initialUnlockedTiers)
-        if (current.includes(tier)) return prev
-        return {
-          ...prev,
-          [slug]: [...current, tier].sort((a, b) => a - b),
-        }
+      setUnlockedTiers((prev) => {
+        if (prev.includes(tier)) return prev
+        return [...prev, tier].sort((a, b) => a - b)
       })
 
-      setOpenAccordionsBySlug((prev) => {
-        const current = prev[slug] ?? []
-        if (current.includes(`tier-${tier}`)) return prev
-        return {
-          ...prev,
-          [slug]: [...current, `tier-${tier}`],
-        }
-      })
+      setOpenAccordions((prev) =>
+        prev.includes(`tier-${tier}`) ? prev : [...prev, `tier-${tier}`]
+      )
 
       onUnlockHint?.(tier)
     },
-    [slug, initialUnlockedTiers, onUnlockHint]
+    [onUnlockHint]
   )
 
   const apiHints = React.useMemo(
@@ -194,7 +137,7 @@ export function ChallengeContextPanel({
           tiers={tiers}
           unlockedTiers={unlockedTiers}
           openAccordions={openAccordions}
-          setOpenAccordions={handleSetOpenAccordions}
+          setOpenAccordions={setOpenAccordions}
           hintsLoading={hintsLoading}
           onUnlockTier={handleUnlockTier}
         />

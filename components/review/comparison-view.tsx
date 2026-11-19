@@ -48,9 +48,7 @@ export function ComparisonView({
     error: fetchError,
     isLoading,
     mutate,
-  } = useSWR<ChallengeSolutionResponse>(swrKey, {
-    keepPreviousData: false,
-  })
+  } = useSWR<ChallengeSolutionResponse>(swrKey)
 
   const solution = propSolution ?? fetchedSolution ?? null
 

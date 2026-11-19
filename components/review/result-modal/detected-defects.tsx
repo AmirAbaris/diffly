@@ -1,6 +1,5 @@
 import * as React from "react"
 import { Badge } from "@/components/ui/badge"
-import { keyByValue } from "@/lib/unique-keys"
 import type { DetectedIssue } from "@/types/challenge"
 import { FormattedInlineText, SeverityBadge } from "./score-helpers"
 
@@ -34,14 +33,12 @@ export function DetectedDefectsSection({
         </div>
       ) : (
         <div className="flex flex-col gap-2.5">
-          {keyByValue(
-            issues,
-            (issue) => issue.id || issue.title || "detected-issue"
-          ).map(({ key: issueKey, item: issue }) => {
+          {issues.map((issue) => {
             const matchedLinesStr =
               issue.matched_lines && issue.matched_lines.length > 0
                 ? issue.matched_lines.join(", ")
                 : null
+            const issueKey = issue.id || issue.title || "detected-issue"
 
             return (
               <div
@@ -76,12 +73,9 @@ export function DetectedDefectsSection({
                         <span className="text-xs text-muted-foreground">
                           Matched:
                         </span>
-                        {keyByValue(
-                          issue.matched_keywords,
-                          (kw) => `${issueKey}-kw-${kw}`
-                        ).map(({ key: kwKey, item: kw }) => (
+                        {issue.matched_keywords.map((kw) => (
                           <Badge
-                            key={kwKey}
+                            key={kw}
                             variant="outline"
                             size="sm"
                             className="font-mono"

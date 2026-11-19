@@ -11,10 +11,6 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { toast } from "@/hooks/use-toast"
-import {
-  MIN_REVIEW_COMMENT_CHARS,
-  validateReviewSubmission,
-} from "@/lib/review-validation"
 import { cn } from "@/lib/utils"
 
 export interface SubmissionBarProps {
@@ -34,20 +30,19 @@ export interface SubmissionBarProps {
 function getSubmissionTooltip(
   isSubmitting: boolean,
   hasLines: boolean,
-  hasMinComment: boolean,
-  remainingChars: number
+  hasComment: boolean
 ): string {
   if (isSubmitting) {
     return "Submitting your review…"
   }
-  if (!hasLines && !hasMinComment) {
-    return `Flag at least one line and write at least ${MIN_REVIEW_COMMENT_CHARS} characters to submit`
+  if (!hasLines && !hasComment) {
+    return "Flag at least one line and write a review comment to submit"
   }
   if (!hasLines) {
     return "Flag at least one line in the code viewer to submit"
   }
-  if (!hasMinComment) {
-    return `Write at least ${MIN_REVIEW_COMMENT_CHARS} characters explaining the defect (${remainingChars} more needed)`
+  if (!hasComment) {
+    return "Write a review comment explaining the defect to submit"
   }
   return "Submit your review for automated scoring"
 }
@@ -123,14 +118,13 @@ export function SubmissionBar({
   const charCount = comments.length
   const summaryCount = formatDraftSummary(lineCount, charCount)
 
-  const validation = validateReviewSubmission(flaggedLines, comments)
-  const { hasLines, hasMinComment, remainingChars, canSubmit } = validation
-  const isSubmitDisabled = !canSubmit || isSubmitting
+  const hasLines = lineCount > 0
+  const hasComment = comments.trim().length > 0
+  const isSubmitDisabled = !hasLines || !hasComment || isSubmitting
   const tooltipMessage = getSubmissionTooltip(
     isSubmitting,
     hasLines,
-    hasMinComment,
-    remainingChars
+    hasComment
   )
 
   const handleResetDraft = React.useCallback(() => {
@@ -174,7 +168,7 @@ export function SubmissionBar({
           </Button>
         )}
 
-        {canSubmit && (
+        {hasLines && hasComment && (
           <Badge variant="success" size="sm" className="hidden sm:inline-flex">
             Ready to submit
           </Badge>
