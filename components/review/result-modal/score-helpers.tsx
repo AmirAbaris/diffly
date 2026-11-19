@@ -1,5 +1,6 @@
 import * as React from "react"
 import { Badge } from "@/components/ui/badge"
+import { keyByValue } from "@/lib/unique-keys"
 
 export interface ScoreTierStyle {
   label: string
@@ -74,17 +75,18 @@ export function parseEvaluationFeedback(rawFeedback?: string) {
 }
 
 export function FormattedInlineText({ text }: { text: string }) {
-  const segments = React.useMemo(() => {
-    return text.split(/(`[^`]+`|\*\*[^*]+\*\*)/g).filter(Boolean)
+  const keyedSegments = React.useMemo(() => {
+    const raw = text.split(/(`[^`]+`|\*\*[^*]+\*\*)/g).filter(Boolean)
+    return keyByValue(raw, (segment) => segment)
   }, [text])
 
   return (
     <>
-      {segments.map((segment) => {
+      {keyedSegments.map(({ key, item: segment }) => {
         if (segment.startsWith("`") && segment.endsWith("`")) {
           return (
             <code
-              key={segment}
+              key={key}
               className="rounded border border-border/60 bg-muted/70 px-1 py-0.5 font-mono text-xs text-foreground"
             >
               {segment.slice(1, -1)}
@@ -94,13 +96,13 @@ export function FormattedInlineText({ text }: { text: string }) {
 
         if (segment.startsWith("**") && segment.endsWith("**")) {
           return (
-            <strong key={segment} className="font-semibold text-foreground">
+            <strong key={key} className="font-semibold text-foreground">
               {segment.slice(2, -2)}
             </strong>
           )
         }
 
-        return <span key={segment}>{segment}</span>
+        return <span key={key}>{segment}</span>
       })}
     </>
   )

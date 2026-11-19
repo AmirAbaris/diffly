@@ -7,6 +7,7 @@ import { useReviewDraft } from "@/hooks/use-review-draft"
 import { toast } from "@/hooks/use-toast"
 import { mutateUserStats } from "@/hooks/use-user-stats"
 import { apiClient } from "@/lib/axios"
+import { validateReviewSubmission } from "@/lib/review-validation"
 import { useArenaUIStore } from "@/stores/arena-ui-store"
 import type {
   AsyncSlice,
@@ -153,9 +154,22 @@ export function useChallengeSession(slug: string): ChallengeSessionState {
   const setSubmittedReview = useArenaUIStore((s) => s.setSubmittedReview)
 
   const resetArenaUI = useArenaUIStore((s) => s.resetArenaUI)
+  const activeSlugRef = React.useRef(slug)
+  const isMountedRef = React.useRef(true)
 
   React.useEffect(() => {
+    isMountedRef.current = true
+    return () => {
+      isMountedRef.current = false
+    }
+  }, [])
+
+  React.useEffect(() => {
+    activeSlugRef.current = slug
     if (slug) {
+      resetArenaUI()
+    }
+    return () => {
       resetArenaUI()
     }
   }, [slug, resetArenaUI])
@@ -180,12 +194,11 @@ export function useChallengeSession(slug: string): ChallengeSessionState {
 
   const submitReview =
     React.useCallback(async (): Promise<ReviewSubmissionResponse | null> => {
-      if (
-        !verifiedChallenge ||
-        !draft.flaggedLines.length ||
-        !draft.comments.trim() ||
-        isSubmitting
-      ) {
+      const validation = validateReviewSubmission(
+        draft.flaggedLines,
+        draft.comments
+      )
+      if (!verifiedChallenge || !validation.canSubmit || isSubmitting) {
         return null
       }
 
@@ -202,6 +215,10 @@ export function useChallengeSession(slug: string): ChallengeSessionState {
             comments: submittedComments,
           }
         )
+
+        if (!isMountedRef.current || activeSlugRef.current !== slug) {
+          return null
+        }
 
         toast({
           title: "Review submitted successfully",
@@ -230,6 +247,9 @@ export function useChallengeSession(slug: string): ChallengeSessionState {
         draft.resetDraft()
         return response.data
       } catch (err: unknown) {
+        if (!isMountedRef.current || activeSlugRef.current !== slug) {
+          return null
+        }
         const errorMsg = extractErrorMessage(err, "Failed to submit review")
         toast({
           title: "Submission failed",
@@ -238,7 +258,9 @@ export function useChallengeSession(slug: string): ChallengeSessionState {
         })
         return null
       } finally {
-        setIsSubmitting(false)
+        if (isMountedRef.current && activeSlugRef.current === slug) {
+          setIsSubmitting(false)
+        }
       }
     }, [
       verifiedChallenge,

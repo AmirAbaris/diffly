@@ -3,6 +3,7 @@ import { ArrowRight } from "lucide-react"
 import { MarkdownPreview } from "@/components/review/markdown-preview"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { keyByValue } from "@/lib/unique-keys"
 import { cn } from "@/lib/utils"
 import type { ChallengeSolutionResponse } from "@/types/challenge"
 
@@ -84,9 +85,12 @@ export function StaffReviewColumn({
           </div>
 
           <div className="flex flex-col gap-2">
-            {issues.map((issue) => (
+            {keyByValue(
+              issues,
+              (issue) => issue.id || issue.title || "expected-issue"
+            ).map(({ key: issueKey, item: issue }) => (
               <div
-                key={issue.id}
+                key={issueKey}
                 data-testid={`defect-item-${issue.id}`}
                 className="flex flex-col gap-1.5 rounded-xl border border-border bg-background p-3 text-xs"
               >
@@ -121,9 +125,12 @@ export function StaffReviewColumn({
 
                 {issue.keywords && issue.keywords.length > 0 && (
                   <div className="mt-0.5 flex flex-wrap gap-1">
-                    {issue.keywords.map((kw) => (
+                    {keyByValue(
+                      issue.keywords,
+                      (kw) => `${issueKey}-kw-${kw}`
+                    ).map(({ key: kwKey, item: kw }) => (
                       <Badge
-                        key={kw}
+                        key={kwKey}
                         variant="secondary"
                         size="sm"
                         className="font-mono"
