@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, patch
 import httpx
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from backend.models.challenge import (
@@ -759,3 +760,283 @@ def test_generate_custom_challenge_java_endpoint(
     ).first()
     assert db_challenge is not None
     assert db_challenge.language == Language.JAVA
+
+
+def test_sanitize_normalizes_unknown_category_and_hint_tiers():
+    """Unknown Gemini categories and non-int hint tiers never crash with 500."""
+    raw = {
+        **SAMPLE_GEMINI_OUTPUT,
+        "category": "Authentication & Authorization",
+        "hints": [
+            {"tier": "Tier 1", "text": "Inspect session tenant handling."},
+            {"tier": None, "text": "Check authorization filters."},
+            {"tier": "invalid-tier", "text": "Should be skipped safely."},
+        ],
+    }
+    req = GenerateCustomChallengeRequest(
+        topic="Tenant isolation",
+        language=Language.TYPESCRIPT,
+        difficulty=Difficulty.MEDIUM,
+    )
+    result = sanitize_generated_challenge(raw, req)
+    assert result.category == Category.SECURITY
+    assert [h.tier for h in result.hints] == [1, 2, 3]
+    assert result.hints[0].text == "Inspect session tenant handling."
+    assert result.hints[1].text == "Check authorization filters."
+
+    perf_result = sanitize_generated_challenge(
+        {**SAMPLE_GEMINI_OUTPUT, "category": "Perf bottleneck"},
+        req,
+    )
+    assert perf_result.category == Category.PERFORMANCE
+
+    with pytest.raises(GeminiSchemaError):
+        sanitize_generated_challenge(["not-a-dict"], req)  # type: ignore[arg-type]
+
+
+def test_sanitize_preserves_leading_blank_lines_and_indentation():
+    """Leading newlines and line-1 indentation stay intact so line indices match."""
+    raw = {
+        **SAMPLE_GEMINI_OUTPUT,
+        "code_snippet": "\n\n    def run(cmd):\n        return eval(cmd)\n",
+        "expected_issues": [
+            {
+                "id": "eval-1",
+                "title": "Code Injection",
+                "severity": "critical",
+                "matched_lines": [4],
+                "matched_keywords": ["eval", "cmd"],
+                "explanation": "eval executes arbitrary input.",
+            }
+        ],
+    }
+    req = GenerateCustomChallengeRequest(
+        topic="Code injection",
+        language=Language.PYTHON,
+        difficulty=Difficulty.MEDIUM,
+    )
+    result = sanitize_generated_challenge(raw, req)
+    assert result.code_snippet == "\n\n    def run(cmd):\n        return eval(cmd)"
+    assert result.line_count == 4
+    assert result.expected_issues[0].lines == [4]
+
+
+def test_sanitize_rejects_unresolvable_out_of_range_lines():
+    """Unresolvable out-of-range defect lines raise GeminiSchemaError."""
+    raw = {
+        **SAMPLE_GEMINI_OUTPUT,
+        "code_snippet": "x = 1\ny = 2\n",
+        "expected_issues": [
+            {
+                "id": "bad-lines",
+                "title": "Imaginary Defect",
+                "severity": "high",
+                "matched_lines": [99, 100],
+                "matched_keywords": ["nonexistent_symbol"],
+                "explanation": "Nowhere in snippet.",
+            }
+        ],
+    }
+    req = GenerateCustomChallengeRequest(
+        topic="Missing line check",
+        language=Language.PYTHON,
+        difficulty=Difficulty.EASY,
+    )
+    with pytest.raises(GeminiSchemaError, match="unresolvable line numbers"):
+        sanitize_generated_challenge(raw, req)
+
+
+@pytest.mark.anyio
+async def test_generate_custom_challenge_retries_once_on_unresolvable_lines():
+    """Service retries once when Gemini produces unresolvable out-of-range lines."""
+    bad_output = {
+        **SAMPLE_GEMINI_OUTPUT,
+        "code_snippet": "x = 1\ny = 2\n",
+        "expected_issues": [
+            {
+                "id": "bad-lines",
+                "title": "Bad Line",
+                "severity": "medium",
+                "matched_lines": [999],
+                "matched_keywords": ["missing_kw"],
+                "explanation": "Out of range.",
+            }
+        ],
+    }
+    req = GenerateCustomChallengeRequest(topic="Retry unresolvable lines")
+    mock_client = AsyncMock()
+    mock_client.post.side_effect = [
+        make_mock_gemini_response(
+            status_code=200,
+            json_data={
+                "candidates": [
+                    {"content": {"parts": [{"text": json.dumps(bad_output)}]}}
+                ]
+            },
+        ),
+        make_mock_gemini_response(
+            status_code=200,
+            json_data={
+                "candidates": [
+                    {"content": {"parts": [{"text": json.dumps(SAMPLE_GEMINI_OUTPUT)}]}}
+                ]
+            },
+        ),
+    ]
+
+    result = await generate_custom_challenge(req, "test-key", client=mock_client)
+    assert result.slug == "nextjs-server-actions-idor"
+    assert mock_client.post.call_count == 2
+
+
+@patch("backend.services.gemini_generator.httpx.AsyncClient.post")
+def test_generate_custom_challenge_endpoint_retries_slug_integrity_error(
+    mock_post: AsyncMock,
+    client: TestClient,
+    session: Session,
+    as_guest,
+):
+    """Endpoint retries with suffixed slug and relocks quota on IntegrityError."""
+    mock_post.return_value = make_mock_gemini_response(
+        status_code=200,
+        json_data={
+            "candidates": [
+                {"content": {"parts": [{"text": json.dumps(SAMPLE_GEMINI_OUTPUT)}]}}
+            ]
+        },
+    )
+    as_guest(client, "slug-collision-session")
+
+    original_commit = session.commit
+    commit_calls = {"count": 0}
+
+    def flaky_commit() -> None:
+        commit_calls["count"] += 1
+        if commit_calls["count"] == 1:
+            raise IntegrityError(
+                "INSERT INTO challenges ...",
+                {},
+                Exception("UNIQUE constraint failed: challenges.slug"),
+            )
+        original_commit()
+
+    with (
+        patch.object(session, "commit", side_effect=flaky_commit),
+        patch(
+            "api.routes.challenges.ensure_custom_quota",
+            wraps=__import__(
+                "backend.services.ownership", fromlist=["ensure_custom_quota"]
+            ).ensure_custom_quota,
+        ) as quota_spy,
+    ):
+        res = client.post(
+            "/api/challenges/generate-custom",
+            json={"topic": "Slug collision test", "language": "typescript"},
+            headers={"X-Gemini-Key": "AIzaSyValidKey"},
+        )
+
+    assert res.status_code == 200, res.text
+    data = res.json()
+    assert data["slug"].startswith("nextjs-server-actions-idor-")
+    assert commit_calls["count"] == 2
+    lock_calls = [
+        call for call in quota_spy.call_args_list if call.kwargs.get("lock") is True
+    ]
+    assert len(lock_calls) == 2
+
+
+@patch("backend.services.gemini_generator.httpx.AsyncClient.post")
+def test_generate_custom_challenge_endpoint_returns_409_when_slug_retries_exhausted(
+    mock_post: AsyncMock,
+    client: TestClient,
+    session: Session,
+    as_guest,
+):
+    """Persistent IntegrityError across retries returns 409 instead of 500."""
+    mock_post.return_value = make_mock_gemini_response(
+        status_code=200,
+        json_data={
+            "candidates": [
+                {"content": {"parts": [{"text": json.dumps(SAMPLE_GEMINI_OUTPUT)}]}}
+            ]
+        },
+    )
+    as_guest(client, "slug-exhaust-session")
+
+    err = IntegrityError(
+        "INSERT INTO challenges ...",
+        {},
+        Exception("UNIQUE constraint failed: challenges.slug"),
+    )
+    with patch.object(session, "commit", side_effect=err):
+        res = client.post(
+            "/api/challenges/generate-custom",
+            json={"topic": "Slug exhaust test", "language": "typescript"},
+            headers={"X-Gemini-Key": "AIzaSyValidKey"},
+        )
+
+    assert res.status_code == 409
+
+
+@patch("api.routes.challenges.generate_custom_challenge")
+def test_generate_custom_challenge_enforces_locked_quota_after_gemini_io(
+    mock_generate: AsyncMock,
+    client: TestClient,
+    session: Session,
+    as_guest,
+):
+    """Concurrent fill during Gemini I/O is blocked by post-I/O locked quota check."""
+    session_id = as_guest(client, "race-quota-session")
+    for idx in range(4):
+        session.add(
+            Challenge(
+                slug=f"existing-race-{idx}",
+                title=f"Existing {idx}",
+                difficulty=Difficulty.MEDIUM,
+                category=Category.SECURITY,
+                language=Language.PYTHON,
+                description="Existing challenge",
+                code_snippet="x = 1",
+                is_public=False,
+                session_id=session_id,
+            )
+        )
+    session.commit()
+
+    async def insert_fifth_during_gemini(**_kwargs):
+        session.add(
+            Challenge(
+                slug="concurrent-fifth-challenge",
+                title="Concurrent Fifth",
+                difficulty=Difficulty.MEDIUM,
+                category=Category.SECURITY,
+                language=Language.PYTHON,
+                description="Committed concurrently",
+                code_snippet="y = 2",
+                is_public=False,
+                session_id=session_id,
+            )
+        )
+        session.commit()
+        return sanitize_generated_challenge(
+            SAMPLE_GEMINI_OUTPUT,
+            GenerateCustomChallengeRequest(topic="Sixth race"),
+        )
+
+    mock_generate.side_effect = insert_fifth_during_gemini
+
+    res = client.post(
+        "/api/challenges/generate-custom",
+        json={"topic": "Concurrent quota race", "language": "typescript"},
+        headers={"X-Gemini-Key": "AIzaSyValidKey"},
+    )
+    assert res.status_code == 400
+    assert "quota limit reached" in res.json()["detail"].lower()
+
+    owned = session.exec(
+        select(Challenge).where(
+            Challenge.session_id == session_id,
+            Challenge.is_public.is_(False),
+        )
+    ).all()
+    assert len(owned) == 5
