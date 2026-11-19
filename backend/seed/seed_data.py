@@ -1,7 +1,7 @@
 """Database seeding utility for Diffly challenges.
 
-Provides idempotent seeding and upsert capability for curated code review challenges
-loaded dynamically from `content/challenges/` bundles.
+Provides idempotent seeding and content-hash upsert capability for curated code
+review challenges loaded dynamically from `content/challenges/` bundles.
 Can be executed as a CLI script via `python -m backend.seed.seed_data` or called
 programmatically on application startup.
 """
@@ -10,13 +10,17 @@ import logging
 from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Any
 
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from backend.core.db import engine, init_db
 from backend.models.challenge import Challenge
-from backend.seed.loader import load_challenges_from_dir
+from backend.seed.loader import (
+    compute_challenge_content_hash,
+    load_challenges_from_dir,
+)
 
 
 logger = logging.getLogger("diffly.seed")
@@ -32,6 +36,40 @@ def get_managed_session(
     else:
         with Session(engine) as new_session:
             yield new_session
+
+
+def _build_candidate(challenge_dict: dict[str, Any]) -> tuple[Challenge, str]:
+    payload = dict(challenge_dict)
+    bundle_hash = payload.get("content_hash") or compute_challenge_content_hash(payload)
+    payload["content_hash"] = bundle_hash
+    return Challenge(**payload), bundle_hash
+
+
+def _apply_challenge_fields(target: Challenge, source: Challenge) -> None:
+    """Copy curated challenge attributes from candidate source onto target row."""
+    target.title = source.title
+    target.difficulty = source.difficulty
+    target.category = source.category
+    target.language = source.language
+    target.description = source.description
+    target.threat_model = source.threat_model
+    target.defect_target = source.defect_target
+    target.code_snippet = source.code_snippet
+    target.expected_issues = source.expected_issues
+    target.hints = source.hints
+    target.canonical_review = source.canonical_review
+    target.recommended_fix_diff = source.recommended_fix_diff
+    target.estimated_minutes = source.estimated_minutes
+    target.content_hash = source.content_hash
+    target.is_public = True
+
+
+def _disambiguate_private_collision(
+    db: Session, existing: Challenge, slug: str
+) -> None:
+    existing.slug = f"{slug}-custom-{existing.id or '1'}"
+    db.add(existing)
+    db.flush()
 
 
 def seed_challenges(
@@ -51,33 +89,15 @@ def seed_challenges(
         for challenge_dict in challenges_data:
             slug = challenge_dict["slug"]
             existing = db.exec(select(Challenge).where(Challenge.slug == slug)).first()
-
-            # Create candidate challenge to validate fields & serialize JSON fields
-            candidate = Challenge(**challenge_dict)
+            candidate, _ = _build_candidate(challenge_dict)
 
             if existing is not None and not existing.is_public:
                 # Preserve user's private custom challenge under a disambiguated slug
-                existing.slug = f"{slug}-custom-{existing.id or '1'}"
-                db.add(existing)
-                db.flush()
+                _disambiguate_private_collision(db, existing, slug)
                 existing = None
 
             if existing is not None:
-                # Update existing public record
-                existing.title = candidate.title
-                existing.difficulty = candidate.difficulty
-                existing.category = candidate.category
-                existing.language = candidate.language
-                existing.description = candidate.description
-                existing.threat_model = candidate.threat_model
-                existing.defect_target = candidate.defect_target
-                existing.code_snippet = candidate.code_snippet
-                existing.expected_issues = candidate.expected_issues
-                existing.hints = candidate.hints
-                existing.canonical_review = candidate.canonical_review
-                existing.recommended_fix_diff = candidate.recommended_fix_diff
-                existing.estimated_minutes = candidate.estimated_minutes
-                existing.is_public = True
+                _apply_challenge_fields(existing, candidate)
                 db.add(existing)
                 seeded_challenges.append(existing)
                 logger.info("Updated existing challenge: %s", slug)
@@ -98,61 +118,67 @@ def seed_challenges_if_empty(
     content_dir: Path | str | None = None,
 ) -> list[Challenge]:
     """Seed challenges only if the challenges table contains no public records."""
-    try:
-        with get_managed_session(session) as db:
-            first_record = db.exec(
-                select(Challenge).where(Challenge.is_public.is_(True))
-            ).first()
-            if first_record is None:
-                logger.info("Challenges table is empty. Running initial seeding...")
-                return seed_challenges(db, content_dir=content_dir)
-            logger.info("Challenges table already seeded. Skipping initial seed.")
-            return list(
-                db.exec(select(Challenge).where(Challenge.is_public.is_(True))).all()
-            )
-    except Exception as exc:
-        logger.warning(
-            "Notice during seed_challenges_if_empty (concurrent worker): %s", exc
+    with get_managed_session(session) as db:
+        first_record = db.exec(
+            select(Challenge).where(Challenge.is_public.is_(True))
+        ).first()
+        if first_record is None:
+            logger.info("Challenges table is empty. Running initial seeding...")
+            return seed_challenges(db, content_dir=content_dir)
+        logger.info("Challenges table already seeded. Skipping initial seed.")
+        return list(
+            db.exec(select(Challenge).where(Challenge.is_public.is_(True))).all()
         )
-        return []
 
 
 def seed_missing_challenges(
     session: Session | None = None,
     content_dir: Path | str | None = None,
 ) -> list[Challenge]:
-    """Insert curated challenge bundles not yet present in the public catalog."""
+    """Sync curated bundles: insert missing slugs and upsert changed hashes."""
     challenges_data = load_challenges_from_dir(content_dir)
 
     with get_managed_session(session) as db:
-        existing_public_slugs = set(
-            db.exec(select(Challenge.slug).where(Challenge.is_public.is_(True))).all()
-        )
-        missing_bundles = [
-            ch for ch in challenges_data if ch["slug"] not in existing_public_slugs
-        ]
+        existing_public = {
+            ch.slug: ch
+            for ch in db.exec(
+                select(Challenge).where(Challenge.is_public.is_(True))
+            ).all()
+        }
 
-        if not missing_bundles:
-            logger.info("All curated challenge bundles are already seeded.")
-            return list(
-                db.exec(select(Challenge).where(Challenge.is_public.is_(True))).all()
-            )
+        bundles_to_sync: list[tuple[dict[str, Any], str]] = []
+        for challenge_dict in challenges_data:
+            bundle_hash = challenge_dict.get(
+                "content_hash"
+            ) or compute_challenge_content_hash(challenge_dict)
+            existing_pub = existing_public.get(challenge_dict["slug"])
+            if existing_pub is None or existing_pub.content_hash != bundle_hash:
+                bundles_to_sync.append((challenge_dict, bundle_hash))
 
-        for challenge_dict in missing_bundles:
+        if not bundles_to_sync:
+            logger.info("All curated challenge bundles are up to date.")
+            return list(existing_public.values())
+
+        for challenge_dict, bundle_hash in bundles_to_sync:
             slug = challenge_dict["slug"]
+            payload = dict(challenge_dict)
+            payload["content_hash"] = bundle_hash
+            candidate = Challenge(**payload)
+
             existing = db.exec(select(Challenge).where(Challenge.slug == slug)).first()
 
-            if existing is not None and existing.is_public:
-                continue
-
             if existing is not None and not existing.is_public:
-                existing.slug = f"{slug}-custom-{existing.id or '1'}"
+                _disambiguate_private_collision(db, existing, slug)
+                existing = None
+
+            if existing is not None:
+                _apply_challenge_fields(existing, candidate)
                 db.add(existing)
-                db.flush()
+                logger.info("Updated changed curated challenge: %s", slug)
+                continue
 
             try:
                 with db.begin_nested():
-                    candidate = Challenge(**challenge_dict)
                     db.add(candidate)
                     db.flush()
                 logger.info("Seeded missing curated challenge: %s", slug)

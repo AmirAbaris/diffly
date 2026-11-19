@@ -87,6 +87,7 @@ class Settings(BaseSettings):
     DB_MAX_OVERFLOW: int = 10
     DB_POOL_RECYCLE_SECONDS: int = 300
     DB_POOL_PRE_PING: bool = True
+    DB_CONNECT_TIMEOUT: int = 10
     VERCEL: str | None = None
 
     @field_validator("DATABASE_URL", mode="before")

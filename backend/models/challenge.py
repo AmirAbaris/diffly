@@ -317,6 +317,7 @@ class Challenge(ChallengeBase, table=True):
 
     id: int | None = Field(default=None, primary_key=True)
     created_at: datetime = Field(default_factory=get_utc_now)
+    content_hash: str | None = Field(default=None)
 
     user: Optional["User"] = Relationship(back_populates="challenges")
     submissions: list["Submission"] = Relationship(
