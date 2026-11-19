@@ -1,11 +1,11 @@
 "use client"
 
 import axios from "axios"
-import useSWR, { mutate } from "swr"
+import useSWR, { useSWRConfig, type ScopedMutator } from "swr"
 import { apiClient } from "@/lib/axios"
 import { CUSTOM_CHALLENGES_SWR_KEY } from "@/hooks/use-custom-challenges"
 import { toast } from "@/hooks/use-toast"
-import { mutateUserStats } from "@/hooks/use-user-stats"
+import { USER_PROGRESS_SWR_KEY } from "@/hooks/use-user-stats"
 
 export interface AuthUser {
   id: number
@@ -88,12 +88,7 @@ export function getAuthErrorMessage(
 }
 
 export async function fetchCurrentUser(): Promise<AuthUser | null> {
-  // If no auth user was previously stored on this client, avoid making an
-  // unauthenticated request to /api/auth/me that logs a 401 console error.
   const stored = getStoredAuthUser()
-  if (!stored) {
-    return null
-  }
 
   try {
     const response = await apiClient.get<AuthUser>(AUTH_USER_SWR_KEY)
@@ -101,17 +96,20 @@ export async function fetchCurrentUser(): Promise<AuthUser | null> {
       setStoredAuthUser(response.data)
       return response.data
     }
+    setStoredAuthUser(null)
+    return null
   } catch (err) {
-    if (
-      axios.isAxiosError(err) &&
-      (err.response?.status === 401 || err.response?.status === 403)
-    ) {
+    const status = axios.isAxiosError(err)
+      ? err.response?.status
+      : (err as { response?: { status?: number } } | null | undefined)?.response
+          ?.status
+    if (status === 401 || status === 403) {
       setStoredAuthUser(null)
       return null
     }
   }
 
-  // Check fallback local client session (e.g. offline)
+  // Fallback to cached user only on transient non-auth errors (e.g. offline)
   return stored
 }
 
@@ -183,7 +181,43 @@ export async function apiLogout(): Promise<void> {
   }
 }
 
+const isChallengeScopedKey = (key: unknown): key is string =>
+  typeof key === "string" &&
+  key.startsWith("/api/challenges/") &&
+  key !== CUSTOM_CHALLENGES_SWR_KEY
+
+const isPrivateChallengeSliceKey = (key: string): boolean =>
+  key.includes("/submissions") || key.includes("/solution")
+
+async function revalidateAuthScopedCaches(
+  mutateCache: ScopedMutator,
+  options?: {
+    clearPrivateSlices?: boolean
+  }
+): Promise<void> {
+  const challengeScopedPromise = options?.clearPrivateSlices
+    ? Promise.all([
+        mutateCache(
+          (key) => isChallengeScopedKey(key) && isPrivateChallengeSliceKey(key),
+          undefined,
+          { revalidate: true }
+        ),
+        mutateCache(
+          (key) => isChallengeScopedKey(key) && !isPrivateChallengeSliceKey(key)
+        ),
+      ])
+    : mutateCache(isChallengeScopedKey)
+
+  await Promise.all([
+    mutateCache(USER_PROGRESS_SWR_KEY),
+    mutateCache("/api/challenges"),
+    mutateCache(CUSTOM_CHALLENGES_SWR_KEY),
+    challengeScopedPromise,
+  ])
+}
+
 export function useAuth() {
+  const { mutate: mutateCache } = useSWRConfig()
   const {
     data,
     error,
@@ -200,27 +234,21 @@ export function useAuth() {
   const login = async (credentials: LoginCredentials) => {
     const loggedUser = await apiLogin(credentials)
     await boundMutate(loggedUser, false)
-    await mutateUserStats()
-    await mutate("/api/challenges")
-    await mutate(CUSTOM_CHALLENGES_SWR_KEY)
+    await revalidateAuthScopedCaches(mutateCache)
     return loggedUser
   }
 
   const register = async (credentials: RegisterCredentials) => {
     const newUser = await apiRegister(credentials)
     await boundMutate(newUser, false)
-    await mutateUserStats()
-    await mutate("/api/challenges")
-    await mutate(CUSTOM_CHALLENGES_SWR_KEY)
+    await revalidateAuthScopedCaches(mutateCache)
     return newUser
   }
 
   const logout = async () => {
     await apiLogout()
     await boundMutate(null, false)
-    await mutateUserStats()
-    await mutate("/api/challenges")
-    await mutate(CUSTOM_CHALLENGES_SWR_KEY)
+    await revalidateAuthScopedCaches(mutateCache, { clearPrivateSlices: true })
   }
 
   return {
