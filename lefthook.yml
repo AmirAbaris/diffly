@@ -38,3 +38,9 @@ pre-commit:
 
     - name: no-screenshots
       run: bash scripts/check-no-screenshots.sh
+
+pre-push:
+  jobs:
+    - name: no-push-main
+      use_stdin: true
+      run: bash scripts/check-no-push-main.sh
