@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
+import { DifflyLogo } from "@/components/brand/diffly-logo"
 import { NavStats } from "@/components/layout/nav-stats"
 import { UserNav } from "@/components/layout/user-nav"
 import { cn } from "@/lib/utils"
@@ -20,9 +21,10 @@ export function Navbar({ className }: NavbarProps) {
         <div className="flex min-w-0 items-center gap-2 sm:gap-2.5">
           <Link
             href="/"
-            className="shrink-0 font-pixel text-base tracking-tight text-foreground transition-opacity hover:opacity-80"
+            className="inline-flex shrink-0 items-center gap-1.5 font-pixel text-base tracking-tight text-foreground transition-opacity hover:opacity-80 sm:gap-2"
           >
-            Diffly
+            <DifflyLogo className="size-4.5" />
+            <span>Diffly</span>
           </Link>
           <span
             aria-hidden="true"
@@ -32,10 +34,9 @@ export function Navbar({ className }: NavbarProps) {
           </span>
           <Link
             href="/challenges"
-            className="truncate text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+            className="hidden text-xs font-medium text-muted-foreground transition-colors hover:text-foreground sm:inline"
           >
-            <span className="sm:hidden">Arena</span>
-            <span className="hidden sm:inline">Code Review Arena</span>
+            Code Review Arena
           </Link>
         </div>
 

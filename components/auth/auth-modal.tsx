@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { AlertCircle } from "lucide-react"
+import { DifflyLogo } from "@/components/brand/diffly-logo"
 import {
   Dialog,
   DialogContent,
@@ -63,8 +64,9 @@ export function AuthModal({ open, onOpenChange, initialTab }: AuthModalProps) {
         data-testid="auth-modal-content"
       >
         <DialogHeader className="gap-1">
-          <DialogTitle className="text-base font-semibold tracking-tight">
-            Diffly Account
+          <DialogTitle className="flex items-center gap-2 text-base font-semibold tracking-tight">
+            <DifflyLogo className="size-4" />
+            <span>Diffly Account</span>
           </DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground">
             Sign in or create an account to save your review metrics and sync
