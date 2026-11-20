@@ -887,3 +887,150 @@ def test_custom_challenge_share_toggle_rotate_and_revoke(
         ).status_code
         == 404
     )
+
+
+def test_get_next_challenge_spaced_repetition_and_weak_categories(
+    client: TestClient, session: Session, as_guest
+):
+    """GET /api/challenges/next ranks due reviews, weak categories, new, refresh."""
+    from datetime import UTC, datetime, timedelta
+
+    from backend.models.challenge import Category, Challenge, Difficulty, Language
+    from backend.models.submission import Submission
+
+    sec1 = Challenge(
+        slug="srs-sec-1",
+        title="SRS Security 1",
+        difficulty=Difficulty.EASY,
+        category=Category.SECURITY,
+        language=Language.PYTHON,
+        description="Sec 1",
+        code_snippet="x = 1",
+        is_public=True,
+    )
+    sec2 = Challenge(
+        slug="srs-sec-2",
+        title="SRS Security 2",
+        difficulty=Difficulty.MEDIUM,
+        category=Category.SECURITY,
+        language=Language.PYTHON,
+        description="Sec 2",
+        code_snippet="x = 2",
+        is_public=True,
+    )
+    perf1 = Challenge(
+        slug="srs-perf-1",
+        title="SRS Perf 1",
+        difficulty=Difficulty.EASY,
+        category=Category.PERFORMANCE,
+        language=Language.PYTHON,
+        description="Perf 1",
+        code_snippet="x = 3",
+        is_public=True,
+    )
+    private_ch = Challenge(
+        slug="srs-private-only",
+        title="SRS Private",
+        difficulty=Difficulty.EASY,
+        category=Category.SECURITY,
+        language=Language.PYTHON,
+        description="Private",
+        code_snippet="x = 4",
+        is_public=False,
+        session_id="guest-srs-1",
+    )
+    session.add_all([sec1, sec2, perf1, private_ch])
+    session.commit()
+    for item in (sec1, sec2, perf1):
+        session.refresh(item)
+
+    sid = as_guest(client, "guest-srs-1")
+
+    # 1. Fresh actor -> new_material (Easy first)
+    res_fresh = client.get("/api/challenges/next")
+    assert res_fresh.status_code == 200
+    assert res_fresh.json()["reason"] == "new_material"
+    assert res_fresh.json()["challenge"]["slug"] != private_ch.slug
+
+    # 2. Failed attempt on sec1 2 hours ago -> not yet due (interval=1d),
+    #    so unattempted sec2 in weak Security category is weak_category!
+    now = datetime.now(UTC)
+    sub_sec_fail = Submission(
+        challenge_id=sec1.id,
+        session_id=sid,
+        score=50,
+        comments="Missed vuln",
+        flagged_lines=[1],
+        created_at=now - timedelta(hours=2),
+    )
+    session.add(sub_sec_fail)
+    session.commit()
+
+    res_weak = client.get("/api/challenges/next?exclude=srs-sec-1")
+    assert res_weak.status_code == 200
+    assert res_weak.json()["reason"] == "weak_category"
+    assert res_weak.json()["challenge"]["slug"] == "srs-sec-2"
+
+    # 3. Overdue failed review on perf1 (3 days ago, interval=1d) -> due_review!
+    sub_perf_due = Submission(
+        challenge_id=perf1.id,
+        session_id=sid,
+        score=60,
+        comments="Needs review",
+        flagged_lines=[1],
+        created_at=now - timedelta(days=3),
+    )
+    session.add(sub_perf_due)
+    session.commit()
+
+    res_due = client.get("/api/challenges/next")
+    assert res_due.status_code == 200
+    assert res_due.json()["reason"] == "due_review"
+    assert res_due.json()["challenge"]["slug"] == "srs-perf-1"
+    assert res_due.json()["review_interval_days"] == 1
+
+    # 4. Pass all challenges recently -> refresh recommends soonest due
+    session.add_all(
+        [
+            Submission(
+                challenge_id=sec1.id,
+                session_id=sid,
+                score=90,
+                comments="Passed sec1",
+                flagged_lines=[1],
+                created_at=now,
+            ),
+            Submission(
+                challenge_id=sec2.id,
+                session_id=sid,
+                score=92,
+                comments="Passed sec2",
+                flagged_lines=[1],
+                created_at=now,
+            ),
+            Submission(
+                challenge_id=perf1.id,
+                session_id=sid,
+                score=96,
+                comments="Passed perf1",
+                flagged_lines=[1],
+                created_at=now,
+            ),
+        ]
+    )
+    session.commit()
+
+    res_refresh = client.get("/api/challenges/next")
+    assert res_refresh.status_code == 200
+    assert res_refresh.json()["reason"] == "refresh"
+    assert res_refresh.json()["review_interval_days"] in (3, 4)
+
+    # 5. Category filter + exclude all in category -> 404
+    res_cat = client.get("/api/challenges/next?category=Performance")
+    assert res_cat.status_code == 200
+    assert res_cat.json()["challenge"]["slug"] == "srs-perf-1"
+
+    res_none = client.get(
+        "/api/challenges/next?category=Performance&exclude=srs-perf-1"
+    )
+    assert res_none.status_code == 404

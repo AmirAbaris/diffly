@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import Link from "next/link"
 import {
   User as UserIcon,
   BarChart3,
@@ -20,6 +21,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
+import { AuthCallbackToast } from "@/components/auth/auth-callback-toast"
 import { AuthModal } from "@/components/auth/auth-modal"
 import { useAuth } from "@/hooks/use-auth"
 import { toast } from "@/hooks/use-toast"
@@ -52,8 +54,10 @@ export function UserNav({ className, onOpenStats }: UserNavProps) {
     }
   }
 
+  let content: React.ReactNode
+
   if (isLoading) {
-    return (
+    content = (
       <div
         data-testid="user-nav-loading"
         className={cn("flex items-center gap-2", className)}
@@ -61,45 +65,37 @@ export function UserNav({ className, onOpenStats }: UserNavProps) {
         <Skeleton className="h-8 w-16 rounded-md sm:w-28" />
       </div>
     )
-  }
-
-  if (!isAuthenticated || !user) {
-    return (
-      <>
-        <div
-          data-testid="user-nav-unauthenticated"
-          className={cn("flex items-center gap-2", className)}
+  } else if (!isAuthenticated || !user) {
+    content = (
+      <div
+        data-testid="user-nav-unauthenticated"
+        className={cn("flex items-center gap-2", className)}
+      >
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={() => openAuthModal("signin")}
+          data-testid="sign-in-button"
+          className="h-8 px-2.5 text-xs font-medium text-muted-foreground hover:text-foreground"
         >
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={() => openAuthModal("signin")}
-            data-testid="sign-in-button"
-            className="h-8 px-2.5 text-xs font-medium text-muted-foreground hover:text-foreground"
-          >
-            Sign In
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            onClick={() => openAuthModal("signup")}
-            data-testid="register-button"
-            className="h-8 px-3 text-xs font-medium"
-          >
-            Register
-          </Button>
-        </div>
-
-        <AuthModal />
-      </>
+          Sign In
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          onClick={() => openAuthModal("signup")}
+          data-testid="register-button"
+          className="h-8 px-3 text-xs font-medium"
+        >
+          Register
+        </Button>
+      </div>
     )
-  }
+  } else {
+    const initials = (user.username || "User").slice(0, 2).toUpperCase()
 
-  const initials = (user.username || "User").slice(0, 2).toUpperCase()
-
-  return (
-    <>
+    content = (
       <div
         data-testid="user-nav-authenticated"
         className={cn("flex items-center", className)}
@@ -152,60 +148,45 @@ export function UserNav({ className, onOpenStats }: UserNavProps) {
 
             <DropdownMenuGroup>
               <DropdownMenuItem
+                asChild
                 className="cursor-pointer gap-2 text-xs"
                 data-testid="user-menu-profile"
-                onClick={() => {
-                  toast({
-                    title: "Profile",
-                    description: `Viewing profile for @${user.username}. Profile management is active.`,
-                  })
-                }}
               >
-                <UserIcon
-                  aria-hidden="true"
-                  className="size-3.5 text-muted-foreground"
-                />
-                <span>Profile</span>
+                <Link href="/profile">
+                  <UserIcon
+                    aria-hidden="true"
+                    className="size-3.5 text-muted-foreground"
+                  />
+                  <span>Profile</span>
+                </Link>
               </DropdownMenuItem>
 
               <DropdownMenuItem
+                asChild
                 className="cursor-pointer gap-2 text-xs"
                 data-testid="user-menu-stats"
-                onClick={() => {
-                  if (onOpenStats) {
-                    onOpenStats()
-                  } else {
-                    toast({
-                      title: "Stats",
-                      description:
-                        "Review performance metrics are accessible via the header badges.",
-                    })
-                  }
-                }}
               >
-                <BarChart3
-                  aria-hidden="true"
-                  className="size-3.5 text-muted-foreground"
-                />
-                <span>Stats</span>
+                <Link href="/stats" onClick={() => onOpenStats?.()}>
+                  <BarChart3
+                    aria-hidden="true"
+                    className="size-3.5 text-muted-foreground"
+                  />
+                  <span>Stats</span>
+                </Link>
               </DropdownMenuItem>
 
               <DropdownMenuItem
+                asChild
                 className="cursor-pointer gap-2 text-xs"
                 data-testid="user-menu-settings"
-                onClick={() => {
-                  toast({
-                    title: "Settings",
-                    description:
-                      "Account preferences and notification settings.",
-                  })
-                }}
               >
-                <Settings
-                  aria-hidden="true"
-                  className="size-3.5 text-muted-foreground"
-                />
-                <span>Settings</span>
+                <Link href="/settings">
+                  <Settings
+                    aria-hidden="true"
+                    className="size-3.5 text-muted-foreground"
+                  />
+                  <span>Settings</span>
+                </Link>
               </DropdownMenuItem>
             </DropdownMenuGroup>
 
@@ -223,7 +204,15 @@ export function UserNav({ className, onOpenStats }: UserNavProps) {
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+    )
+  }
 
+  return (
+    <>
+      {content}
+      <React.Suspense fallback={null}>
+        <AuthCallbackToast />
+      </React.Suspense>
       <AuthModal />
     </>
   )
