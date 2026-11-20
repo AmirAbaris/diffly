@@ -396,3 +396,164 @@ def test_user_progress_excludes_private_custom_challenges_and_claimed_session_le
     assert anon_prog.status_code == 200
     assert anon_prog.json()["total_attempted"] == 0
     assert anon_prog.json()["total_solved"] == 0
+    assert prog_data["custom_attempted"] == 1
+    assert prog_data["custom_solved"] == 1
+
+
+def test_user_progress_and_analytics_timezone_aware_streaks(
+    client: TestClient, session: Session, as_guest, monkeypatch
+):
+    """Streak dates and activity buckets convert UTC timestamps to caller timezone."""
+    from unittest.mock import patch
+
+    challenges = seed_challenges(session)
+    ch = challenges[0]
+    sid = as_guest(client, "guest-tz-streak")
+
+    # 2026-11-20 22:30 UTC is still Nov 20 in UTC / America/New_York,
+    # but already Nov 21 in Asia/Tokyo (UTC+9).
+    sub_late_utc = Submission(
+        challenge_id=ch.id,
+        session_id=sid,
+        score=85,
+        comments="Late UTC night review",
+        flagged_lines=[1],
+        created_at=datetime(2026, 11, 20, 22, 30, tzinfo=UTC),
+    )
+    sub_prev_utc = Submission(
+        challenge_id=ch.id,
+        session_id=sid,
+        score=90,
+        comments="Previous day review",
+        flagged_lines=[1],
+        created_at=datetime(2026, 11, 20, 10, 0, tzinfo=UTC),
+    )
+    session.add_all([sub_late_utc, sub_prev_utc])
+    session.commit()
+
+    fixed_now = datetime(2026, 11, 21, 1, 0, tzinfo=UTC)
+
+    class FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            if tz is not None:
+                return fixed_now.astimezone(tz)
+            return fixed_now.replace(tzinfo=None)
+
+    with patch("api.routes.user.datetime", FixedDatetime):
+        # UTC: today is Nov 21 and both submissions were on Nov 20 -> streak 1
+        res_utc = client.get("/api/user/progress?tz=UTC")
+        assert res_utc.status_code == 200
+        assert res_utc.json()["timezone"] == "UTC"
+        assert res_utc.json()["streak_days"] == 1
+
+        # Asia/Tokyo (UTC+9): 10:00Z is Nov 20, 22:30Z is Nov 21 -> streak 2
+        res_tokyo = client.get("/api/user/progress?tz=Asia/Tokyo")
+        assert res_tokyo.status_code == 200
+        assert res_tokyo.json()["timezone"] == "Asia/Tokyo"
+        assert res_tokyo.json()["streak_days"] == 2
+
+        analytics_tokyo = client.get("/api/user/analytics?tz=Asia/Tokyo&days=7")
+        assert analytics_tokyo.status_code == 200
+        a_data = analytics_tokyo.json()
+        assert a_data["timezone"] == "Asia/Tokyo"
+        assert a_data["days"] == 7
+        assert a_data["streak_days"] == 2
+        assert a_data["longest_streak_days"] == 2
+        assert len(a_data["activity"]) == 7
+        assert a_data["activity"][-1] == {"date": "2026-11-21", "count": 1}
+        assert a_data["activity"][-2] == {"date": "2026-11-20", "count": 1}
+
+
+def test_user_analytics_precision_recall_and_custom_separation(
+    client: TestClient, session: Session, as_guest
+):
+    """Analytics computes precision/recall trends and isolates custom stats."""
+    from backend.models.challenge import Category, Challenge, Difficulty, Language
+
+    challenges = seed_challenges(session)
+    ch = challenges[0]
+    sid = as_guest(client, "guest-analytics-pr")
+
+    private_ch = Challenge(
+        slug="analytics-private-custom",
+        title="Private Custom",
+        difficulty=Difficulty.EASY,
+        category=Category.SECURITY,
+        language=Language.PYTHON,
+        description="Custom",
+        code_snippet="x = 1",
+        is_public=False,
+        session_id=sid,
+    )
+    session.add(private_ch)
+    session.commit()
+    session.refresh(private_ch)
+
+    now = datetime.now(UTC)
+    # 2 flagged lines, 1 false positive -> precision 50.0%
+    # 1 detected issue, 1 missed issue -> recall 50.0%
+    sub_pub = Submission(
+        challenge_id=ch.id,
+        session_id=sid,
+        score=65,
+        line_precision_score=50.0,
+        flagged_lines=[1, 2],
+        false_positive_lines=[2],
+        detected_issues=[{"id": "d1", "title": "Bug", "severity": "high"}],
+        missed_issues=[{"id": "d2", "title": "Leak", "severity": "medium"}],
+        comments="Found one bug",
+        created_at=now - timedelta(days=2),
+    )
+    # Custom submission counts in custom & activity, not category_mastery
+    sub_custom = Submission(
+        challenge_id=private_ch.id,
+        session_id=sid,
+        score=95,
+        line_precision_score=100.0,
+        flagged_lines=[1],
+        false_positive_lines=[],
+        detected_issues=[{"id": "c1", "title": "Custom", "severity": "high"}],
+        missed_issues=[],
+        comments="Solved custom",
+        created_at=now,
+    )
+    session.add_all([sub_pub, sub_custom])
+    session.commit()
+
+    res = client.get("/api/user/analytics?days=30")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["total_submissions"] == 2
+    assert data["custom"] == {"attempted": 1, "solved": 1, "submissions": 1}
+    assert len(data["trends"]) == 1
+    assert data["trends"][0]["precision"] == 50.0
+    assert data["trends"][0]["recall"] == 50.0
+    assert data["trends"][0]["average_score"] == 65.0
+
+    ch_cat = ch.category.value if hasattr(ch.category, "value") else str(ch.category)
+    cat_item = next(c for c in data["category_mastery"] if c["category"] == ch_cat)
+    assert cat_item["attempted"] == 1
+    assert cat_item["solved"] == 0
+    assert cat_item["precision"] == 50.0
+    assert cat_item["recall"] == 50.0
+
+    # Older submission outside 30-day window appears in 90-day window
+    session.add(
+        Submission(
+            challenge_id=ch.id,
+            session_id=sid,
+            score=75,
+            comments="Older submission",
+            flagged_lines=[1],
+            created_at=now - timedelta(days=45),
+        )
+    )
+    session.commit()
+    assert client.get("/api/user/analytics?days=30").json()["total_submissions"] == 2
+    assert client.get("/api/user/analytics?days=90").json()["total_submissions"] == 3
+
+    # Validation checks on tz and days
+    assert client.get("/api/user/progress?tz=Mars/Olympus").status_code == 422
+    assert client.get("/api/user/analytics?days=3").status_code == 422
+    assert client.get("/api/user/analytics?days=500").status_code == 422
