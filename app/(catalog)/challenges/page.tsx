@@ -1,10 +1,16 @@
 import type { Metadata } from "next"
 import * as React from "react"
 import { Suspense } from "react"
+import dynamic from "next/dynamic"
 import { CatalogSkeletonGrid } from "@/components/challenges/catalog-grid"
 import { ChallengeCatalog } from "@/components/challenges/challenge-catalog"
 import { CustomChallengeButton } from "@/components/challenges/custom-challenge-button"
-import { CustomChallengeModal } from "@/components/challenges/generator-modal/custom-challenge-modal"
+
+const CustomChallengeModal = dynamic(() =>
+  import("@/components/challenges/generator-modal/custom-challenge-modal").then(
+    (mod) => mod.CustomChallengeModal
+  )
+)
 
 export const metadata: Metadata = {
   title: "Challenges",

@@ -106,6 +106,11 @@ export interface ReviewSubmissionResponse {
   submission_id: number
   id: number
   score: number
+  line_precision_score?: number
+  concept_score?: number
+  false_positive_penalty?: number
+  false_positive_lines?: number[]
+  summary?: string
   feedback: string
   detected_issues: DetectedIssue[]
   missed_issues: MissedIssue[]
@@ -122,6 +127,11 @@ export interface SubmissionHistoryItem {
   flagged_lines: number[]
   comments: string
   score: number
+  line_precision_score?: number
+  concept_score?: number
+  false_positive_penalty?: number
+  false_positive_lines?: number[]
+  summary?: string
   feedback: string
   detected_issues: DetectedIssue[]
   missed_issues: MissedIssue[]

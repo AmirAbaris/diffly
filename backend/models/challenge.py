@@ -11,7 +11,7 @@ from pydantic import (
     field_validator,
     model_validator,
 )
-from sqlalchemy import CheckConstraint
+from sqlalchemy import CheckConstraint, Index
 from sqlmodel import Field, Relationship, SQLModel
 
 
@@ -328,6 +328,7 @@ class Challenge(ChallengeBase, table=True):
             "user_id IS NULL OR session_id IS NULL",
             name="ck_challenges_single_owner",
         ),
+        Index("ix_challenges_public_user", "is_public", "user_id"),
     )
 
     id: int | None = Field(default=None, primary_key=True)

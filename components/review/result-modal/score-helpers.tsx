@@ -1,6 +1,8 @@
 import * as React from "react"
+import { FormattedInlineText } from "@/components/review/formatted-inline"
 import { Badge } from "@/components/ui/badge"
-import { keyByValue } from "@/lib/unique-keys"
+
+export { FormattedInlineText }
 
 export interface ScoreTierStyle {
   label: string
@@ -72,40 +74,6 @@ export function parseEvaluationFeedback(rawFeedback?: string) {
   }
 
   return { summary, penalty }
-}
-
-export function FormattedInlineText({ text }: { text: string }) {
-  const keyedSegments = React.useMemo(() => {
-    const raw = text.split(/(`[^`]+`|\*\*[^*]+\*\*)/g).filter(Boolean)
-    return keyByValue(raw, (segment) => segment)
-  }, [text])
-
-  return (
-    <>
-      {keyedSegments.map(({ key, item: segment }) => {
-        if (segment.startsWith("`") && segment.endsWith("`")) {
-          return (
-            <code
-              key={key}
-              className="rounded border border-border/60 bg-muted/70 px-1 py-0.5 font-mono text-xs text-foreground"
-            >
-              {segment.slice(1, -1)}
-            </code>
-          )
-        }
-
-        if (segment.startsWith("**") && segment.endsWith("**")) {
-          return (
-            <strong key={key} className="font-semibold text-foreground">
-              {segment.slice(2, -2)}
-            </strong>
-          )
-        }
-
-        return <span key={key}>{segment}</span>
-      })}
-    </>
-  )
 }
 
 export function SeverityBadge({ severity }: { severity: string }) {

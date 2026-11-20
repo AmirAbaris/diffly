@@ -1,22 +1,42 @@
 "use client"
 
 import * as React from "react"
+import dynamic from "next/dynamic"
 import { ArenaCommentDrawer } from "@/components/review/arena-comment-drawer"
 import { ArenaHeader } from "@/components/review/arena-header"
 import { ChallengeContextPanel } from "@/components/review/challenge-context-panel"
 import { CodeViewer } from "@/components/review/code-viewer"
-import {
-  FlaggingGuideModal,
-  FLAGGING_GUIDE_STORAGE_KEY,
-} from "@/components/review/flagging-guide-modal"
-import { ReviewResultModal } from "@/components/review/review-result-modal"
 import { SubmissionBar } from "@/components/review/submission-bar"
-import { SubmissionHistoryDrawer } from "@/components/review/submission-history-drawer"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { FLAGGING_GUIDE_STORAGE_KEY } from "@/lib/storage-keys"
 import { cn } from "@/lib/utils"
 import { useArenaUIStore } from "@/stores/arena-ui-store"
 import type { ReadyChallengeSession } from "@/types/arena-session"
+
+const ReviewResultModal = dynamic(
+  () =>
+    import("@/components/review/review-result-modal").then(
+      (mod) => mod.ReviewResultModal
+    ),
+  { ssr: false }
+)
+
+const FlaggingGuideModal = dynamic(
+  () =>
+    import("@/components/review/flagging-guide-modal").then(
+      (mod) => mod.FlaggingGuideModal
+    ),
+  { ssr: false }
+)
+
+const SubmissionHistoryDrawer = dynamic(
+  () =>
+    import("@/components/review/submission-history-drawer").then(
+      (mod) => mod.SubmissionHistoryDrawer
+    ),
+  { ssr: false }
+)
 
 export interface ArenaWorkspaceProps {
   session: ReadyChallengeSession

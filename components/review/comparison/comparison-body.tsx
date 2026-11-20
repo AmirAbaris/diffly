@@ -13,6 +13,7 @@ export interface ComparisonBodyProps {
   userFlaggedLines: number[]
   userComments: string
   solution: ChallengeSolutionResponse | null
+  language?: string
   onRetry: () => void
   onTabChange: (tab: "comparison" | "diff") => void
 }
@@ -24,6 +25,7 @@ export function ComparisonBody({
   userFlaggedLines,
   userComments,
   solution,
+  language,
   onRetry,
   onTabChange,
 }: ComparisonBodyProps) {
@@ -69,7 +71,12 @@ export function ComparisonBody({
   }
 
   if (activeTab === "diff") {
-    return <CodeDiffViewer rawDiff={solution?.recommended_fix_diff} />
+    return (
+      <CodeDiffViewer
+        rawDiff={solution?.recommended_fix_diff}
+        language={language}
+      />
+    )
   }
 
   return (

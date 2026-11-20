@@ -2,11 +2,11 @@
 
 import json
 from collections import defaultdict
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 from fastapi import APIRouter, HTTPException, Request, Response, status
 from pydantic import BaseModel, ConfigDict, Field
-from sqlmodel import select
+from sqlmodel import func, select
 
 from api.deps import ActorDep, CurrentUserDep, GuestSessionDep, SessionDep
 from backend.core.config import settings
@@ -68,24 +68,16 @@ class ClaimSessionResponse(BaseModel):
     session_id: str
 
 
-def compute_streak_days(submissions: list[Submission], now_utc: datetime) -> int:
+def compute_streak_days_from_dates(
+    submission_dates: set[date], now_utc: datetime
+) -> int:
     """Compute consecutive UTC days with >=1 submission up to today or yesterday."""
-    if not submissions:
+    if not submission_dates:
         return 0
-
-    submission_dates = {
-        (
-            sub.created_at.astimezone(UTC).date()
-            if sub.created_at.tzinfo
-            else sub.created_at.replace(tzinfo=UTC).date()
-        )
-        for sub in submissions
-    }
 
     today = now_utc.date()
     yesterday = today - timedelta(days=1)
 
-    start_date = None
     if today in submission_dates:
         start_date = today
     elif yesterday in submission_dates:
@@ -102,6 +94,22 @@ def compute_streak_days(submissions: list[Submission], now_utc: datetime) -> int
     return streak
 
 
+def compute_streak_days(submissions: list[Submission], now_utc: datetime) -> int:
+    """Compute consecutive UTC days with >=1 submission up to today or yesterday."""
+    if not submissions:
+        return 0
+
+    submission_dates = {
+        (
+            sub.created_at.astimezone(UTC).date()
+            if sub.created_at.tzinfo
+            else sub.created_at.replace(tzinfo=UTC).date()
+        )
+        for sub in submissions
+    }
+    return compute_streak_days_from_dates(submission_dates, now_utc)
+
+
 @router.get(
     "/progress",
     response_model=UserProgressResponse,
@@ -112,20 +120,17 @@ def get_user_progress(
     actor: ActorDep,
 ) -> UserProgressResponse:
     """Retrieve user or guest review progress, accuracy stats, and streak."""
-    challenges = session.exec(
-        select(Challenge).where(Challenge.is_public.is_(True))
+    cat_rows = session.exec(
+        select(Challenge.category, func.count(Challenge.id))
+        .where(Challenge.is_public.is_(True))
+        .group_by(Challenge.category)
     ).all()
-    total_challenges = len(challenges)
-    public_challenge_ids = {ch.id for ch in challenges if ch.id is not None}
 
-    categories_map: dict[str, list[Challenge]] = {cat.value: [] for cat in Category}
-    for ch in challenges:
-        cat_name = (
-            ch.category.value if hasattr(ch.category, "value") else str(ch.category)
-        )
-        if cat_name not in categories_map:
-            categories_map[cat_name] = []
-        categories_map[cat_name].append(ch)
+    cat_totals: dict[str, int] = {cat.value: 0 for cat in Category}
+    for cat_val, count in cat_rows:
+        cat_name = cat_val.value if hasattr(cat_val, "value") else str(cat_val)
+        cat_totals[cat_name] = int(count)
+    total_challenges = sum(cat_totals.values())
 
     owner_filter = submission_owner_filter(actor)
 
@@ -140,57 +145,63 @@ def get_user_progress(
                 CategoryProgress(
                     category=cat_name,
                     solved=0,
-                    total=len(cat_list),
+                    total=cat_total,
                     accuracy=0.0,
                 )
-                for cat_name, cat_list in categories_map.items()
+                for cat_name, cat_total in cat_totals.items()
             ],
         )
 
-    submissions = session.exec(
-        select(Submission).where(owner_filter).order_by(Submission.created_at.asc())
+    best_rows = session.exec(
+        select(
+            Submission.challenge_id,
+            Challenge.category,
+            func.max(Submission.score),
+        )
+        .join(Challenge, Submission.challenge_id == Challenge.id)
+        .where(Challenge.is_public.is_(True), owner_filter)
+        .group_by(Submission.challenge_id, Challenge.category)
     ).all()
 
-    submissions_by_challenge: dict[int, list[Submission]] = defaultdict(list)
-    for sub in submissions:
-        if sub.challenge_id in public_challenge_ids:
-            submissions_by_challenge[sub.challenge_id].append(sub)
-
-    total_attempted = len(submissions_by_challenge)
-
-    best_scores: dict[int, int] = {
-        ch_id: max(sub.score for sub in subs)
-        for ch_id, subs in submissions_by_challenge.items()
-    }
-
-    total_solved = sum(1 for score in best_scores.values() if score >= 80)
-
+    total_attempted = len(best_rows)
+    total_solved = sum(1 for _, _, best in best_rows if best >= 80)
     average_score = (
-        round(sum(best_scores.values()) / total_attempted, 1)
+        round(sum(best for _, _, best in best_rows) / total_attempted, 1)
         if total_attempted > 0
         else 0.0
     )
 
-    now_utc = datetime.now(UTC)
-    streak_days = compute_streak_days(submissions, now_utc)
+    scores_by_category: dict[str, list[int]] = defaultdict(list)
+    for _, cat_val, best in best_rows:
+        cat_name = cat_val.value if hasattr(cat_val, "value") else str(cat_val)
+        scores_by_category[cat_name].append(int(best))
+
+    raw_dates = session.exec(
+        select(func.date(Submission.created_at)).where(owner_filter).distinct()
+    ).all()
+    submission_dates = {
+        (
+            d
+            if isinstance(d, date) and not isinstance(d, datetime)
+            else date.fromisoformat(str(d)[:10])
+        )
+        for d in raw_dates
+        if d is not None
+    }
+    streak_days = compute_streak_days_from_dates(submission_dates, datetime.now(UTC))
 
     categories_breakdown: list[CategoryProgress] = []
-    for cat_name, cat_challenges in categories_map.items():
-        cat_ch_ids = {ch.id for ch in cat_challenges if ch.id is not None}
-        cat_solved = sum(1 for ch_id in cat_ch_ids if best_scores.get(ch_id, 0) >= 80)
-        cat_attempted_scores = [
-            best_scores[ch_id] for ch_id in cat_ch_ids if ch_id in best_scores
-        ]
+    for cat_name, cat_total in cat_totals.items():
+        cat_scores = scores_by_category.get(cat_name, [])
+        cat_solved = sum(1 for score in cat_scores if score >= 80)
         cat_accuracy = (
-            round(sum(cat_attempted_scores) / len(cat_attempted_scores), 1)
-            if cat_attempted_scores
-            else 0.0
+            round(sum(cat_scores) / len(cat_scores), 1) if cat_scores else 0.0
         )
         categories_breakdown.append(
             CategoryProgress(
                 category=cat_name,
                 solved=cat_solved,
-                total=len(cat_challenges),
+                total=cat_total,
                 accuracy=cat_accuracy,
             )
         )

@@ -1,52 +1,21 @@
 import * as React from "react"
+import {
+  FormattedInlineText,
+  renderInlineTokens,
+} from "@/components/review/formatted-inline"
+import { parseMarkdownBlocks } from "@/components/review/markdown-parser"
 import { cn } from "@/lib/utils"
 
 /**
- * Renders inline text with support for bold (**text**) and code spans (`code`).
+ * Renders inline text with support for bold, italic, code spans, strikethrough, and links.
  */
 export function FormattedInline({ text }: { text: string }) {
-  const parts = React.useMemo(() => {
-    const raw = text.split(/(\*\*.*?\*\*|`.*?`)/g)
-    const counts = new Map<string, number>()
-    return raw.map((segment) => {
-      const nextCount = (counts.get(segment) ?? 0) + 1
-      counts.set(segment, nextCount)
-      return {
-        key: `inline-${segment}-${nextCount}`,
-        raw: segment,
-      }
-    })
-  }, [text])
-
-  return (
-    <>
-      {parts.map(({ key, raw }) => {
-        if (raw.startsWith("**") && raw.endsWith("**")) {
-          return (
-            <strong key={key} className="font-semibold text-foreground">
-              {raw.slice(2, -2)}
-            </strong>
-          )
-        }
-        if (raw.startsWith("`") && raw.endsWith("`")) {
-          return (
-            <code
-              key={key}
-              className="rounded border border-border/70 bg-muted/70 px-1.5 py-0.5 font-mono text-xs text-foreground"
-            >
-              {raw.slice(1, -1)}
-            </code>
-          )
-        }
-        return <span key={key}>{raw}</span>
-      })}
-    </>
-  )
+  return <FormattedInlineText text={text} />
 }
 
 /**
  * Lightweight, accessible typography component that parses paragraphs,
- * bullet lists, bold text, and inline code formatting.
+ * bullet lists, and inline markdown formatting via the shared parser.
  */
 export function MarkdownTypography({
   content,
@@ -55,38 +24,9 @@ export function MarkdownTypography({
   content: string
   className?: string
 }) {
-  const paragraphs = React.useMemo(() => {
+  const blocks = React.useMemo(() => {
     if (!content) return []
-    const rawParagraphs = content.split(/\n\s*\n/)
-    const pCounts = new Map<string, number>()
-
-    return rawParagraphs.map((para) => {
-      const trimmed = para.trim()
-      const pCount = (pCounts.get(trimmed) ?? 0) + 1
-      pCounts.set(trimmed, pCount)
-
-      const lines = trimmed.split("\n")
-      const isBulletList = lines.every(
-        (line) => line.trim().startsWith("- ") || line.trim().startsWith("* ")
-      )
-
-      const listItems = isBulletList
-        ? lines.map((line, lIdx) => {
-            const itemText = line.trim().replace(/^[-*]\s+/, "")
-            return {
-              key: `li-${itemText.slice(0, 16)}-${lIdx}`,
-              text: itemText,
-            }
-          })
-        : []
-
-      return {
-        key: `para-${trimmed.slice(0, 16)}-${pCount}`,
-        trimmed,
-        isBulletList,
-        listItems,
-      }
-    })
+    return parseMarkdownBlocks(content)
   }, [content])
 
   if (!content) return null
@@ -95,26 +35,44 @@ export function MarkdownTypography({
     <div
       className={cn("flex flex-col gap-2.5 text-xs leading-relaxed", className)}
     >
-      {paragraphs.map(({ key, trimmed, isBulletList, listItems }) => {
-        if (isBulletList) {
+      {blocks.map((block) => {
+        if (block.type === "unordered-list" || block.type === "ordered-list") {
           return (
-            <ul key={key} className="my-1 flex flex-col gap-1 pl-1">
-              {listItems.map((item) => (
-                <li key={item.key} className="flex items-start gap-2">
+            <ul key={block.id} className="my-1 flex flex-col gap-1 pl-1">
+              {block.items.map((item) => (
+                <li key={item.id} className="flex items-start gap-2">
                   <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-primary/70" />
-                  <span>
-                    <FormattedInline text={item.text} />
-                  </span>
+                  <span>{renderInlineTokens(item.tokens)}</span>
                 </li>
               ))}
             </ul>
           )
         }
 
+        if (block.type === "heading" || block.type === "paragraph") {
+          return <p key={block.id}>{renderInlineTokens(block.tokens)}</p>
+        }
+
+        if (block.type === "blockquote") {
+          return (
+            <blockquote
+              key={block.id}
+              className="border-l-2 border-primary/60 pl-3 text-muted-foreground italic"
+            >
+              {block.lines.map((line) => (
+                <div key={line.id}>{renderInlineTokens(line.tokens)}</div>
+              ))}
+            </blockquote>
+          )
+        }
+
         return (
-          <p key={key}>
-            <FormattedInline text={trimmed} />
-          </p>
+          <pre
+            key={block.id}
+            className="overflow-x-auto rounded border border-border bg-muted/50 p-2 font-mono text-xs"
+          >
+            <code>{block.code}</code>
+          </pre>
         )
       })}
     </div>
