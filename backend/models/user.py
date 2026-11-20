@@ -29,12 +29,18 @@ class User(UserBase, table=True):
     id: int | None = Field(default=None, primary_key=True)
     email_lower: str = Field(default="", unique=True, index=True)
     username_lower: str = Field(default="", unique=True, index=True)
-    hashed_password: str
+    hashed_password: str | None = Field(default=None)
+    github_id: str | None = Field(default=None, unique=True, index=True)
+    github_login: str | None = Field(default=None)
     created_at: datetime = Field(default_factory=get_utc_now)
     updated_at: datetime = Field(default_factory=get_utc_now)
 
     submissions: list["Submission"] = Relationship(back_populates="user")
     challenges: list["Challenge"] = Relationship(back_populates="user")
+
+    @property
+    def has_password(self) -> bool:
+        return bool(self.hashed_password)
 
     def __init__(self, **data: Any) -> None:
         super().__init__(**data)
@@ -59,6 +65,8 @@ class UserRead(UserBase):
     id: int
     created_at: datetime
     updated_at: datetime
+    github_login: str | None = None
+    has_password: bool = False
 
 
 class UserCreate(SQLModel):

@@ -1,5 +1,7 @@
 import json
-from typing import Annotated, Any
+from collections import defaultdict
+from datetime import UTC, datetime
+from typing import Annotated, Any, Literal
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
@@ -26,6 +28,11 @@ from backend.models.challenge import (
     Language,
 )
 from backend.models.submission import Submission
+from backend.services.analytics_service import (
+    compute_public_category_mastery,
+    compute_review_schedule,
+    fetch_actor_public_submissions,
+)
 from backend.services.evaluation_service import (
     DetectedIssue,
     MissedIssue,
@@ -507,6 +514,185 @@ def get_challenge_or_404(
         )
 
     return challenge
+
+
+class NextChallengeResponse(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    challenge: ChallengeSummary
+    reason: Literal["due_review", "weak_category", "new_material", "refresh"]
+    due_at: datetime | None = None
+    category_mastery: float = Field(ge=0.0, le=100.0)
+    review_interval_days: int | None = None
+
+
+_DIFFICULTY_ORDER = {
+    Difficulty.EASY: 0,
+    Difficulty.MEDIUM: 1,
+    Difficulty.HARD: 2,
+}
+
+
+def _category_name(cat: Category | str) -> str:
+    return cat.value if hasattr(cat, "value") else str(cat)
+
+
+@router.get("/next", response_model=NextChallengeResponse)
+def get_next_challenge(
+    session: SessionDep,
+    actor: ActorDep,
+    exclude: Annotated[
+        str | None,
+        Query(max_length=120, description="Slug of the current challenge to exclude"),
+    ] = None,
+    category: Annotated[
+        Category | None,
+        Query(description="Optional category filter for next drill"),
+    ] = None,
+) -> NextChallengeResponse:
+    """Recommend the next public drill via spaced repetition and weak categories."""
+    all_public = list(
+        session.exec(
+            select(Challenge)
+            .where(Challenge.is_public.is_(True))
+            .order_by(Challenge.id)
+        ).all()
+    )
+    exclude_clean = exclude.strip() if exclude else None
+    candidates = [
+        ch
+        for ch in all_public
+        if (category is None or ch.category == category)
+        and (not exclude_clean or ch.slug != exclude_clean)
+    ]
+    if not candidates:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No eligible next challenge available",
+        )
+
+    cat_totals: dict[str, int] = {cat.value: 0 for cat in Category}
+    for ch in all_public:
+        cat_totals[_category_name(ch.category)] += 1
+    public_rows = fetch_actor_public_submissions(session, actor)
+    cat_stats, best_map = compute_public_category_mastery(cat_totals, public_rows)
+    mastery_by_cat = {item.category: item.mastery for item in cat_stats}
+    attempted_by_cat = {item.category: item.attempted for item in cat_stats}
+    accuracy_by_cat = {item.category: item.accuracy for item in cat_stats}
+
+    subs_by_challenge: dict[int, list[Submission]] = defaultdict(list)
+    for sub, _ in public_rows:
+        subs_by_challenge[sub.challenge_id].append(sub)
+
+    schedules: dict[int, tuple[datetime, int]] = {}
+    for ch in candidates:
+        ch_id = ch.id or 0
+        if ch_id in subs_by_challenge:
+            schedules[ch_id] = compute_review_schedule(subs_by_challenge[ch_id])
+
+    now_utc = datetime.now(UTC)
+    due_candidates = [
+        ch
+        for ch in candidates
+        if (ch.id or 0) in schedules and schedules[ch.id or 0][0] <= now_utc
+    ]
+
+    selected: Challenge
+    reason: Literal["due_review", "weak_category", "new_material", "refresh"]
+    due_at: datetime | None = None
+    review_interval_days: int | None = None
+
+    if due_candidates:
+        due_candidates.sort(
+            key=lambda ch: (
+                0 if best_map.get(ch.id or 0, 0) < 80 else 1,
+                schedules[ch.id or 0][0],
+                mastery_by_cat.get(_category_name(ch.category), 0.0),
+                ch.id or 0,
+            )
+        )
+        selected = due_candidates[0]
+        reason = "due_review"
+        due_at, review_interval_days = schedules[selected.id or 0]
+    else:
+        unattempted = [ch for ch in candidates if (ch.id or 0) not in subs_by_challenge]
+        if unattempted:
+            weak_practiced = [
+                ch
+                for ch in unattempted
+                if attempted_by_cat.get(_category_name(ch.category), 0) > 0
+                and accuracy_by_cat.get(_category_name(ch.category), 0.0) < 80.0
+            ]
+            if weak_practiced:
+                weak_practiced.sort(
+                    key=lambda ch: (
+                        accuracy_by_cat.get(_category_name(ch.category), 0.0),
+                        mastery_by_cat.get(_category_name(ch.category), 0.0),
+                        _DIFFICULTY_ORDER.get(ch.difficulty, 1),
+                        ch.id or 0,
+                    )
+                )
+                selected = weak_practiced[0]
+                reason = "weak_category"
+            elif best_map:
+                unexplored = [
+                    ch
+                    for ch in unattempted
+                    if attempted_by_cat.get(_category_name(ch.category), 0) == 0
+                ]
+                if unexplored:
+                    unexplored.sort(
+                        key=lambda ch: (
+                            _DIFFICULTY_ORDER.get(ch.difficulty, 1),
+                            ch.id or 0,
+                        )
+                    )
+                    selected = unexplored[0]
+                    reason = "new_material"
+                else:
+                    unattempted.sort(
+                        key=lambda ch: (
+                            mastery_by_cat.get(_category_name(ch.category), 0.0),
+                            _DIFFICULTY_ORDER.get(ch.difficulty, 1),
+                            ch.id or 0,
+                        )
+                    )
+                    selected = unattempted[0]
+                    reason = "weak_category"
+            else:
+                unattempted.sort(
+                    key=lambda ch: (
+                        _DIFFICULTY_ORDER.get(ch.difficulty, 1),
+                        ch.id or 0,
+                    )
+                )
+                selected = unattempted[0]
+                reason = "new_material"
+        else:
+            candidates.sort(
+                key=lambda ch: (
+                    schedules[ch.id or 0][0],
+                    best_map.get(ch.id or 0, 0),
+                    ch.id or 0,
+                )
+            )
+            selected = candidates[0]
+            reason = "refresh"
+            due_at, review_interval_days = schedules[selected.id or 0]
+
+    selected_id = selected.id or 0
+    selected_best = best_map.get(selected_id)
+    selected_cat = _category_name(selected.category)
+    return NextChallengeResponse(
+        challenge=selected.to_summary(
+            is_solved=selected_best is not None and selected_best >= 80,
+            best_score=selected_best,
+        ),
+        reason=reason,
+        due_at=due_at,
+        category_mastery=mastery_by_cat.get(selected_cat, 0.0),
+        review_interval_days=review_interval_days,
+    )
 
 
 @router.get("/{identifier}", response_model=ChallengeDetail)

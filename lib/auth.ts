@@ -12,6 +12,11 @@ export interface AuthUser {
   username: string
   email: string
   avatar_url?: string | null
+  github_login?: string | null
+  has_password?: boolean
+  created_at?: string
+  updated_at?: string
+  is_active?: boolean
 }
 
 export interface LoginCredentials {
@@ -184,7 +189,8 @@ export async function apiLogout(): Promise<void> {
 const isChallengeScopedKey = (key: unknown): key is string =>
   typeof key === "string" &&
   key.startsWith("/api/challenges/") &&
-  key !== CUSTOM_CHALLENGES_SWR_KEY
+  key !== CUSTOM_CHALLENGES_SWR_KEY &&
+  !key.startsWith("/api/challenges/next")
 
 const isPrivateChallengeSliceKey = (key: string): boolean =>
   key.includes("/submissions") || key.includes("/solution")
@@ -209,10 +215,27 @@ async function revalidateAuthScopedCaches(
     : mutateCache(isChallengeScopedKey)
 
   await Promise.all([
-    mutateCache(USER_PROGRESS_SWR_KEY),
+    mutateCache(
+      (key) => typeof key === "string" && key.startsWith(USER_PROGRESS_SWR_KEY)
+    ),
+    mutateCache(
+      (key) => typeof key === "string" && key.startsWith("/api/user/analytics")
+    ),
+    mutateCache(
+      (key) => typeof key === "string" && key.startsWith("/api/challenges/next")
+    ),
     mutateCache("/api/challenges"),
     mutateCache(CUSTOM_CHALLENGES_SWR_KEY),
     challengeScopedPromise,
+  ])
+}
+
+export async function revalidateAllAuthCaches(
+  mutateCache: ScopedMutator
+): Promise<void> {
+  await Promise.all([
+    mutateCache(AUTH_USER_SWR_KEY),
+    revalidateAuthScopedCaches(mutateCache),
   ])
 }
 

@@ -29,6 +29,15 @@ PUBLIC_ROUTES: dict[tuple[str, str], str] = {
     ("POST", "/api/auth/register"): "Public registration endpoint",
     ("POST", "/api/auth/login"): "Public credential login endpoint",
     ("POST", "/api/auth/logout"): "Cookie-clearing logout endpoint",
+    ("GET", "/api/auth/providers"): "Public auth provider capability flags",
+    (
+        "GET",
+        "/api/auth/github/login",
+    ): "GitHub OAuth initiation endpoint (optional link bound to active cookie)",
+    (
+        "GET",
+        "/api/auth/github/callback",
+    ): "GitHub OAuth callback verified via HMAC-signed state cookie",
     (
         "POST",
         "/api/challenges/evaluate-custom",
@@ -242,6 +251,30 @@ MATRIX: dict[tuple[str, str], dict[str, dict[str, int]]] = {
     },
     ("GET", "/api/user/progress"): {
         "own_progress": {
+            "anonymous": 200,
+            "guest_a": 200,
+            "guest_b": 200,
+            "guest_forged": 200,
+            "guest_tampered": 200,
+            "user_a": 200,
+            "user_b": 200,
+            "inactive": 200,
+        },
+    },
+    ("GET", "/api/user/analytics"): {
+        "own_analytics": {
+            "anonymous": 200,
+            "guest_a": 200,
+            "guest_b": 200,
+            "guest_forged": 200,
+            "guest_tampered": 200,
+            "user_a": 200,
+            "user_b": 200,
+            "inactive": 200,
+        },
+    },
+    ("GET", "/api/challenges/next"): {
+        "public_drill_recommendation": {
             "anonymous": 200,
             "guest_a": 200,
             "guest_b": 200,
@@ -666,7 +699,7 @@ def test_authorization_matrix_enforcement(
                 else:
                     assert comments == []
 
-    # 9. GET /api/user/progress
+    # 9. GET /api/user/progress & GET /api/user/analytics & GET /api/challenges/next
     for actor_name, expected in MATRIX[("GET", "/api/user/progress")][
         "own_progress"
     ].items():
@@ -677,12 +710,54 @@ def test_authorization_matrix_enforcement(
         if actor_name == "user_a":
             assert data["total_attempted"] == 1
             assert data["average_score"] == 90.0
+            assert data["custom_attempted"] == 1
+            assert data["custom_solved"] == 1
         elif actor_name == "guest_a":
             assert data["total_attempted"] == 1
             assert data["average_score"] == 82.0
+            assert data["custom_attempted"] == 1
+            assert data["custom_solved"] == 1
         else:
             assert data["total_attempted"] == 0
             assert data["total_solved"] == 0
+            assert data["custom_attempted"] == 0
+            assert data["custom_solved"] == 0
+
+    for actor_name, expected in MATRIX[("GET", "/api/user/analytics")][
+        "own_analytics"
+    ].items():
+        ac, headers = actors[actor_name]
+        res = ac.get("/api/user/analytics?days=30", headers=headers)
+        assert res.status_code == expected, actor_name
+        analytics = res.json()
+        if actor_name in ("user_a", "guest_a"):
+            assert analytics["total_submissions"] == 3
+            assert analytics["custom"]["attempted"] == 1
+            assert analytics["custom"]["solved"] == 1
+            assert analytics["custom"]["submissions"] == 2
+        else:
+            assert analytics["total_submissions"] == 0
+            assert analytics["custom"] == {
+                "attempted": 0,
+                "solved": 0,
+                "submissions": 0,
+            }
+            assert analytics["trends"] == []
+
+    for actor_name, expected in MATRIX[("GET", "/api/challenges/next")][
+        "public_drill_recommendation"
+    ].items():
+        ac, headers = actors[actor_name]
+        res = ac.get("/api/challenges/next", headers=headers)
+        assert res.status_code == expected, actor_name
+        next_payload = res.json()
+        assert next_payload["challenge"]["slug"] == public_ch.slug
+        if actor_name == "user_a":
+            assert next_payload["category_mastery"] == 90.0
+        elif actor_name == "guest_a":
+            assert next_payload["category_mastery"] == 82.0
+        else:
+            assert next_payload["category_mastery"] == 0.0
 
     # 10. DELETE /api/challenges/custom/{identifier} (non-owners rejected first)
     for target_key in ("user_a_private", "guest_a_private"):
@@ -745,6 +820,7 @@ def test_authorization_matrix_enforcement(
         )
         assert ac.get(f"/api/challenges/{public_ch.slug}/submissions").json() == []
         assert ac.get("/api/user/progress").json()["total_attempted"] == 0
+        assert ac.get("/api/user/analytics").json()["total_submissions"] == 0
 
     # User A now owns both private challenges and can delete them
     assert (
@@ -1032,3 +1108,89 @@ def test_claimed_rows_have_null_session_id(
     assert claimed_ch.session_id is None
     assert claimed_sub.user_id == user["id"]
     assert claimed_sub.session_id is None
+
+
+def test_github_oauth_cross_actor_state_and_inactive_isolation(
+    session: Session,
+    client_factory: Callable[[], TestClient],
+    register_user: Callable[..., dict[str, Any]],
+    login_as: Callable[..., TestClient],
+    as_guest: Callable[[TestClient, str | None], str],
+    monkeypatch,
+):
+    """GitHub OAuth prevents cross-actor state linking and inactive sign-in."""
+    monkeypatch.setattr(settings, "GITHUB_CLIENT_ID", "gh-matrix-client")
+    monkeypatch.setattr(settings, "GITHUB_CLIENT_SECRET", "gh-matrix-secret")
+
+    actors, meta = _make_actors(
+        session, client_factory, register_user, login_as, as_guest
+    )
+
+    # Inactive user starting OAuth login cannot bind link_user_id
+    from backend.services.github_oauth import verify_oauth_state
+
+    inactive_client, _ = actors["inactive"]
+    init_inactive = inactive_client.get(
+        "/api/auth/github/login?next=/settings", follow_redirects=False
+    )
+    assert init_inactive.status_code == 302
+    state_cookie = init_inactive.cookies.get(settings.OAUTH_STATE_COOKIE_NAME)
+    assert state_cookie is not None
+    verified_inactive = verify_oauth_state(state_cookie, state_cookie)
+    assert verified_inactive is not None
+    assert verified_inactive.link_user_id is None
+
+    # User A initiates linking flow; User B cannot replay User A's state cookie
+    user_a_client, _ = actors["user_a"]
+    init_a = user_a_client.get(
+        "/api/auth/github/login?next=/settings", follow_redirects=False
+    )
+    assert init_a.status_code == 302
+    user_a_state = init_a.cookies.get(settings.OAUTH_STATE_COOKIE_NAME)
+    assert user_a_state is not None
+
+    user_b_client, _ = actors["user_b"]
+    user_b_client.cookies.set(
+        settings.OAUTH_STATE_COOKIE_NAME, user_a_state, domain="testserver.local"
+    )
+    hijack_res = user_b_client.get(
+        f"/api/auth/github/callback?code=fake&state={user_a_state}",
+        follow_redirects=False,
+    )
+    assert hijack_res.status_code == 302
+    assert "auth_error=github_state" in hijack_res.headers["location"]
+
+    # Inactive GitHub user is denied login and gets no auth cookie
+    inactive_db_user = session.get(User, meta["inactive"]["id"])
+    assert inactive_db_user is not None
+    inactive_db_user.github_id = "gh-inactive-999"
+    session.add(inactive_db_user)
+    session.commit()
+
+    anon_client, _ = actors["anonymous"]
+    init_anon = anon_client.get(
+        "/api/auth/github/login?next=/challenges", follow_redirects=False
+    )
+    anon_state = init_anon.cookies.get(settings.OAUTH_STATE_COOKIE_NAME)
+    assert anon_state is not None
+
+    from backend.services.github_oauth import GitHubProfile
+
+    with patch(
+        "api.routes.auth.exchange_github_code",
+        new=AsyncMock(
+            return_value=GitHubProfile(
+                github_id="gh-inactive-999",
+                github_login="inactive_gh",
+                email=meta["inactive"]["email"],
+                avatar_url=None,
+            )
+        ),
+    ):
+        cb_inactive = anon_client.get(
+            f"/api/auth/github/callback?code=valid&state={anon_state}",
+            follow_redirects=False,
+        )
+    assert cb_inactive.status_code == 302
+    assert "auth_error=account_inactive" in cb_inactive.headers["location"]
+    assert settings.AUTH_COOKIE_NAME not in cb_inactive.cookies
