@@ -41,6 +41,7 @@
     "format": "prettier --write \"**/*.{ts,tsx,js,mjs,json,md}\"",
     "lint": "pnpm lint:oxlint && pnpm lint:doctor && pnpm lint:js && pnpm format:check && pnpm lint:screenshots",
     "test": "vitest run",
+    "test:e2e": "playwright test",
     "test:watch": "vitest",
     "test:py": "([ -f .venv/bin/pytest ] && .venv/bin/pytest tests --cov=api --cov=backend --cov-fail-under=85) || pytest tests --cov=api --cov=backend --cov-fail-under=85",
     "verify:py": "pnpm lint:py && pnpm test:py",
@@ -71,6 +72,7 @@
     "zustand": "^5.1.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.65.1",
     "@tailwindcss/postcss": "^4",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
