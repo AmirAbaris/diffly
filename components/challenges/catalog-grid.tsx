@@ -3,6 +3,7 @@
 import * as React from "react"
 import Link from "next/link"
 import { ArrowRight, Inbox } from "lucide-react"
+import { DifficultyBadge } from "@/components/challenges/difficulty-badge"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -21,11 +22,9 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty"
 import { Skeleton } from "@/components/ui/skeleton"
-import {
-  formatLanguageLabel,
-  type ChallengeSummary,
-  type Difficulty,
-} from "@/types/challenge"
+import { formatLanguageLabel, type ChallengeSummary } from "@/types/challenge"
+
+export { DifficultyBadge }
 
 export interface CatalogGridProps {
   challenges: ChallengeSummary[]
@@ -41,18 +40,6 @@ const SKELETON_ITEMS = [
   "sk-card-5",
   "sk-card-6",
 ]
-
-export function DifficultyBadge({ difficulty }: { difficulty: Difficulty }) {
-  if (difficulty === "Hard") {
-    return <Badge variant="destructive">Hard</Badge>
-  }
-
-  if (difficulty === "Medium") {
-    return <Badge variant="warning">Medium</Badge>
-  }
-
-  return <Badge variant="success">Easy</Badge>
-}
 
 export function CatalogSkeletonGrid() {
   return (

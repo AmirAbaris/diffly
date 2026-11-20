@@ -29,6 +29,7 @@ export function ComparisonView({
   userFlaggedLines = DEFAULT_FLAGGED_LINES,
   userComments = "",
   canonicalSolution: propSolution,
+  language,
   className,
   defaultView = "comparison",
   onViewChange,
@@ -129,6 +130,7 @@ export function ComparisonView({
         userFlaggedLines={userFlaggedLines}
         userComments={userComments}
         solution={solution}
+        language={language}
         onRetry={handleRetry}
         onTabChange={handleTabChange}
       />

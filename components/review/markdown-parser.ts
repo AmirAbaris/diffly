@@ -1,8 +1,10 @@
-export interface InlineToken {
-  id: string
-  type: "text" | "bold" | "italic" | "code" | "strikethrough"
-  text: string
-}
+export type InlineToken =
+  | { id: string; type: "text"; text: string }
+  | { id: string; type: "code"; text: string }
+  | { id: string; type: "bold"; children: InlineToken[] }
+  | { id: string; type: "italic"; children: InlineToken[] }
+  | { id: string; type: "strikethrough"; children: InlineToken[] }
+  | { id: string; type: "link"; href: string; children: InlineToken[] }
 
 export interface ListItem {
   id: string
@@ -22,6 +24,18 @@ export type MarkdownBlock =
   | { id: string; type: "ordered-list"; items: ListItem[] }
   | { id: string; type: "paragraph"; tokens: InlineToken[] }
 
+function isSafeHref(rawHref: string): boolean {
+  const trimmed = rawHref.trim()
+  if (!trimmed) return false
+  if (trimmed.startsWith("/") || trimmed.startsWith("#")) return true
+  const lower = trimmed.toLowerCase()
+  return (
+    lower.startsWith("https://") ||
+    lower.startsWith("http://") ||
+    lower.startsWith("mailto:")
+  )
+}
+
 export function parseInlineTokens(text: string, prefix: string): InlineToken[] {
   const tokens: InlineToken[] = []
   let remaining = text
@@ -38,28 +52,52 @@ export function parseInlineTokens(text: string, prefix: string): InlineToken[] {
       continue
     }
 
-    const boldMatch = remaining.match(/^\*\*([^*]+)\*\*/)
+    const linkMatch = remaining.match(/^\[([^\]]+)\]\(([^)\s]+)\)/)
+    if (linkMatch && isSafeHref(linkMatch[2])) {
+      tokens.push({
+        id: tokenId,
+        type: "link",
+        href: linkMatch[2].trim(),
+        children: parseInlineTokens(linkMatch[1], tokenId),
+      })
+      remaining = remaining.slice(linkMatch[0].length)
+      continue
+    }
+
+    const boldMatch = remaining.match(/^\*\*(.+?)\*\*/)
     if (boldMatch) {
-      tokens.push({ id: tokenId, type: "bold", text: boldMatch[1] })
+      tokens.push({
+        id: tokenId,
+        type: "bold",
+        children: parseInlineTokens(boldMatch[1], tokenId),
+      })
       remaining = remaining.slice(boldMatch[0].length)
       continue
     }
 
-    const strikeMatch = remaining.match(/^~~([^~]+)~~/)
+    const strikeMatch = remaining.match(/^~~(.+?)~~/)
     if (strikeMatch) {
-      tokens.push({ id: tokenId, type: "strikethrough", text: strikeMatch[1] })
+      tokens.push({
+        id: tokenId,
+        type: "strikethrough",
+        children: parseInlineTokens(strikeMatch[1], tokenId),
+      })
       remaining = remaining.slice(strikeMatch[0].length)
       continue
     }
 
-    const italicMatch = remaining.match(/^(\*|_)([^*_]+)\1/)
+    const italicMatch = remaining.match(/^(\*|_)([^*_]+?)\1/)
     if (italicMatch) {
-      tokens.push({ id: tokenId, type: "italic", text: italicMatch[2] })
+      tokens.push({
+        id: tokenId,
+        type: "italic",
+        children: parseInlineTokens(italicMatch[2], tokenId),
+      })
       remaining = remaining.slice(italicMatch[0].length)
       continue
     }
 
-    const nextSpecial = remaining.search(/[`*_~]/)
+    const nextSpecial = remaining.search(/[`*_~[]/)
     if (nextSpecial === -1) {
       tokens.push({ id: tokenId, type: "text", text: remaining })
       break

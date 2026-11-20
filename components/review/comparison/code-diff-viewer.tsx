@@ -1,17 +1,71 @@
+"use client"
+
 import * as React from "react"
 import { Check, Copy } from "lucide-react"
+import { useTheme } from "next-themes"
+import { Highlight, themes, type PrismTheme } from "prism-react-renderer"
+import { normalizeCodeLanguage } from "@/components/review/code-viewer/language"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { useClipboard } from "@/hooks/use-clipboard"
+import { Prism } from "@/lib/prism-languages"
+import { keyByValue } from "@/lib/unique-keys"
 import { cn } from "@/lib/utils"
 import { buildSplitDiffRows, parseUnifiedDiff } from "./diff-parser"
 
 export interface CodeDiffViewerProps {
   rawDiff?: string
+  language?: string
 }
 
-export function CodeDiffViewer({ rawDiff = "" }: CodeDiffViewerProps) {
+function HighlightedDiffLine({
+  code,
+  language,
+  theme,
+}: {
+  code: string
+  language: string
+  theme: PrismTheme
+}) {
+  if (!code) {
+    return <span className="whitespace-pre"> </span>
+  }
+
+  return (
+    <Highlight prism={Prism} theme={theme} code={code} language={language}>
+      {({ tokens, getTokenProps }) => {
+        const lineTokens = tokens[0] ?? []
+        const keyedTokens = keyByValue(
+          lineTokens,
+          (token) => token.content || "empty"
+        )
+        return (
+          <span className="whitespace-pre">
+            {keyedTokens.map(({ key, item: token }) => {
+              const tokenProps = getTokenProps({ token })
+              delete (tokenProps as { key?: unknown }).key
+              return <span key={key} {...tokenProps} />
+            })}
+          </span>
+        )
+      }}
+    </Highlight>
+  )
+}
+
+export function CodeDiffViewer({
+  rawDiff = "",
+  language = "python",
+}: CodeDiffViewerProps) {
   const [diffMode, setDiffMode] = React.useState<"split" | "unified">("split")
-  const [copied, setCopied] = React.useState(false)
+  const { copied, copy } = useClipboard()
+  const { resolvedTheme } = useTheme()
+
+  const normalizedLanguage = React.useMemo(
+    () => normalizeCodeLanguage(language),
+    [language]
+  )
+  const prismTheme = resolvedTheme === "light" ? themes.vsLight : themes.vsDark
 
   const diffLines = React.useMemo(() => parseUnifiedDiff(rawDiff), [rawDiff])
   const splitRows = React.useMemo(
@@ -19,16 +73,9 @@ export function CodeDiffViewer({ rawDiff = "" }: CodeDiffViewerProps) {
     [diffLines]
   )
 
-  const handleCopy = React.useCallback(async () => {
-    if (!rawDiff) return
-    try {
-      await navigator.clipboard.writeText(rawDiff)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    } catch {
-      // Graceful clipboard fallback
-    }
-  }, [rawDiff])
+  const handleCopy = React.useCallback(() => {
+    void copy(rawDiff)
+  }, [copy, rawDiff])
 
   if (!rawDiff) {
     return (
@@ -83,12 +130,12 @@ export function CodeDiffViewer({ rawDiff = "" }: CodeDiffViewerProps) {
           >
             {copied ? (
               <>
-                <Check className="size-3 text-emerald-500" />
+                <Check aria-hidden="true" className="size-3 text-emerald-500" />
                 <span>Copied</span>
               </>
             ) : (
               <>
-                <Copy className="size-3" />
+                <Copy aria-hidden="true" className="size-3" />
                 <span>Copy Diff</span>
               </>
             )}
@@ -97,23 +144,23 @@ export function CodeDiffViewer({ rawDiff = "" }: CodeDiffViewerProps) {
       </div>
 
       {diffMode === "split" ? (
-        <div className="overflow-x-auto rounded-xl border border-border bg-zinc-950 font-mono text-xs">
-          <div className="grid grid-cols-2 border-b border-zinc-800 bg-zinc-900/90 text-xs font-semibold">
-            <div className="border-r border-zinc-800 px-4 py-2 text-rose-400">
+        <div className="overflow-x-auto rounded-xl border border-border bg-muted/20 font-mono text-xs">
+          <div className="grid grid-cols-1 border-b border-border bg-muted/40 text-xs font-semibold md:grid-cols-2">
+            <div className="border-b border-border px-4 py-2 text-rose-600 md:border-r md:border-b-0 dark:text-rose-400">
               Before Fix (Original Defect)
             </div>
-            <div className="px-4 py-2 text-emerald-400">
+            <div className="px-4 py-2 text-emerald-600 dark:text-emerald-400">
               After Fix (Recommended Solution)
             </div>
           </div>
 
-          <div className="divide-y divide-zinc-900/60 leading-relaxed">
+          <div className="divide-y divide-border/60 leading-relaxed">
             {splitRows.map((row) => {
               if (row.type === "hunk") {
                 return (
                   <div
                     key={row.id}
-                    className="col-span-2 bg-sky-950/40 px-3 py-1 font-mono text-xs text-sky-400"
+                    className="bg-sky-500/10 px-3 py-1 font-mono text-xs text-sky-600 dark:text-sky-400"
                   >
                     {row.hunkHeader}
                   </div>
@@ -121,43 +168,51 @@ export function CodeDiffViewer({ rawDiff = "" }: CodeDiffViewerProps) {
               }
 
               return (
-                <div key={row.id} className="grid grid-cols-2">
+                <div key={row.id} className="grid grid-cols-1 md:grid-cols-2">
                   <div
                     className={cn(
-                      "flex min-h-[22px] items-start border-r border-zinc-800/80 px-2.5 py-0.5",
+                      "flex min-h-[22px] min-w-0 items-start border-b border-border/60 px-2.5 py-0.5 md:border-r md:border-b-0",
                       row.left?.type === "deleted"
-                        ? "bg-rose-950/40 text-rose-200"
-                        : "text-zinc-300"
+                        ? "bg-rose-500/10 text-foreground"
+                        : "text-foreground"
                     )}
                   >
-                    <span className="w-8 shrink-0 pr-3 text-right font-mono text-xs text-zinc-500 tabular-nums select-none">
+                    <span className="w-8 shrink-0 pr-3 text-right font-mono text-xs text-muted-foreground tabular-nums select-none">
                       {row.left?.lineNumber ?? ""}
                     </span>
-                    <span className="w-4 shrink-0 font-bold text-rose-400 select-none">
+                    <span className="w-4 shrink-0 font-bold text-rose-600 select-none dark:text-rose-400">
                       {row.left?.type === "deleted" ? "-" : " "}
                     </span>
-                    <span className="overflow-x-auto whitespace-pre">
-                      {row.left?.content ?? ""}
-                    </span>
+                    <div className="min-w-0 flex-1 overflow-x-auto">
+                      <HighlightedDiffLine
+                        code={row.left?.content ?? ""}
+                        language={normalizedLanguage}
+                        theme={prismTheme}
+                      />
+                    </div>
                   </div>
 
                   <div
                     className={cn(
-                      "flex min-h-[22px] items-start px-2.5 py-0.5",
+                      "flex min-h-[22px] min-w-0 items-start px-2.5 py-0.5",
                       row.right?.type === "added"
-                        ? "bg-emerald-950/40 text-emerald-200"
-                        : "text-zinc-300"
+                        ? "bg-emerald-500/10 text-foreground"
+                        : "text-foreground"
                     )}
                   >
-                    <span className="w-8 shrink-0 pr-3 text-right font-mono text-xs text-zinc-500 tabular-nums select-none">
+                    <span className="w-8 shrink-0 pr-3 text-right font-mono text-xs text-muted-foreground tabular-nums select-none">
                       {row.right?.lineNumber ?? ""}
                     </span>
-                    <span className="w-4 shrink-0 font-bold text-emerald-400 select-none">
+                    <span className="w-4 shrink-0 font-bold text-emerald-600 select-none dark:text-emerald-400">
                       {row.right?.type === "added" ? "+" : " "}
                     </span>
-                    <span className="overflow-x-auto whitespace-pre">
-                      {row.right?.content ?? ""}
-                    </span>
+                    <div className="min-w-0 flex-1 overflow-x-auto">
+                      <HighlightedDiffLine
+                        code={row.right?.content ?? ""}
+                        language={normalizedLanguage}
+                        theme={prismTheme}
+                      />
+                    </div>
                   </div>
                 </div>
               )
@@ -165,13 +220,13 @@ export function CodeDiffViewer({ rawDiff = "" }: CodeDiffViewerProps) {
           </div>
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-border bg-zinc-950 p-3 font-mono text-xs leading-relaxed">
+        <div className="overflow-x-auto rounded-xl border border-border bg-muted/20 p-3 font-mono text-xs leading-relaxed">
           {diffLines.map((line) => {
             if (line.type === "hunk") {
               return (
                 <div
                   key={line.id}
-                  className="bg-sky-950/40 px-2 py-0.5 text-sky-400"
+                  className="bg-sky-500/10 px-2 py-0.5 text-sky-600 dark:text-sky-400"
                 >
                   {line.content}
                 </div>
@@ -179,7 +234,7 @@ export function CodeDiffViewer({ rawDiff = "" }: CodeDiffViewerProps) {
             }
             if (line.type === "header") {
               return (
-                <div key={line.id} className="text-zinc-500">
+                <div key={line.id} className="text-muted-foreground">
                   {line.content}
                 </div>
               )
@@ -188,18 +243,22 @@ export function CodeDiffViewer({ rawDiff = "" }: CodeDiffViewerProps) {
               return (
                 <div
                   key={line.id}
-                  className="flex items-start bg-rose-950/40 text-rose-200"
+                  className="flex items-start bg-rose-500/10 text-foreground"
                 >
-                  <span className="w-8 shrink-0 pr-2 text-right text-xs text-zinc-600 tabular-nums select-none">
+                  <span className="w-8 shrink-0 pr-2 text-right text-xs text-muted-foreground tabular-nums select-none">
                     {line.oldLineNumber}
                   </span>
-                  <span className="w-8 shrink-0 pr-2 text-right text-xs text-zinc-600 select-none">
+                  <span className="w-8 shrink-0 pr-2 text-right text-xs text-muted-foreground select-none">
                     {" "}
                   </span>
-                  <span className="w-4 shrink-0 font-bold text-rose-400 select-none">
+                  <span className="w-4 shrink-0 font-bold text-rose-600 select-none dark:text-rose-400">
                     -
                   </span>
-                  <span className="whitespace-pre">{line.content}</span>
+                  <HighlightedDiffLine
+                    code={line.content}
+                    language={normalizedLanguage}
+                    theme={prismTheme}
+                  />
                 </div>
               )
             }
@@ -207,31 +266,39 @@ export function CodeDiffViewer({ rawDiff = "" }: CodeDiffViewerProps) {
               return (
                 <div
                   key={line.id}
-                  className="flex items-start bg-emerald-950/40 text-emerald-200"
+                  className="flex items-start bg-emerald-500/10 text-foreground"
                 >
-                  <span className="w-8 shrink-0 pr-2 text-right text-xs text-zinc-600 select-none">
+                  <span className="w-8 shrink-0 pr-2 text-right text-xs text-muted-foreground select-none">
                     {" "}
                   </span>
-                  <span className="w-8 shrink-0 pr-2 text-right text-xs text-zinc-600 tabular-nums select-none">
+                  <span className="w-8 shrink-0 pr-2 text-right text-xs text-muted-foreground tabular-nums select-none">
                     {line.newLineNumber}
                   </span>
-                  <span className="w-4 shrink-0 font-bold text-emerald-400 select-none">
+                  <span className="w-4 shrink-0 font-bold text-emerald-600 select-none dark:text-emerald-400">
                     +
                   </span>
-                  <span className="whitespace-pre">{line.content}</span>
+                  <HighlightedDiffLine
+                    code={line.content}
+                    language={normalizedLanguage}
+                    theme={prismTheme}
+                  />
                 </div>
               )
             }
             return (
-              <div key={line.id} className="flex items-start text-zinc-300">
-                <span className="w-8 shrink-0 pr-2 text-right text-xs text-zinc-600 tabular-nums select-none">
+              <div key={line.id} className="flex items-start text-foreground">
+                <span className="w-8 shrink-0 pr-2 text-right text-xs text-muted-foreground tabular-nums select-none">
                   {line.oldLineNumber}
                 </span>
-                <span className="w-8 shrink-0 pr-2 text-right text-xs text-zinc-600 tabular-nums select-none">
+                <span className="w-8 shrink-0 pr-2 text-right text-xs text-muted-foreground tabular-nums select-none">
                   {line.newLineNumber}
                 </span>
                 <span className="w-4 shrink-0 select-none"> </span>
-                <span className="whitespace-pre">{line.content}</span>
+                <HighlightedDiffLine
+                  code={line.content}
+                  language={normalizedLanguage}
+                  theme={prismTheme}
+                />
               </div>
             )
           })}

@@ -71,8 +71,20 @@ export function ReviewResultModal({
   const missedIssues = result?.missed_issues ?? []
 
   const { summary, penalty } = React.useMemo(() => {
+    if (result?.summary) {
+      const fpPenalty = result.false_positive_penalty ?? 0
+      const fpLines = result.false_positive_lines ?? []
+      const structuredPenalty =
+        fpPenalty > 0
+          ? `-${fpPenalty} pts (${fpLines.length} false positive${fpLines.length === 1 ? "" : "s"})`
+          : null
+      return {
+        summary: result.summary,
+        penalty: structuredPenalty,
+      }
+    }
     return parseEvaluationFeedback(result?.feedback)
-  }, [result?.feedback])
+  }, [result])
 
   const handleOpenChange = React.useCallback(
     (nextOpen: boolean) => {

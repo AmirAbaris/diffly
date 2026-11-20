@@ -3,27 +3,18 @@
 import * as React from "react"
 import Link from "next/link"
 import { ArrowLeft } from "lucide-react"
+import { DifficultyBadge } from "@/components/challenges/difficulty-badge"
 import { NavStats } from "@/components/layout/nav-stats"
 import { UserNav } from "@/components/layout/user-nav"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { useArenaUIStore } from "@/stores/arena-ui-store"
-import type { ChallengeDetail, Difficulty } from "@/types/challenge"
+import type { ChallengeDetail } from "@/types/challenge"
 
 export interface ArenaHeaderProps {
   challenge: ChallengeDetail
   onOpenHistory?: () => void
   attemptCount?: number
-}
-
-function DifficultyBadge({ difficulty }: { difficulty: Difficulty }) {
-  if (difficulty === "Hard") {
-    return <Badge variant="destructive">Hard</Badge>
-  }
-  if (difficulty === "Medium") {
-    return <Badge variant="warning">Medium</Badge>
-  }
-  return <Badge variant="success">Easy</Badge>
 }
 
 export function ArenaHeader({

@@ -40,6 +40,12 @@ def test_submit_review_guest_via_signed_cookie(
     assert "created_at" in data
     assert data["flagged_lines"] == [6]
     assert data["comments"] == payload["comments"]
+    assert isinstance(data["line_precision_score"], float)
+    assert isinstance(data["concept_score"], float)
+    assert isinstance(data["false_positive_penalty"], float)
+    assert isinstance(data["false_positive_lines"], list)
+    assert isinstance(data["summary"], str)
+    assert len(data["summary"]) > 0
 
     # Verify database persistence
     saved = session.get(Submission, data["submission_id"])
@@ -48,6 +54,11 @@ def test_submit_review_guest_via_signed_cookie(
     assert saved.user_id is None
     assert saved.session_id == guest_id
     assert saved.score == data["score"]
+    assert saved.line_precision_score == data["line_precision_score"]
+    assert saved.concept_score == data["concept_score"]
+    assert saved.false_positive_penalty == data["false_positive_penalty"]
+    assert saved.get_false_positive_lines() == data["false_positive_lines"]
+    assert saved.summary == data["summary"]
     assert saved.feedback == data["feedback"]
     assert saved.get_flagged_lines() == [6]
     assert saved.comments == payload["comments"]

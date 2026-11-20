@@ -57,6 +57,11 @@ class ReviewSubmissionResponse(BaseModel):
     submission_id: int
     id: int
     score: int
+    line_precision_score: float = 0.0
+    concept_score: float = 0.0
+    false_positive_penalty: float = 0.0
+    false_positive_lines: list[int] = Field(default_factory=list)
+    summary: str = ""
     feedback: str
     detected_issues: list[dict[str, Any]] = Field(default_factory=list)
     missed_issues: list[dict[str, Any]] = Field(default_factory=list)
@@ -76,6 +81,11 @@ class SubmissionHistoryResponse(BaseModel):
     flagged_lines: list[int] = Field(default_factory=list)
     comments: str
     score: int
+    line_precision_score: float = 0.0
+    concept_score: float = 0.0
+    false_positive_penalty: float = 0.0
+    false_positive_lines: list[int] = Field(default_factory=list)
+    summary: str = ""
     feedback: str
     detected_issues: list[dict[str, Any]] = Field(default_factory=list)
     missed_issues: list[dict[str, Any]] = Field(default_factory=list)
@@ -154,6 +164,11 @@ def submit_review(
         flagged_lines=payload.flagged_lines,
         comments=payload.comments,
         score=eval_result.score,
+        line_precision_score=eval_result.line_precision_score,
+        concept_score=eval_result.concept_score,
+        false_positive_penalty=eval_result.false_positive_penalty,
+        false_positive_lines=eval_result.false_positive_lines,
+        summary=eval_result.summary,
         feedback=eval_result.critique,
         detected_issues=detected_issues_data,
         missed_issues=missed_issues_data,
@@ -166,6 +181,11 @@ def submit_review(
         submission_id=submission.id or 0,
         id=submission.id or 0,
         score=submission.score,
+        line_precision_score=submission.line_precision_score,
+        concept_score=submission.concept_score,
+        false_positive_penalty=submission.false_positive_penalty,
+        false_positive_lines=submission.get_false_positive_lines(),
+        summary=submission.summary,
         feedback=submission.feedback,
         detected_issues=detected_issues_data,
         missed_issues=missed_issues_data,
@@ -241,6 +261,11 @@ def get_submission_history(
                 flagged_lines=sub.get_flagged_lines(),
                 comments=sub.comments,
                 score=sub.score,
+                line_precision_score=sub.line_precision_score,
+                concept_score=sub.concept_score,
+                false_positive_penalty=sub.false_positive_penalty,
+                false_positive_lines=sub.get_false_positive_lines(),
+                summary=sub.summary,
                 feedback=sub.feedback,
                 detected_issues=sub.get_detected_issues(),
                 missed_issues=missed,

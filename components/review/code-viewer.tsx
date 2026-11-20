@@ -11,6 +11,7 @@ import {
 } from "@/components/review/code-viewer/language"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { useClipboard } from "@/hooks/use-clipboard"
 import { Prism } from "@/lib/prism-languages"
 import { cn } from "@/lib/utils"
 import type { Language } from "@/types/challenge"
@@ -68,7 +69,7 @@ function ReadyCodeViewer({
 }: ReadyCodeViewerProps) {
   const { resolvedTheme } = useTheme()
   const mounted = useMounted()
-  const [copied, setCopied] = React.useState(false)
+  const { copied, copy } = useClipboard()
 
   const normalizedLanguage = React.useMemo(
     () => normalizeCodeLanguage(language),
@@ -77,16 +78,9 @@ function ReadyCodeViewer({
   const resolvedFileName = resolveCodeFileName(normalizedLanguage, fileName)
   const flaggedSet = React.useMemo(() => new Set(flaggedLines), [flaggedLines])
 
-  const handleCopy = React.useCallback(async () => {
-    if (!code) return
-    try {
-      await navigator.clipboard.writeText(code)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    } catch {
-      // Fallback if clipboard API is restricted
-    }
-  }, [code])
+  const handleCopy = React.useCallback(() => {
+    void copy(code)
+  }, [code, copy])
 
   const currentTheme =
     mounted && resolvedTheme === "light" ? themes.vsLight : themes.vsDark

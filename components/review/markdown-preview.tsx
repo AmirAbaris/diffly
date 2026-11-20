@@ -3,6 +3,7 @@
 import * as React from "react"
 import { useTheme } from "next-themes"
 import { Highlight, themes } from "prism-react-renderer"
+import { renderInlineTokens } from "@/components/review/formatted-inline"
 import {
   type BlockquoteLine,
   type InlineToken,
@@ -20,43 +21,6 @@ export { parseInlineTokens, parseMarkdownBlocks }
 export interface MarkdownPreviewProps {
   content: string
   className?: string
-}
-
-function renderTokens(tokens: InlineToken[]) {
-  return tokens.map((token) => {
-    switch (token.type) {
-      case "bold":
-        return (
-          <strong key={token.id} className="font-semibold text-foreground">
-            {token.text}
-          </strong>
-        )
-      case "italic":
-        return (
-          <em key={token.id} className="text-foreground italic">
-            {token.text}
-          </em>
-        )
-      case "code":
-        return (
-          <code
-            key={token.id}
-            className="rounded border border-border/60 bg-muted px-1.5 py-0.5 font-mono text-xs [overflow-wrap:anywhere] break-all text-foreground"
-          >
-            {token.text}
-          </code>
-        )
-      case "strikethrough":
-        return (
-          <del key={token.id} className="text-muted-foreground line-through">
-            {token.text}
-          </del>
-        )
-      case "text":
-      default:
-        return <span key={token.id}>{token.text}</span>
-    }
-  })
 }
 
 function CodeBlockRenderer({
@@ -166,7 +130,7 @@ export function MarkdownPreview({ content, className }: MarkdownPreviewProps) {
                 className={headingClasses}
                 data-testid={`md-heading-${block.level}`}
               >
-                {renderTokens(block.tokens)}
+                {renderInlineTokens(block.tokens)}
               </div>
             )
           }
@@ -189,7 +153,7 @@ export function MarkdownPreview({ content, className }: MarkdownPreviewProps) {
               >
                 {block.lines.map((line) => (
                   <div key={line.id} className="min-h-[1.2rem]">
-                    {renderTokens(line.tokens)}
+                    {renderInlineTokens(line.tokens)}
                   </div>
                 ))}
               </blockquote>
@@ -203,7 +167,7 @@ export function MarkdownPreview({ content, className }: MarkdownPreviewProps) {
                 className="my-1 list-disc space-y-0.5 pr-2 pl-5 text-xs text-foreground"
               >
                 {block.items.map((item) => (
-                  <li key={item.id}>{renderTokens(item.tokens)}</li>
+                  <li key={item.id}>{renderInlineTokens(item.tokens)}</li>
                 ))}
               </ul>
             )
@@ -216,7 +180,7 @@ export function MarkdownPreview({ content, className }: MarkdownPreviewProps) {
                 className="my-1 list-decimal space-y-0.5 pr-2 pl-5 text-xs text-foreground"
               >
                 {block.items.map((item) => (
-                  <li key={item.id}>{renderTokens(item.tokens)}</li>
+                  <li key={item.id}>{renderInlineTokens(item.tokens)}</li>
                 ))}
               </ol>
             )
@@ -229,7 +193,7 @@ export function MarkdownPreview({ content, className }: MarkdownPreviewProps) {
                 data-testid="md-paragraph"
                 className="text-xs leading-relaxed text-foreground"
               >
-                {renderTokens(block.tokens)}
+                {renderInlineTokens(block.tokens)}
               </p>
             )
         }

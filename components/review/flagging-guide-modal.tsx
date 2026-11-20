@@ -11,9 +11,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { FlaggingGuideDemo } from "@/components/review/flagging-guide-demo"
+import { FLAGGING_GUIDE_STORAGE_KEY } from "@/lib/storage-keys"
 import { useArenaUIStore } from "@/stores/arena-ui-store"
 
-export const FLAGGING_GUIDE_STORAGE_KEY = "diffly_has_seen_flag_guide"
+export { FLAGGING_GUIDE_STORAGE_KEY }
 
 export interface FlaggingGuideModalProps {
   open?: boolean

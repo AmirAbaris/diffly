@@ -5,7 +5,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy.exc import IntegrityError
-from sqlmodel import Session, or_, select
+from sqlmodel import Session, func, or_, select
 from sqlmodel.sql.expression import SelectOfScalar
 
 from api.deps import ActorDep, OwnerActorDep, SessionDep
@@ -65,18 +65,24 @@ def _compute_best_scores_map(
 ) -> dict[int, int]:
     """Compute highest submission score per challenge for the given actor."""
     owner_filter = submission_owner_filter(actor)
-    best_scores_map: dict[int, int] = {}
-    if owner_filter is not None and challenges:
-        challenge_ids = [ch.id for ch in challenges if ch.id is not None]
-        if challenge_ids:
-            sub_stmt = select(Submission.challenge_id, Submission.score).where(
-                Submission.challenge_id.in_(challenge_ids),
-                owner_filter,
-            )
-            for ch_id, score in session.exec(sub_stmt).all():
-                if ch_id not in best_scores_map or score > best_scores_map[ch_id]:
-                    best_scores_map[ch_id] = score
-    return best_scores_map
+    if owner_filter is None or not challenges:
+        return {}
+    challenge_ids = [ch.id for ch in challenges if ch.id is not None]
+    if not challenge_ids:
+        return {}
+    sub_stmt = (
+        select(Submission.challenge_id, func.max(Submission.score))
+        .where(
+            Submission.challenge_id.in_(challenge_ids),
+            owner_filter,
+        )
+        .group_by(Submission.challenge_id)
+    )
+    return {
+        ch_id: int(max_score)
+        for ch_id, max_score in session.exec(sub_stmt).all()
+        if max_score is not None
+    }
 
 
 @router.get("", response_model=list[ChallengeSummary])
@@ -516,13 +522,14 @@ def get_challenge(
 
     best_score: int | None = None
     if owner_filter is not None and challenge.id is not None:
-        sub_stmt = select(Submission.score).where(
-            Submission.challenge_id == challenge.id,
-            owner_filter,
-        )
-        scores = session.exec(sub_stmt).all()
-        if scores:
-            best_score = max(scores)
+        max_score = session.exec(
+            select(func.max(Submission.score)).where(
+                Submission.challenge_id == challenge.id,
+                owner_filter,
+            )
+        ).one()
+        if max_score is not None:
+            best_score = int(max_score)
 
     is_solved = best_score is not None and best_score >= 80
 
