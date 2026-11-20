@@ -67,20 +67,31 @@ canonical_review: |-
 recommended_fix_diff: |
   --- a/components/ChallengeViewer.tsx
   +++ b/components/ChallengeViewer.tsx
-  @@ -15,2 +15,3 @@
+  @@ -17,10 +17,13 @@
+     const [error, setError] = useState<string | null>(null);
+   
      useEffect(() => {
   +    const controller = new AbortController();
        setLoading(true);
-  @@ -19,3 +20,4 @@
+       setError(null);
+   
   -    fetch(`/api/challenges/${challengeId}`)
   +    fetch(`/api/challenges/${challengeId}`, {
   +      signal: controller.signal,
   +    })
          .then((res) => {
-  @@ -28,3 +29,5 @@
+           if (!res.ok) {
+             throw new Error(`Failed to load: ${res.statusText}`);
+  @@ -32,9 +35,12 @@
+           setLoading(false);
+         })
          .catch((err: Error) => {
-  +        if (err.name === 'AbortError') return;
+  +        if (err.name === "AbortError") return;
            setError(err.message);
-  @@ -32,2 +35,4 @@
+           setLoading(false);
+         });
+  +
   +    return () => controller.abort();
      }, [challengeId]);
+   
+     if (loading) return <div className="spinner">Loading...</div>;
