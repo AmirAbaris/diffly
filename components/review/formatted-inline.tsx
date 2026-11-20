@@ -23,7 +23,7 @@ export function renderInlineTokens(tokens: InlineToken[]): React.ReactNode {
         return (
           <code
             key={token.id}
-            className="rounded border border-border/60 bg-muted/70 px-1.5 py-0.5 font-mono text-xs [overflow-wrap:anywhere] break-all text-foreground"
+            className="rounded border border-border/60 bg-muted/70 px-1.5 py-0.5 font-mono text-xs break-words text-foreground"
           >
             {token.text}
           </code>

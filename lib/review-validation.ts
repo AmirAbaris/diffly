@@ -1,3 +1,5 @@
+import type { FlaggedLine } from "@/types/challenge"
+
 export const MIN_REVIEW_COMMENT_CHARS = 5
 
 export interface ReviewValidationResult {
@@ -9,7 +11,7 @@ export interface ReviewValidationResult {
 }
 
 export function validateReviewSubmission(
-  flaggedLines: number[],
+  flaggedLines: FlaggedLine[],
   comments: string,
   minCharacters: number = MIN_REVIEW_COMMENT_CHARS
 ): ReviewValidationResult {

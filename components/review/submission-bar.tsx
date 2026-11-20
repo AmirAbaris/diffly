@@ -16,9 +16,10 @@ import {
   validateReviewSubmission,
 } from "@/lib/review-validation"
 import { cn } from "@/lib/utils"
+import type { FlaggedLine } from "@/types/challenge"
 
 export interface SubmissionBarProps {
-  flaggedLines: number[]
+  flaggedLines: FlaggedLine[]
   comments: string
   onResetDraft: () => void
   onOpenFlagGuide: () => void

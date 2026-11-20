@@ -6,12 +6,12 @@ import { ComparisonBody } from "@/components/review/comparison/comparison-body"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { cn } from "@/lib/utils"
-import type { ChallengeSolutionResponse } from "@/types/challenge"
+import type { ChallengeSolutionResponse, FlaggedLine } from "@/types/challenge"
 
 export interface ComparisonViewProps {
   challengeId?: string | number
   challengeSlug?: string
-  userFlaggedLines?: number[]
+  userFlaggedLines?: FlaggedLine[]
   userComments?: string
   canonicalSolution?: ChallengeSolutionResponse | null
   codeSnippet?: string
@@ -21,7 +21,7 @@ export interface ComparisonViewProps {
   onViewChange?: (view: "comparison" | "diff") => void
 }
 
-const DEFAULT_FLAGGED_LINES: number[] = []
+const DEFAULT_FLAGGED_LINES: FlaggedLine[] = []
 
 export function ComparisonView({
   challengeId,

@@ -17,7 +17,7 @@ from typing import Any
 
 import yaml
 
-from backend.models.challenge import Category, Difficulty, Language
+from backend.models.challenge import Category, ChallengeFile, Difficulty, Language
 
 
 logger = logging.getLogger("diffly.loader")
@@ -58,6 +58,7 @@ def compute_challenge_content_hash(challenge_data: Mapping[str, Any]) -> str:
         "threat_model": challenge_data.get("threat_model", ""),
         "defect_target": challenge_data.get("defect_target", ""),
         "code_snippet": challenge_data.get("code_snippet", ""),
+        "files": _normalize_json_list_field(challenge_data.get("files", [])),
         "expected_issues": _normalize_json_list_field(
             challenge_data.get("expected_issues", [])
         ),
@@ -134,10 +135,62 @@ def parse_description_md(content: str) -> tuple[str, str]:
     return description, threat_model
 
 
+def _resolve_bundle_subpath(bundle_dir: Path, relative_path: str) -> Path:
+    bundle_root = bundle_dir.resolve()
+    candidate = (bundle_dir / relative_path).resolve()
+    if not candidate.is_relative_to(bundle_root):
+        raise ValueError(
+            f"Challenge file path escapes bundle directory: {relative_path}"
+        )
+    return candidate
+
+
+def _load_bundle_files(path: Path, raw_files: Any) -> list[dict[str, Any]]:
+    if raw_files is None:
+        return []
+    if not isinstance(raw_files, list):
+        raise ValueError(f"files in {path} must be a list")
+
+    normalized_files: list[dict[str, Any]] = []
+    for entry in raw_files:
+        if not isinstance(entry, dict):
+            raise ValueError(f"Each entry in files in {path} must be a mapping")
+        item = dict(entry)
+        if item.get("patch") is None and isinstance(item.get("patch_file"), str):
+            patch_path = _resolve_bundle_subpath(path, item["patch_file"])
+            if not patch_path.is_file():
+                raise FileNotFoundError(f"Missing patch_file: {patch_path}")
+            item["patch"] = patch_path.read_text(encoding="utf-8")
+        if item.get("content") is None and isinstance(item.get("content_file"), str):
+            content_path = _resolve_bundle_subpath(path, item["content_file"])
+            if not content_path.is_file():
+                raise FileNotFoundError(f"Missing content_file: {content_path}")
+            item["content"] = content_path.read_text(encoding="utf-8")
+        if (
+            item.get("patch") is None
+            and item.get("content") is None
+            and isinstance(item.get("path"), str)
+        ):
+            files_root = path / "files"
+            if files_root.is_dir():
+                disk_candidate = _resolve_bundle_subpath(
+                    files_root, item["path"].lstrip("/")
+                )
+                if disk_candidate.is_file():
+                    item["content"] = disk_candidate.read_text(encoding="utf-8")
+
+        item.pop("patch_file", None)
+        item.pop("content_file", None)
+        validated = ChallengeFile.model_validate(item)
+        normalized_files.append(validated.model_dump())
+
+    return normalized_files
+
+
 def load_challenge_bundle(challenge_dir: Path | str) -> dict[str, Any]:
     """Load a single challenge bundle from a directory.
 
-    Reads meta.yaml, description.md, and snippet.<ext>.
+    Reads meta.yaml, description.md, and either snippet.<ext> or files entries.
     """
     path = Path(challenge_dir)
     if not path.is_dir():
@@ -168,7 +221,7 @@ def load_challenge_bundle(challenge_dir: Path | str) -> dict[str, Any]:
         if parsed_threat:
             meta["threat_model"] = parsed_threat
 
-    # 2. Read native code snippet
+    # 2. Read native code snippet and/or multi-file PR entries
     if not meta.get("code_snippet"):
         snippet_candidates = [
             f
@@ -181,6 +234,10 @@ def load_challenge_bundle(challenge_dir: Path | str) -> dict[str, Any]:
             # Sort for deterministic choice if multiple
             snippet_candidates.sort(key=lambda p: p.name)
             meta["code_snippet"] = snippet_candidates[0].read_text(encoding="utf-8")
+
+    meta["files"] = _load_bundle_files(path, meta.get("files"))
+    if not meta.get("language") and meta["files"]:
+        meta["language"] = meta["files"][0]["language"]
 
     # 3. Read canonical_review if stored as a file
     if not meta.get("canonical_review"):

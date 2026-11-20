@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { Badge } from "@/components/ui/badge"
+import { flaggedLineKey, formatFlaggedLineLabel } from "@/lib/flagged-lines"
 import type { SubmissionHistoryItem } from "@/types/challenge"
 
 interface HistoryDetailProps {
@@ -20,14 +21,14 @@ export function HistoryDetail({ item }: HistoryDetailProps) {
         </span>
         {item.flagged_lines.length > 0 ? (
           <div className="flex flex-wrap gap-1">
-            {item.flagged_lines.map((lineNum) => (
+            {item.flagged_lines.map((lineEntry) => (
               <Badge
-                key={lineNum}
+                key={flaggedLineKey(lineEntry)}
                 variant="secondary"
                 size="sm"
                 className="font-mono tabular-nums"
               >
-                Line {lineNum}
+                {formatFlaggedLineLabel(lineEntry)}
               </Badge>
             ))}
           </div>

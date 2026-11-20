@@ -458,14 +458,13 @@ def test_evaluate_against_all_seed_challenges():
         expected = challenge.get_expected_issues()
         assert len(expected) >= 1
 
-        first_defect = expected[0]
-        # Simulate perfect submission for this challenge
-        flagged = (
-            first_defect.lines[:2]
-            if len(first_defect.lines) >= 2
-            else first_defect.lines
-        )
-        comments = f"Found defect: {' '.join(first_defect.keywords[:3])}"
+        # Simulate perfect submission covering all expected defects
+        flagged = []
+        comment_keywords = []
+        for defect in expected:
+            flagged.extend(defect.lines[:2] if len(defect.lines) >= 2 else defect.lines)
+            comment_keywords.extend(defect.keywords[:3])
+        comments = f"Found defect: {' '.join(comment_keywords)}"
 
         result = evaluate_review(
             challenge=challenge,

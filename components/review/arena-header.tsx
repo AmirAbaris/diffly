@@ -26,8 +26,8 @@ export function ArenaHeader({
   const handleOpenHistory = onOpenHistory ?? (() => setHistoryOpen(true))
 
   return (
-    <header className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-border bg-background px-4 sm:px-6">
-      <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden sm:gap-2.5">
+    <header className="flex h-14 shrink-0 items-center justify-between gap-1.5 border-b border-border bg-background px-3 sm:gap-2 sm:px-6">
+      <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-2.5 sm:overflow-hidden">
         <Button
           asChild
           variant="ghost"
@@ -60,11 +60,16 @@ export function ArenaHeader({
         </div>
       </div>
 
-      <div className="flex shrink-0 items-center gap-2">
+      <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
         {challenge.is_solved ? (
-          <Badge variant="success">Solved</Badge>
+          <Badge variant="success" className="hidden sm:inline-flex">
+            Solved
+          </Badge>
         ) : challenge.best_score !== null ? (
-          <Badge variant="warning" className="tabular-nums">
+          <Badge
+            variant="warning"
+            className="hidden tabular-nums sm:inline-flex"
+          >
             Best · {challenge.best_score}%
           </Badge>
         ) : (
@@ -78,7 +83,7 @@ export function ArenaHeader({
           variant="outline"
           size="sm"
           onClick={handleOpenHistory}
-          className="h-8 gap-1.5 px-2.5 text-xs text-muted-foreground hover:text-foreground"
+          className="h-8 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground sm:px-2.5"
           data-testid="history-drawer-trigger"
           aria-label="View past attempts"
         >

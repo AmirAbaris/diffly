@@ -129,6 +129,7 @@ export function ArenaWorkspace({ session }: ArenaWorkspaceProps) {
           <div className="flex flex-col gap-4">
             <CodeViewer
               code={challenge.code_snippet}
+              files={challenge.files}
               language={challenge.language}
               flaggedLines={draft.flaggedLines}
               onToggleLine={draft.toggleFlaggedLine}

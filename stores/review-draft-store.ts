@@ -1,13 +1,17 @@
 import { create } from "zustand"
+import {
+  isSameFlaggedLine,
+  normalizeStoredFlaggedLines,
+} from "@/lib/flagged-lines"
 import { toast } from "@/stores/toast-store"
-import type { ReviewDraft } from "@/types/challenge"
+import type { FlaggedLine, ReviewDraft } from "@/types/challenge"
 
 export function getDraftStorageKey(slug: string): string {
   return `diffly_draft_${slug}`
 }
 
 export interface ChallengeDraftState {
-  flaggedLines: number[]
+  flaggedLines: FlaggedLine[]
   comments: string
   isRestored: boolean
   isHydrated: boolean
@@ -25,9 +29,9 @@ export interface ReviewDraftStore {
   initDraft: (slug: string) => void
   setFlaggedLines: (
     slug: string,
-    action: number[] | ((prev: number[]) => number[])
+    action: FlaggedLine[] | ((prev: FlaggedLine[]) => FlaggedLine[])
   ) => void
-  toggleFlaggedLine: (slug: string, line: number) => void
+  toggleFlaggedLine: (slug: string, line: FlaggedLine) => void
   clearFlaggedLines: (slug: string) => void
   setComments: (
     slug: string,
@@ -38,7 +42,7 @@ export interface ReviewDraftStore {
 
 function persistToStorage(
   slug: string,
-  flaggedLines: number[],
+  flaggedLines: FlaggedLine[],
   comments: string
 ) {
   if (typeof window === "undefined" || !slug) return
@@ -68,12 +72,12 @@ function removeFromStorage(slug: string) {
 export const useReviewDraftStore = create<ReviewDraftStore>((set, get) => ({
   drafts: {},
 
-  initDraft: (slug: string) => {
+  initDraft: (slug) => {
     if (!slug) return
     const current = get().drafts[slug]
     if (current?.isHydrated) return
 
-    let restoredLines: number[] = []
+    let restoredLines: FlaggedLine[] = []
     let restoredComments = ""
     let hasContent = false
 
@@ -86,12 +90,7 @@ export const useReviewDraftStore = create<ReviewDraftStore>((set, get) => ({
             comment?: string
           }
 
-          restoredLines = Array.isArray(parsed?.flaggedLines)
-            ? parsed.flaggedLines.filter(
-                (n): n is number =>
-                  typeof n === "number" && Number.isInteger(n) && n > 0
-              )
-            : []
+          restoredLines = normalizeStoredFlaggedLines(parsed?.flaggedLines)
 
           restoredComments =
             typeof parsed?.comments === "string"
@@ -158,8 +157,9 @@ export const useReviewDraftStore = create<ReviewDraftStore>((set, get) => ({
     if (!slug) return
     const current = get().drafts[slug] ?? defaultDraftState
     const prev = current.flaggedLines
-    const newLines = prev.includes(line)
-      ? prev.filter((l) => l !== line)
+    const exists = prev.some((item) => isSameFlaggedLine(item, line))
+    const newLines = exists
+      ? prev.filter((item) => !isSameFlaggedLine(item, line))
       : [...prev, line]
 
     set((state) => ({

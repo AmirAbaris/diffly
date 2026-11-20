@@ -55,6 +55,7 @@ def _apply_challenge_fields(target: Challenge, source: Challenge) -> None:
     target.threat_model = source.threat_model
     target.defect_target = source.defect_target
     target.code_snippet = source.code_snippet
+    target.files = source.files
     target.expected_issues = source.expected_issues
     target.hints = source.hints
     target.canonical_review = source.canonical_review

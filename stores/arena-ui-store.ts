@@ -1,10 +1,10 @@
 import { create } from "zustand"
-import type { ReviewSubmissionResponse } from "@/types/challenge"
+import type { FlaggedLine, ReviewSubmissionResponse } from "@/types/challenge"
 
 export type ArenaMobileTab = "brief" | "code"
 
 export interface SubmittedReviewPayload {
-  flaggedLines: number[]
+  flaggedLines: FlaggedLine[]
   comments: string
 }
 

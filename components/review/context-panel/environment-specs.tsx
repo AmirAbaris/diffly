@@ -54,7 +54,9 @@ export function EnvironmentSpecsSection({
         <div className="flex flex-col gap-1 p-3">
           <span className="text-xs text-muted-foreground">Target Code</span>
           <span className="text-xs font-semibold text-foreground tabular-nums">
-            {challenge.line_count} lines
+            {challenge.file_count && challenge.file_count > 1
+              ? `${challenge.file_count} files · ${challenge.line_count} lines`
+              : `${challenge.line_count} lines`}
           </span>
         </div>
       </div>

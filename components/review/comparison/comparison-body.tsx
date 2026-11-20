@@ -1,7 +1,7 @@
 import * as React from "react"
 import { AlertCircle, RefreshCw } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import type { ChallengeSolutionResponse } from "@/types/challenge"
+import type { ChallengeSolutionResponse, FlaggedLine } from "@/types/challenge"
 import { CodeDiffViewer } from "./code-diff-viewer"
 import { StaffReviewColumn } from "./staff-review-column"
 import { UserReviewColumn } from "./user-review-column"
@@ -10,7 +10,7 @@ export interface ComparisonBodyProps {
   isLoading: boolean
   errorMessage: string | null
   activeTab: "comparison" | "diff"
-  userFlaggedLines: number[]
+  userFlaggedLines: FlaggedLine[]
   userComments: string
   solution: ChallengeSolutionResponse | null
   language?: string

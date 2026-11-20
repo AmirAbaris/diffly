@@ -22,6 +22,7 @@ import {
 import { cn } from "@/lib/utils"
 import type {
   ChallengeSolutionResponse,
+  FlaggedLine,
   ReviewSubmissionResponse,
 } from "@/types/challenge"
 
@@ -39,7 +40,7 @@ export interface ReviewResultModalProps {
   onViewCanonicalSolution?: () => void
   onNextChallenge?: () => void
   canonicalSolution?: ChallengeSolutionResponse | null
-  userFlaggedLines?: number[]
+  userFlaggedLines?: FlaggedLine[]
   userComments?: string
   codeSnippet?: string
   language?: string
