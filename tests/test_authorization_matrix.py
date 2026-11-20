@@ -100,6 +100,38 @@ MATRIX: dict[tuple[str, str], dict[str, dict[str, int]]] = {
             "inactive": 404,
         },
     },
+    ("PATCH", "/api/challenges/custom/{identifier}/share"): {
+        "user_a_private": {
+            "anonymous": 404,
+            "guest_a": 404,
+            "guest_b": 404,
+            "guest_forged": 404,
+            "guest_tampered": 404,
+            "user_a": 200,
+            "user_b": 404,
+            "inactive": 404,
+        },
+        "guest_a_private": {
+            "anonymous": 404,
+            "guest_a": 200,
+            "guest_b": 404,
+            "guest_forged": 404,
+            "guest_tampered": 404,
+            "user_a": 404,
+            "user_b": 404,
+            "inactive": 404,
+        },
+        "public": {
+            "anonymous": 403,
+            "guest_a": 403,
+            "guest_b": 403,
+            "guest_forged": 403,
+            "guest_tampered": 403,
+            "user_a": 403,
+            "user_b": 403,
+            "inactive": 403,
+        },
+    },
     ("GET", "/api/challenges/{identifier}"): {
         "user_a_private": {
             "anonymous": 404,
@@ -684,7 +716,32 @@ def test_authorization_matrix_enforcement(
             assert data["total_attempted"] == 0
             assert data["total_solved"] == 0
 
-    # 10. DELETE /api/challenges/custom/{identifier} (non-owners rejected first)
+    # 10. PATCH /api/challenges/custom/{identifier}/share (owner-only toggle)
+    for target_key in ("user_a_private", "guest_a_private", "public"):
+        slug = targets[target_key]
+        for actor_name, expected in MATRIX[
+            ("PATCH", "/api/challenges/custom/{identifier}/share")
+        ][target_key].items():
+            ac, headers = actors[actor_name]
+            res = ac.patch(
+                f"/api/challenges/custom/{slug}/share",
+                json={"enabled": True},
+                headers=headers,
+            )
+            assert res.status_code == expected, f"{target_key} share <- {actor_name}"
+            if expected == 200:
+                assert res.json()["is_shared"] is True
+                assert res.json()["share_token"]
+                # Disable after verification so subsequent matrix checks stay private
+                off_res = ac.patch(
+                    f"/api/challenges/custom/{slug}/share",
+                    json={"enabled": False},
+                    headers=headers,
+                )
+                assert off_res.status_code == 200
+                assert off_res.json()["share_token"] is None
+
+    # 11. DELETE /api/challenges/custom/{identifier} (non-owners rejected first)
     for target_key in ("user_a_private", "guest_a_private"):
         slug = targets[target_key]
         for actor_name, expected in MATRIX[
@@ -1032,3 +1089,231 @@ def test_claimed_rows_have_null_session_id(
     assert claimed_ch.session_id is None
     assert claimed_sub.user_id == user["id"]
     assert claimed_sub.session_id is None
+
+
+def test_share_token_read_only_boundary_and_isolation(
+    session: Session,
+    client_factory: Callable[[], TestClient],
+    register_user: Callable[..., dict[str, Any]],
+    login_as: Callable[..., TestClient],
+    as_guest: Callable[[TestClient, str | None], str],
+):
+    """Share tokens grant read-only access to one challenge without escalation."""
+    actors, meta = _make_actors(
+        session, client_factory, register_user, login_as, as_guest
+    )
+    _, user_a_private, guest_a_private = _seed_matrix_resources(
+        session, meta["user_a"]["id"], meta["guest_a_sid"]
+    )
+    user_a_unshared = Challenge(
+        slug="matrix-user-a-unshared-secret",
+        title="User A Unshared Secret Draft",
+        difficulty=Difficulty.HARD,
+        category=Category.SECURITY,
+        language=Language.PYTHON,
+        description="Strictly private draft",
+        code_snippet="secret_key = 'do-not-leak'\n",
+        is_public=False,
+        user_id=meta["user_a"]["id"],
+    )
+    session.add(user_a_unshared)
+    session.commit()
+    session.refresh(user_a_unshared)
+
+    user_a_client, _ = actors["user_a"]
+    share_res = user_a_client.patch(
+        f"/api/challenges/custom/{user_a_private.slug}/share",
+        json={"enabled": True},
+    )
+    assert share_res.status_code == 200
+    token = share_res.json()["share_token"]
+    assert isinstance(token, str) and len(token) >= 24
+
+    for actor_name, (ac, headers) in actors.items():
+        if actor_name == "user_a":
+            continue
+
+        # Valid token grants read access only to the shared challenge
+        detail_res = ac.get(
+            f"/api/challenges/{user_a_private.slug}?share_token={token}",
+            headers=headers,
+        )
+        assert detail_res.status_code == 200, actor_name
+        assert detail_res.json()["is_owner"] is False
+        assert detail_res.json()["share_token"] is None
+
+        hints_res = ac.get(
+            f"/api/challenges/{user_a_private.slug}/hints?share_token={token}",
+            headers=headers,
+        )
+        assert hints_res.status_code == 200, actor_name
+
+        # Owner's private submission notes are never leaked via share_token
+        subs_res = ac.get(
+            f"/api/challenges/{user_a_private.slug}/submissions?share_token={token}",
+            headers=headers,
+        )
+        assert subs_res.status_code == 200, actor_name
+        assert all(
+            "User A private submission" not in item["comments"]
+            for item in subs_res.json()
+        )
+
+        # Shared challenge stays excluded from public catalog and others' custom list
+        pub_res = ac.get("/api/challenges", headers=headers)
+        pub_slugs = {item["slug"] for item in pub_res.json()}
+        assert user_a_private.slug not in pub_slugs
+        custom_slugs = {
+            item["slug"]
+            for item in ac.get(
+                f"/api/challenges/custom?share_token={token}", headers=headers
+            ).json()["items"]
+        }
+        assert user_a_private.slug not in custom_slugs
+
+        # Share token cannot escalate to share-toggle or delete even when supplied
+        assert (
+            ac.patch(
+                f"/api/challenges/custom/{user_a_private.slug}/share?share_token={token}",
+                json={"enabled": False},
+                headers=headers,
+            ).status_code
+            == 404
+        ), actor_name
+        assert (
+            ac.delete(
+                f"/api/challenges/custom/{user_a_private.slug}?share_token={token}",
+                headers=headers,
+            ).status_code
+            == 404
+        ), actor_name
+
+        # Cross-challenge token reuse against owner's other private drafts is blocked
+        assert (
+            ac.get(
+                f"/api/challenges/{user_a_unshared.slug}?share_token={token}",
+                headers=headers,
+            ).status_code
+            == 404
+        ), actor_name
+        assert (
+            ac.get(
+                f"/api/challenges/{user_a_unshared.id}?share_token={token}",
+                headers=headers,
+            ).status_code
+            == 404
+        ), actor_name
+
+        # Canonical solution remains gated without reveal=true even with share_token
+        if actor_name != "anonymous":
+            assert (
+                ac.get(
+                    f"/api/challenges/{user_a_private.slug}/solution?share_token={token}",
+                    headers=headers,
+                ).status_code
+                == 403
+            ), actor_name
+
+        # Empty, wrong, or non-ASCII tokens return 404 without oracle 500s
+        for bad_token in ("", "wrong-token", "tok_\u00fc"):
+            assert (
+                ac.get(
+                    f"/api/challenges/{user_a_private.slug}?share_token={bad_token}",
+                    headers=headers,
+                ).status_code
+                == 404
+            ), actor_name
+            assert (
+                ac.get(
+                    f"/api/challenges/{user_a_unshared.slug}?share_token={bad_token}",
+                    headers=headers,
+                ).status_code
+                == 404
+            ), actor_name
+            if actor_name != "guest_a":
+                assert (
+                    ac.get(
+                        f"/api/challenges/{guest_a_private.slug}"
+                        f"?share_token={bad_token}",
+                        headers=headers,
+                    ).status_code
+                    == 404
+                ), actor_name
+
+    # Recipient review submission works via share_token without leaking to owner
+    user_b_client, _ = actors["user_b"]
+    recipient_review = user_b_client.post(
+        f"/api/challenges/{user_a_private.slug}/review?share_token={token}",
+        json={
+            "flagged_lines": [1],
+            "comments": "Recipient B isolated review note",
+        },
+    )
+    assert recipient_review.status_code == 200
+    owner_subs = user_a_client.get(f"/api/challenges/{user_a_private.slug}/submissions")
+    assert owner_subs.status_code == 200
+    assert all(
+        "Recipient B isolated review note" not in item["comments"]
+        for item in owner_subs.json()
+    )
+
+    # Rejected POST /review with invalid share_token must not mint a guest cookie
+    anon_client, _ = actors["anonymous"]
+    bad_review_res = anon_client.post(
+        f"/api/challenges/{user_a_private.slug}/review?share_token=wrong-token",
+        json={"flagged_lines": [1], "comments": "Should not mint cookie"},
+    )
+    assert bad_review_res.status_code == 404
+    assert settings.GUEST_COOKIE_NAME not in bad_review_res.cookies
+
+    # Claiming Guest A's shared custom challenge preserves share_token for User A
+    # while revoking old guest cookie owner mutations
+    guest_a_client, _ = actors["guest_a"]
+    guest_share_res = guest_a_client.patch(
+        f"/api/challenges/custom/{guest_a_private.slug}/share",
+        json={"enabled": True},
+    )
+    assert guest_share_res.status_code == 200
+    guest_token = guest_share_res.json()["share_token"]
+    saved_guest_cookie = guest_a_client.cookies.get(settings.GUEST_COOKIE_NAME)
+    assert saved_guest_cookie is not None
+
+    user_a_client.cookies.set(
+        settings.GUEST_COOKIE_NAME, saved_guest_cookie, domain="testserver.local"
+    )
+    assert user_a_client.post("/api/user/claim-session").status_code == 200
+
+    # Shared link still works after claim, while old guest cookie cannot toggle sharing
+    anon_client, _ = actors["anonymous"]
+    assert (
+        anon_client.get(
+            f"/api/challenges/{guest_a_private.slug}?share_token={guest_token}"
+        ).status_code
+        == 200
+    )
+    anon_client.cookies.set(
+        settings.GUEST_COOKIE_NAME, saved_guest_cookie, domain="testserver.local"
+    )
+    assert (
+        anon_client.patch(
+            f"/api/challenges/custom/{guest_a_private.slug}/share",
+            json={"enabled": False},
+        ).status_code
+        == 404
+    )
+    anon_client.cookies.clear()
+
+    # User A (new owner) can revoke sharing
+    assert (
+        user_a_client.patch(
+            f"/api/challenges/custom/{guest_a_private.slug}/share",
+            json={"enabled": False},
+        ).status_code
+        == 200
+    )
+    assert (
+        anon_client.get(
+            f"/api/challenges/{guest_a_private.slug}?share_token={guest_token}"
+        ).status_code
+        == 404
+    )

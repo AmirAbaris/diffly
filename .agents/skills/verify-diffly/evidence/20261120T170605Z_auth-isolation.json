@@ -1,0 +1,14 @@
+{
+  "feature": "auth-isolation",
+  "timestamp": "2026-11-20T17:06:06Z",
+  "base_url": "http://127.0.0.1:54583",
+  "metadata": {},
+  "verdict": "FAILED",
+  "total_steps": 0,
+  "passed_steps": 0,
+  "failed_steps": 0,
+  "errors": [
+    "Unhandled verification exception: [Errno 61] Connection refused"
+  ],
+  "steps": []
+}

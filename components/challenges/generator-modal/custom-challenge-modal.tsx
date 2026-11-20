@@ -106,6 +106,7 @@ export function CustomChallengeModal({
     quotaSyncState = "idle",
     resetQuotaSyncState,
     deleteCustomChallenge,
+    toggleChallengeShare,
     generateCustomChallenge,
   } = useCustomChallenges()
 
@@ -242,6 +243,7 @@ export function CustomChallengeModal({
               challenges={customChallenges}
               isLoading={isLoading}
               onDelete={deleteCustomChallenge}
+              onToggleShare={toggleChallengeShare}
               onSwitchToGenerate={() => setTabOverride("generate")}
               onCloseModal={handleClose}
             />

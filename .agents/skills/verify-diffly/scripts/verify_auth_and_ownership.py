@@ -1188,6 +1188,168 @@ def run_challenge_ownership(runner: VerificationRunner) -> None:
             assertion="User B receives 404 deleting User A custom challenge",
         )
 
+        ub_share_res = client_b.patch(
+            f"/api/challenges/custom/{custom_slug}/share",
+            json={"enabled": True},
+        )
+        runner.check_response(
+            step="user_b_cannot_enable_share_on_user_a_custom_challenge",
+            actor="user_b",
+            response=ub_share_res,
+            expected_status=404,
+            assertion="User B receives 404 toggling share on User A custom challenge",
+        )
+
+        ua_share_on_res = client_a.patch(
+            f"/api/challenges/custom/{custom_slug}/share",
+            json={"enabled": True},
+        )
+        ua_share_data = runner.check_response(
+            step="user_a_enables_unlisted_share",
+            actor="user_a",
+            response=ua_share_on_res,
+            expected_status=200,
+            assertion="Owner User A enables unlisted share token on custom challenge",
+            predicate=lambda d, _: (
+                d.get("is_shared") is True and bool(d.get("share_token"))
+            ),
+        )
+        share_token = str(ua_share_data.get("share_token", ""))
+
+        anon_shared_read = anon.get(
+            f"/api/challenges/{custom_slug}?share_token={share_token}"
+        )
+        runner.check_response(
+            step="recipient_reads_shared_custom_challenge_with_token",
+            actor="anonymous_recipient",
+            response=anon_shared_read,
+            expected_status=200,
+            assertion=(
+                "Valid share_token grants read-only access without exposing owner token"
+            ),
+            predicate=lambda d, _: (
+                d.get("slug") == custom_slug
+                and d.get("is_owner") is False
+                and d.get("share_token") is None
+            ),
+        )
+
+        ub_shared_subs = client_b.get(
+            f"/api/challenges/{custom_slug}/submissions?share_token={share_token}"
+        )
+        runner.check_response(
+            step="recipient_does_not_see_owner_submissions",
+            actor="user_b_with_share_token",
+            response=ub_shared_subs,
+            expected_status=200,
+            assertion=(
+                "Share recipient sees only own submissions, not owner's history"
+            ),
+            predicate=lambda d, _: isinstance(d, list) and len(d) == 0,
+        )
+
+        non_ascii_res = anon.get(f"/api/challenges/{custom_slug}?share_token=%C3%BC")
+        runner.check_response(
+            step="non_ascii_share_token_rejected",
+            actor="anonymous_recipient",
+            response=non_ascii_res,
+            expected_status=404,
+            assertion="Non-ASCII share_token returns 404 without server error",
+        )
+
+        ua_rotate_res = client_a.patch(
+            f"/api/challenges/custom/{custom_slug}/share",
+            json={"enabled": True, "regenerate": True},
+        )
+        ua_rotate_data = runner.check_response(
+            step="user_a_rotates_unlisted_share",
+            actor="user_a",
+            response=ua_rotate_res,
+            expected_status=200,
+            assertion="Owner User A rotates share token via regenerate=true",
+            predicate=lambda d, _: (
+                d.get("is_shared") is True
+                and bool(d.get("share_token"))
+                and d.get("share_token") != share_token
+            ),
+        )
+        rotated_token = str(ua_rotate_data.get("share_token", ""))
+
+        stale_after_rotate = anon.get(
+            f"/api/challenges/{custom_slug}?share_token={share_token}"
+        )
+        runner.check_response(
+            step="rotated_old_share_token_returns_404",
+            actor="anonymous_recipient",
+            response=stale_after_rotate,
+            expected_status=404,
+            assertion="Previous share_token returns 404 after rotation",
+        )
+        share_token = rotated_token
+
+        ub_shared_del = client_b.delete(
+            f"/api/challenges/custom/{custom_slug}?share_token={share_token}"
+        )
+        runner.check_response(
+            step="share_token_cannot_delete_custom_challenge",
+            actor="user_b_with_share_token",
+            response=ub_shared_del,
+            expected_status=404,
+            assertion="Valid share_token does not grant delete access to non-owner",
+        )
+
+        ub_shared_toggle = client_b.patch(
+            f"/api/challenges/custom/{custom_slug}/share?share_token={share_token}",
+            json={"enabled": False},
+        )
+        runner.check_response(
+            step="share_token_cannot_revoke_custom_challenge",
+            actor="user_b_with_share_token",
+            response=ub_shared_toggle,
+            expected_status=404,
+            assertion="Valid share_token does not grant share toggle to non-owner",
+        )
+
+        ua_share_off_res = client_a.patch(
+            f"/api/challenges/custom/{custom_slug}/share",
+            json={"enabled": False},
+        )
+        runner.check_response(
+            step="user_a_revokes_unlisted_share",
+            actor="user_a",
+            response=ua_share_off_res,
+            expected_status=200,
+            assertion="Owner User A revokes unlisted share token",
+            predicate=lambda d, _: (
+                d.get("is_shared") is False and d.get("share_token") is None
+            ),
+        )
+
+        revoked_read = anon.get(
+            f"/api/challenges/{custom_slug}?share_token={share_token}"
+        )
+        runner.check_response(
+            step="revoked_share_token_returns_404",
+            actor="anonymous_recipient",
+            response=revoked_read,
+            expected_status=404,
+            assertion="Revoked share_token immediately returns 404",
+        )
+
+        pub_share_res = client_a.patch(
+            "/api/challenges/custom/agent-unsanitized-exec/share",
+            json={"enabled": True},
+        )
+        runner.check_response(
+            step="public_challenge_share_toggle_forbidden",
+            actor="user_a",
+            response=pub_share_res,
+            expected_status=403,
+            assertion=(
+                "Toggling share on public catalog challenge is forbidden with 403"
+            ),
+        )
+
         with (
             temporary_production_server(runner.db_url) as prod_url,
             httpx.Client(base_url=prod_url, timeout=15.0) as prod_client,

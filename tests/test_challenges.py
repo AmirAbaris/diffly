@@ -681,3 +681,209 @@ def test_list_custom_challenges_includes_completion_status_and_best_score(
     assert items[0]["slug"] == "custom-solved-status-ch"
     assert items[0]["is_solved"] is True
     assert items[0]["best_score"] == 95
+    assert items[0]["is_shared"] is False
+    assert items[0]["share_token"] is None
+
+
+def test_list_challenges_pagination_and_total_count_header(
+    client: TestClient, session: Session
+):
+    """GET /api/challenges supports limit/offset pagination and X-Total-Count header."""
+    seed_challenges(session)
+    total_seeded = len(CHALLENGES_DATA)
+
+    page1 = client.get("/api/challenges?limit=12&offset=0")
+    assert page1.status_code == 200
+    assert int(page1.headers["x-total-count"]) == total_seeded
+    page1_items = page1.json()
+    assert len(page1_items) == 12
+
+    page2 = client.get("/api/challenges?limit=12&offset=12")
+    assert page2.status_code == 200
+    assert int(page2.headers["x-total-count"]) == total_seeded
+    page2_items = page2.json()
+    assert len(page2_items) == 12
+
+    page3 = client.get("/api/challenges?limit=12&offset=24")
+    assert page3.status_code == 200
+    assert int(page3.headers["x-total-count"]) == total_seeded
+    page3_items = page3.json()
+    assert len(page3_items) == total_seeded - 24
+
+    combined_slugs = [
+        item["slug"] for item in (page1_items + page2_items + page3_items)
+    ]
+    assert len(combined_slugs) == len(set(combined_slugs)) == total_seeded
+
+    # Filtered pagination reports total matching subset in X-Total-Count
+    expected_medium = sum(
+        1 for ch in CHALLENGES_DATA if ch["difficulty"] == Difficulty.MEDIUM
+    )
+    med_page1 = client.get("/api/challenges?difficulty=Medium&limit=5&offset=0")
+    assert med_page1.status_code == 200
+    assert int(med_page1.headers["x-total-count"]) == expected_medium
+    assert len(med_page1.json()) == 5
+    assert all(item["difficulty"] == "Medium" for item in med_page1.json())
+
+    # LIKE wildcard characters in search are escaped literally
+    wildcard_res = client.get("/api/challenges?search=%25")
+    assert wildcard_res.status_code == 200
+
+    # Extreme offset and NUL byte search are rejected cleanly with 422
+    assert client.get("/api/challenges?offset=99999999999999999999").status_code == 422
+    assert client.get("/api/challenges?search=%00").status_code == 422
+    assert wildcard_res.json() == []
+    assert int(wildcard_res.headers["x-total-count"]) == 0
+
+    # Invalid pagination parameters rejected with 422
+    assert client.get("/api/challenges?limit=0").status_code == 422
+    assert client.get("/api/challenges?limit=101").status_code == 422
+    assert client.get("/api/challenges?offset=-1").status_code == 422
+
+
+def test_custom_challenge_share_toggle_rotate_and_revoke(
+    client_factory, session: Session, register_user, login_as
+):
+    """Owner can enable, rotate, and revoke unlisted share_token on custom challenge."""
+    from backend.models.challenge import Challenge
+
+    user = register_user("share_owner")
+    owner_client = login_as("share_owner")
+    anon_client = client_factory()
+
+    custom_ch = Challenge(
+        slug="share-lifecycle-custom",
+        title="Share Lifecycle Custom",
+        difficulty=Difficulty.MEDIUM,
+        category=Category.SECURITY,
+        language=Language.PYTHON,
+        description="Custom challenge for share lifecycle testing",
+        threat_model="IDOR",
+        defect_target="Check line 2",
+        code_snippet="def get_doc(doc_id):\n    return docs[doc_id]\n",
+        expected_issues=[
+            {
+                "id": "idor-1",
+                "title": "Missing ownership check",
+                "severity": "high",
+                "lines": [2],
+                "keywords": ["ownership", "idor"],
+                "explanation": "Missing owner verification",
+            }
+        ],
+        hints=[{"tier": 1, "label": "Clue", "text": "Check ownership"}],
+        canonical_review="Verify caller owns doc_id before returning.",
+        recommended_fix_diff="- return docs[doc_id]\n+ return get_owned(doc_id, actor)",
+        is_public=False,
+        user_id=user["id"],
+    )
+    session.add(custom_ch)
+    session.commit()
+    session.refresh(custom_ch)
+
+    owner_detail = owner_client.get(f"/api/challenges/{custom_ch.slug}")
+    assert owner_detail.status_code == 200
+    assert owner_detail.json()["is_owner"] is True
+    assert owner_detail.json()["is_shared"] is False
+    assert owner_detail.json()["share_token"] is None
+    assert anon_client.get(f"/api/challenges/{custom_ch.slug}").status_code == 404
+
+    enable_res = owner_client.patch(
+        f"/api/challenges/custom/{custom_ch.slug}/share",
+        json={"enabled": True},
+    )
+    assert enable_res.status_code == 200
+    enable_data = enable_res.json()
+    assert enable_data["is_shared"] is True
+    token = enable_data["share_token"]
+    assert isinstance(token, str) and len(token) >= 24
+
+    # Idempotent re-enable keeps existing token unless regenerate=True
+    enable_again = owner_client.patch(
+        f"/api/challenges/custom/{custom_ch.slug}/share",
+        json={"enabled": True},
+    )
+    assert enable_again.status_code == 200
+    assert enable_again.json()["share_token"] == token
+
+    # Recipient with token gets read-only access (detail, hints, solution, review)
+    shared_detail = anon_client.get(
+        f"/api/challenges/{custom_ch.slug}?share_token={token}"
+    )
+    assert shared_detail.status_code == 200
+    shared_json = shared_detail.json()
+    assert shared_json["title"] == "Share Lifecycle Custom"
+    assert shared_json["is_public"] is False
+    assert shared_json["is_shared"] is True
+    assert shared_json["is_owner"] is False
+    assert shared_json["share_token"] is None
+
+    shared_hints = anon_client.get(
+        f"/api/challenges/{custom_ch.slug}/hints?share_token={token}"
+    )
+    assert shared_hints.status_code == 200
+    assert len(shared_hints.json()) == 1
+
+    # Solution without reveal=true still requires caller submission (403)
+    assert (
+        anon_client.get(
+            f"/api/challenges/{custom_ch.slug}/solution?share_token={token}"
+        ).status_code
+        == 403
+    )
+    assert (
+        anon_client.get(
+            f"/api/challenges/{custom_ch.slug}/solution?reveal=true&share_token={token}"
+        ).status_code
+        == 200
+    )
+
+    # Recipient can submit their own review attempt and read their own history
+    review_res = anon_client.post(
+        f"/api/challenges/{custom_ch.slug}/review?share_token={token}",
+        json={"flagged_lines": [2], "comments": "Missing IDOR ownership check."},
+    )
+    assert review_res.status_code == 200
+    assert review_res.json()["score"] > 0
+
+    history_res = anon_client.get(
+        f"/api/challenges/{custom_ch.slug}/submissions?share_token={token}"
+    )
+    assert history_res.status_code == 200
+    assert len(history_res.json()) == 1
+
+    # Rotate token invalidates old token immediately
+    rotate_res = owner_client.patch(
+        f"/api/challenges/custom/{custom_ch.slug}/share",
+        json={"enabled": True, "regenerate": True},
+    )
+    assert rotate_res.status_code == 200
+    new_token = rotate_res.json()["share_token"]
+    assert new_token and new_token != token
+    assert (
+        anon_client.get(
+            f"/api/challenges/{custom_ch.slug}?share_token={token}"
+        ).status_code
+        == 404
+    )
+    assert (
+        anon_client.get(
+            f"/api/challenges/{custom_ch.slug}?share_token={new_token}"
+        ).status_code
+        == 200
+    )
+
+    # Revoke sharing invalidates new token
+    revoke_res = owner_client.patch(
+        f"/api/challenges/custom/{custom_ch.slug}/share",
+        json={"enabled": False},
+    )
+    assert revoke_res.status_code == 200
+    assert revoke_res.json()["is_shared"] is False
+    assert revoke_res.json()["share_token"] is None
+    assert (
+        anon_client.get(
+            f"/api/challenges/{custom_ch.slug}?share_token={new_token}"
+        ).status_code
+        == 404
+    )
