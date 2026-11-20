@@ -68,6 +68,12 @@ class Settings(BaseSettings):
     AUTH_COOKIE_NAME: str = "diffly_access_token"
     GUEST_COOKIE_NAME: str = "diffly_guest_session"
     GUEST_SESSION_MAX_AGE_DAYS: int = 30
+    OAUTH_STATE_COOKIE_NAME: str = "diffly_oauth_state"
+    OAUTH_STATE_TTL_SECONDS: int = 600
+    GITHUB_CLIENT_ID: str = ""
+    GITHUB_CLIENT_SECRET: str = ""
+    GITHUB_OAUTH_REDIRECT_URI: str = ""
+    FRONTEND_URL: str = ""
     ENVIRONMENT: str = "development"
     NODE_ENV: str = "development"
     PORT: int = 8000
@@ -104,6 +110,22 @@ class Settings(BaseSettings):
         if cleaned:
             re.compile(cleaned)
         return cleaned
+
+    @property
+    def github_oauth_enabled(self) -> bool:
+        return bool(self.GITHUB_CLIENT_ID.strip() and self.GITHUB_CLIENT_SECRET.strip())
+
+    def is_allowed_origin(self, origin: str) -> bool:
+        cleaned = origin.strip().rstrip("/")
+        if not cleaned:
+            return False
+        normalized_origins = {o.strip().rstrip("/") for o in self.CORS_ORIGINS}
+        if cleaned in normalized_origins:
+            return True
+        regex = self.CORS_ORIGIN_REGEX.strip()
+        if regex:
+            return bool(re.fullmatch(regex, cleaned))
+        return False
 
     @property
     def is_vercel(self) -> bool:

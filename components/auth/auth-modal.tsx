@@ -11,8 +11,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { GitHubOAuthButton } from "@/components/auth/github-oauth-button"
 import { SignInForm } from "@/components/auth/sign-in-form"
 import { SignUpForm } from "@/components/auth/sign-up-form"
+import { Separator } from "@/components/ui/separator"
+import { useAuthProviders } from "@/hooks/use-auth-providers"
 import { useAuthModalStore, type AuthTab } from "@/stores/auth-modal-store"
 
 export interface AuthModalProps {
@@ -25,6 +28,7 @@ export function AuthModal({ open, onOpenChange, initialTab }: AuthModalProps) {
   const storeIsOpen = useAuthModalStore((s) => s.isOpen)
   const storeInitialTab = useAuthModalStore((s) => s.initialTab)
   const storeSetIsOpen = useAuthModalStore((s) => s.setIsOpen)
+  const { githubEnabled } = useAuthProviders()
 
   const isControlled = open !== undefined
   const isModalOpen = isControlled ? open : storeIsOpen
@@ -82,6 +86,19 @@ export function AuthModal({ open, onOpenChange, initialTab }: AuthModalProps) {
           >
             <AlertCircle aria-hidden="true" className="size-4 shrink-0" />
             <span>{errorMessage}</span>
+          </div>
+        )}
+
+        {githubEnabled && (
+          <div className="flex flex-col gap-3">
+            <GitHubOAuthButton />
+            <div className="flex items-center gap-2">
+              <Separator className="flex-1" />
+              <span className="text-xs text-muted-foreground">
+                or continue with email
+              </span>
+              <Separator className="flex-1" />
+            </div>
           </div>
         )}
 
