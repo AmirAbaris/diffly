@@ -19,6 +19,11 @@ out/
 build/
 dist/
 
+# Playwright artifacts
+playwright-report/
+test-results/
+blob-report/
+
 # SQLite & local databases
 *.db
 *.sqlite3
