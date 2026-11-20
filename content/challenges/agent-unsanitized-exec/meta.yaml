@@ -49,18 +49,72 @@ canonical_review: |-
 
   Recommendation:
   Do not use `eval()` or `exec()`. Implement a safe expression evaluator using Python's `ast` module (`ast.parse`) with an explicit whitelist of supported AST nodes (e.g. `ast.BinOp`, `ast.UnaryOp`, `ast.Constant`, and operators `ast.Add`, `ast.Sub`, `ast.Mult`, `ast.Div`). Any unrecognized node or attribute traversal must raise an error.
-recommended_fix_diff: "--- a/tools/calculator.py\n+++ b/tools/calculator.py\n@@ -1,4\
-  \ +1,5 @@\n+import ast\n import math\n+import operator\n from typing import Any\n\
-  \ \n+SAFE_OPS = {\n+    ast.Add: operator.add,\n+    ast.Sub: operator.sub,\n+ \
-  \   ast.Mult: operator.mul,\n+    ast.Div: operator.truediv,\n+}\n+\n+def safe_eval(node:\
-  \ ast.AST, allowed: dict[str, Any]) -> Any:\n+    if isinstance(node, ast.Constant):\n\
-  +        if isinstance(node.value, (int, float)):\n+            return node.value\n\
-  +    if isinstance(node, ast.Name) and node.id in allowed:\n+        return allowed[node.id]\n\
-  +    if isinstance(node, ast.BinOp) and type(node.op) in SAFE_OPS:\n+        return\
-  \ SAFE_OPS[type(node.op)](\n+            safe_eval(node.left, allowed),\n+     \
-  \       safe_eval(node.right, allowed),\n+        )\n+    raise ValueError(f\"Unsupported:\
-  \ {type(node).__name__}\")\n+\n class CalculatorTool:\n@@ -25,5 +42,4 @@\n     \
-  \    try:\n-            result = eval(clean_expr, globals(), locals())\n+      \
-  \      parsed_tree = ast.parse(clean_expr, mode=\"eval\")\n+            result =\
-  \ safe_eval(parsed_tree.body, self.allowed_names)\n             return {\"status\"\
-  : \"success\", \"result\": result}\n"
+recommended_fix_diff: |
+  --- a/tools/calculator.py
+  +++ b/tools/calculator.py
+  @@ -1,5 +1,51 @@
+  +import ast
+   import math
+  +import operator
+   from typing import Any
+  +
+  +
+  +SAFE_OPS = {
+  +    ast.Add: operator.add,
+  +    ast.Sub: operator.sub,
+  +    ast.Mult: operator.mul,
+  +    ast.Div: operator.truediv,
+  +}
+  +SAFE_UNARY_OPS = {
+  +    ast.UAdd: operator.pos,
+  +    ast.USub: operator.neg,
+  +}
+  +
+  +
+  +def safe_eval(node: ast.AST, allowed: dict[str, Any]) -> Any:
+  +    if (
+  +        isinstance(node, ast.Constant)
+  +        and isinstance(node.value, (int, float))
+  +        and not isinstance(node.value, bool)
+  +    ):
+  +        return node.value
+  +    if (
+  +        isinstance(node, ast.Name)
+  +        and node.id in allowed
+  +        and not callable(allowed[node.id])
+  +    ):
+  +        return allowed[node.id]
+  +    if isinstance(node, ast.UnaryOp) and type(node.op) in SAFE_UNARY_OPS:
+  +        return SAFE_UNARY_OPS[type(node.op)](safe_eval(node.operand, allowed))
+  +    if isinstance(node, ast.BinOp) and type(node.op) in SAFE_OPS:
+  +        return SAFE_OPS[type(node.op)](
+  +            safe_eval(node.left, allowed),
+  +            safe_eval(node.right, allowed),
+  +        )
+  +    if (
+  +        isinstance(node, ast.Call)
+  +        and isinstance(node.func, ast.Name)
+  +        and node.func.id in allowed
+  +        and callable(allowed[node.func.id])
+  +        and not node.keywords
+  +    ):
+  +        args = [safe_eval(arg, allowed) for arg in node.args]
+  +        return allowed[node.func.id](*args)
+  +    raise ValueError(f"Unsupported: {type(node).__name__}")
+   
+   
+   class CalculatorTool:
+  @@ -25,11 +71,8 @@
+           clean_expr = expression.strip().strip("`")
+   
+           try:
+  -            result = eval(
+  -                clean_expr,
+  -                {"__builtins__": __builtins__},
+  -                self.allowed_names,
+  -            )
+  +            parsed_tree = ast.parse(clean_expr, mode="eval")
+  +            result = safe_eval(parsed_tree.body, self.allowed_names)
+               return {"status": "success", "result": result}
+           except Exception as exc:
+               return {"status": "error", "message": f"Failed: {exc}"}

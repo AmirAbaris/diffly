@@ -48,10 +48,21 @@ canonical_review: |-
 recommended_fix_diff: |
   --- a/api/routes/users.py
   +++ b/api/routes/users.py
-  @@ -15,5 +15,6 @@
-  -    q_str = f"SELECT id FROM users WHERE name LIKE '%{q}%'"
-  +    q_str = "SELECT id FROM users WHERE name LIKE :p"
+  @@ -14,12 +14,14 @@
+   ) -> list[dict]:
+       """Search registered users matching query term."""
+       sql_query = text(
+  -        f"SELECT id, username, email FROM users "
+  -        f"WHERE username LIKE '%{q}%'"
+  +        "SELECT id, username, email FROM users "
+  +        "WHERE username LIKE :pattern"
+       )
+   
        try:
-  -        res = session.execute(text(q)).fetchall()
-  +        params = {"p": f"%{q}%"}
-  +        res = session.execute(text(q), params).fetchall()
+  -        results = session.execute(sql_query).fetchall()
+  +        results = session.execute(
+  +            sql_query, {"pattern": f"%{q}%"}
+  +        ).fetchall()
+           return [
+               {"id": row[0], "username": row[1], "email": row[2]}
+               for row in results

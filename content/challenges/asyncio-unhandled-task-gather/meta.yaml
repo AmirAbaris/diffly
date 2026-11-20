@@ -57,10 +57,22 @@ canonical_review: |-
 recommended_fix_diff: |
   --- a/orchestrator/pipeline.py
   +++ b/orchestrator/pipeline.py
-  @@ -22,8 +22,7 @@
-  -    async def analyze_repo(self, path: str):
-  -        results = await asyncio.gather(*tasks)
-  +    async def analyze_repo(self, path: str):
+  @@ -23,11 +23,11 @@
+           self, path: str
+       ) -> list[dict[str, Any]]:
+           """Run all review checks in parallel and return findings."""
+  -        tasks = [
+  -            asyncio.create_task(self.run_linter(path)),
+  -            asyncio.create_task(self.run_security_scan(path)),
+  -            asyncio.create_task(self.run_type_checker(path)),
+  -        ]
   +        async with asyncio.TaskGroup() as tg:
-  +            results = [tg.create_task(t) for t in self.tasks]
-           return results
+  +            tasks = [
+  +                tg.create_task(self.run_linter(path)),
+  +                tg.create_task(self.run_security_scan(path)),
+  +                tg.create_task(self.run_type_checker(path)),
+  +            ]
+   
+  -        results = await asyncio.gather(*tasks)
+  -        return results
+  +        return [task.result() for task in tasks]

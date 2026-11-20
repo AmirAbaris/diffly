@@ -45,7 +45,7 @@ Next.js proxies `/api/*` requests on port `3000` to FastAPI on port `8000` throu
 Diffly loads curated challenges from directories under `content/challenges/<slug>/`.
 
 1. Create `content/challenges/<slug>/` using lowercase kebab-case for `<slug>`.
-2. Add `snippet.<ext>` (`.py`, `.ts`, `.go`, or `.rs`) containing the defective code without comments that spoil the answer.
+2. Add `snippet.<ext>` (`.py`, `.ts`, `.go`, `.rs`, or `.java`) containing the defective code without comments that spoil the answer.
 3. Add `description.md` with problem context and a `## Threat Model` section.
 4. Add `meta.yaml` with challenge metadata, 1-indexed `lines` and `keywords` for each defect in `expected_issues`, three progressive `hints`, `canonical_review`, and `recommended_fix_diff`.
 5. Run `pnpm test:py` to confirm `backend/seed/loader.py` and `backend/seed/seed_data.py` validate and load your bundle.

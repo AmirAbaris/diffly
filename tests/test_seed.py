@@ -761,3 +761,91 @@ def test_seed_functions_surface_errors_instead_of_swallowing(tmp_path):
                 seed_challenges_if_empty(db, content_dir=tmp_path)
     finally:
         empty_migrated.dispose()
+
+
+def _validate_unified_diff(diff_text: str, source_text: str) -> list[str]:
+    """Validate unified diff hunks and context/'-' lines against source."""
+    import re
+
+    hunk_re = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
+    source_lines = source_text.splitlines()
+    diff_lines = diff_text.splitlines()
+    errors: list[str] = []
+    idx = 0
+    hunks = 0
+
+    while idx < len(diff_lines):
+        match = hunk_re.match(diff_lines[idx])
+        if not match:
+            idx += 1
+            continue
+        hunks += 1
+        old_start = int(match.group(1))
+        old_count = int(match.group(2)) if match.group(2) is not None else 1
+        new_count = int(match.group(4)) if match.group(4) is not None else 1
+        idx += 1
+        pos = old_start - 1
+        seen_old = 0
+        seen_new = 0
+
+        while idx < len(diff_lines):
+            hline = diff_lines[idx]
+            if (
+                hline.startswith("@@")
+                or hline.startswith("--- ")
+                or hline.startswith("+++ ")
+            ):
+                break
+            if hline.startswith("\\ No newline"):
+                idx += 1
+                continue
+            prefix = " " if hline == "" else hline[0]
+            text = "" if hline == "" else hline[1:]
+            if prefix in (" ", "-"):
+                if pos < 0 or pos >= len(source_lines):
+                    errors.append(
+                        f"hunk {hunks}: line {pos + 1} out of range "
+                        f"(len={len(source_lines)})"
+                    )
+                elif source_lines[pos] != text:
+                    errors.append(
+                        f"hunk {hunks}: line {pos + 1} mismatch: "
+                        f"diff={text!r} vs snippet={source_lines[pos]!r}"
+                    )
+                pos += 1
+                seen_old += 1
+            if prefix in (" ", "+"):
+                seen_new += 1
+            idx += 1
+
+        if seen_old != old_count:
+            errors.append(f"hunk {hunks}: old_count={old_count} != seen_old={seen_old}")
+        if seen_new != new_count:
+            errors.append(f"hunk {hunks}: new_count={new_count} != seen_new={seen_new}")
+
+    if hunks == 0:
+        errors.append("no unified diff hunks found")
+    return errors
+
+
+def test_curated_recommended_fix_diffs_match_snippets():
+    """Verify recommended_fix_diff hunks match snippet.* lines for verified bundles."""
+    verified_slugs = {
+        "agent-unsanitized-exec",
+        "fastapi-raw-sql-injection",
+        "nextjs-race-condition-useeffect",
+        "agent-prompt-injection-leak",
+        "asyncio-unhandled-task-gather",
+        "go-nil-error-interface-dereference",
+        "java-unclosed-jdbc-resource-leak",
+        "java-xxe-document-builder",
+        "java-concurrenthashmap-check-then-act",
+        "java-boxed-id-reference-equality",
+    }
+    by_slug = {ch["slug"]: ch for ch in CHALLENGES_DATA}
+    assert verified_slugs.issubset(by_slug.keys())
+
+    for slug in sorted(verified_slugs):
+        ch = by_slug[slug]
+        errors = _validate_unified_diff(ch["recommended_fix_diff"], ch["code_snippet"])
+        assert not errors, f"{slug} diff mismatch: {errors}"
