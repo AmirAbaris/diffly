@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { usePathname, useRouter, useSearchParams } from "next/navigation"
+import { usePathname, useSearchParams } from "next/navigation"
 import { useSWRConfig } from "swr"
 import { toast } from "@/hooks/use-toast"
 import { revalidateAllAuthCaches } from "@/lib/auth"
@@ -30,7 +30,6 @@ function getAuthCallbackErrorMessage(code: string): string {
 export function AuthCallbackToast() {
   const searchParams = useSearchParams()
   const pathname = usePathname()
-  const router = useRouter()
   const { mutate } = useSWRConfig()
   const handledSignatureRef = React.useRef<string | null>(null)
 
@@ -80,16 +79,8 @@ export function AuthCallbackToast() {
     const queryString = nextParams.toString()
     const basePath = pathname || "/"
     const nextUrl = queryString ? `${basePath}?${queryString}` : basePath
-    router.replace(nextUrl, { scroll: false })
-  }, [
-    authStatus,
-    authError,
-    claimStatus,
-    searchParams,
-    pathname,
-    router,
-    mutate,
-  ])
+    window.history.replaceState(window.history.state, "", nextUrl)
+  }, [authStatus, authError, claimStatus, searchParams, pathname, mutate])
 
   return null
 }

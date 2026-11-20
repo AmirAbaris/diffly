@@ -1,9 +1,6 @@
 """GitHub OAuth 2.0 flow helpers, state signing, and redirect sanitization."""
 
-import base64
-import hashlib
 import hmac
-import json
 import re
 import secrets
 import time
@@ -12,6 +9,7 @@ from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import httpx
+import jwt
 from fastapi import Request
 from sqlmodel import Session, select
 
@@ -19,7 +17,7 @@ from backend.core.config import settings
 from backend.models.user import User
 
 
-_STATE_KEY_PURPOSE = b"diffly/github-oauth-state/v1"
+_STATE_PURPOSE = "diffly/github-oauth-state/v1"
 _STATE_VERSION = 1
 _MAX_STATE_LENGTH = 2048
 _MAX_NEXT_LENGTH = 512
@@ -54,31 +52,23 @@ class GitHubProfile:
     avatar_url: str | None
 
 
-def _state_key() -> bytes:
-    return hmac.new(
-        settings.JWT_SECRET_KEY.encode("utf-8"),
-        _STATE_KEY_PURPOSE,
-        hashlib.sha256,
-    ).digest()
+def _encode_state_token(payload: dict[str, Any]) -> str:
+    return jwt.encode(
+        payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM
+    )
 
 
-def _b64url_encode(raw: bytes) -> str:
-    return base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
-
-
-def _b64url_decode(raw: str) -> bytes | None:
-    if not raw or not raw.isascii():
-        return None
-    padding = "=" * (-len(raw) % 4)
+def _decode_state_token(raw_state: str) -> dict[str, Any] | None:
     try:
-        return base64.urlsafe_b64decode(raw + padding)
-    except Exception:
+        data = jwt.decode(
+            raw_state,
+            settings.JWT_SECRET_KEY,
+            algorithms=[settings.JWT_ALGORITHM],
+            options={"verify_exp": False},
+        )
+    except jwt.InvalidTokenError:
         return None
-
-
-def _sign_state(body: str) -> str:
-    digest = hmac.new(_state_key(), body.encode("ascii"), hashlib.sha256).digest()
-    return _b64url_encode(digest)
+    return data if isinstance(data, dict) else None
 
 
 def sanitize_next_path(raw_next: str | None, default: str = "/challenges") -> str:
@@ -184,21 +174,17 @@ def mint_oauth_state(
     link_user_id: int | None,
     now: int | None = None,
 ) -> str:
-    """Create an HMAC-signed, short-lived OAuth state token."""
+    """Create a signed, short-lived OAuth state token."""
     now_ts = int(time.time()) if now is None else now
     payload = {
+        "purpose": _STATE_PURPOSE,
         "v": _STATE_VERSION,
         "nonce": secrets.token_urlsafe(24),
         "exp": now_ts + settings.OAUTH_STATE_TTL_SECONDS,
         "next": sanitize_next_path(next_path),
         "uid": link_user_id,
     }
-    raw_json = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode(
-        "utf-8"
-    )
-    body = _b64url_encode(raw_json)
-    sig = _sign_state(body)
-    return f"v{_STATE_VERSION}.{body}.{sig}"
+    return _encode_state_token(payload)
 
 
 def verify_oauth_state(
@@ -220,28 +206,12 @@ def verify_oauth_state(
     if not hmac.compare_digest(raw_state, cookie_state):
         return None
 
-    parts = raw_state.split(".")
-    if len(parts) != 3 or parts[0] != f"v{_STATE_VERSION}":
-        return None
-
-    _, body, sig = parts
-    if not body or not sig or not body.isascii() or not sig.isascii():
-        return None
-
-    expected_sig = _sign_state(body)
-    if not hmac.compare_digest(sig, expected_sig):
-        return None
-
-    decoded_bytes = _b64url_decode(body)
-    if decoded_bytes is None:
-        return None
-
-    try:
-        data = json.loads(decoded_bytes.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError):
-        return None
-
-    if not isinstance(data, dict) or data.get("v") != _STATE_VERSION:
+    data = _decode_state_token(raw_state)
+    if (
+        data is None
+        or data.get("purpose") != _STATE_PURPOSE
+        or data.get("v") != _STATE_VERSION
+    ):
         return None
 
     nonce = data.get("nonce")

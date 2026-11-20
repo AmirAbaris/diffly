@@ -160,6 +160,7 @@ describe("UserNav links, GitHub OAuth visibility, and AuthCallbackToast", () => 
     mockSearchParams = new URLSearchParams(
       "auth_error=github_email_in_use&tab=security"
     )
+    const replaceStateSpy = vi.spyOn(window.history, "replaceState")
 
     render(
       <SWRConfig
@@ -178,9 +179,12 @@ describe("UserNav links, GitHub OAuth visibility, and AuthCallbackToast", () => 
       )
     })
 
-    expect(mockReplace).toHaveBeenCalledWith("/settings?tab=security", {
-      scroll: false,
-    })
+    expect(replaceStateSpy).toHaveBeenCalledWith(
+      window.history.state,
+      "",
+      "/settings?tab=security"
+    )
+    replaceStateSpy.mockRestore()
   })
 
   it("handles ?auth=github_success by showing success toast, revalidating auth, and stripping param", async () => {
@@ -188,6 +192,7 @@ describe("UserNav links, GitHub OAuth visibility, and AuthCallbackToast", () => 
     mockSearchParams = new URLSearchParams("auth=github_success")
 
     const fetcher = vi.fn(async () => null)
+    const replaceStateSpy = vi.spyOn(window.history, "replaceState")
 
     render(
       <SWRConfig
@@ -207,6 +212,11 @@ describe("UserNav links, GitHub OAuth visibility, and AuthCallbackToast", () => 
       expect(toasts[0].variant).toBe("success")
     })
 
-    expect(mockReplace).toHaveBeenCalledWith("/profile", { scroll: false })
+    expect(replaceStateSpy).toHaveBeenCalledWith(
+      window.history.state,
+      "",
+      "/profile"
+    )
+    replaceStateSpy.mockRestore()
   })
 })
