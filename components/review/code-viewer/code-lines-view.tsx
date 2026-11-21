@@ -63,7 +63,6 @@ const CodeLineRow = React.memo(function CodeLineRow({
   return (
     <>
       <tr
-        role="row"
         className={cn(
           "group transition-colors",
           ROW_TONE_CLASSES[annotation.tone] ?? ROW_TONE_CLASSES.none

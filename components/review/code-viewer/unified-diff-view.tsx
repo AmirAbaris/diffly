@@ -68,7 +68,6 @@ const UnifiedDiffRow = React.memo(function UnifiedDiffRow({
   return (
     <>
       <tr
-        role="row"
         data-diff-type={line.type}
         className={cn(
           "group transition-colors",
@@ -204,7 +203,6 @@ export function UnifiedDiffView({
                   return (
                     <tr
                       key={line.id}
-                      role="row"
                       data-testid="diff-hunk-header"
                       className="bg-sky-500/10 text-sky-700 dark:text-sky-300"
                     >

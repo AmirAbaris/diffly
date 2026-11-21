@@ -75,6 +75,29 @@ function ToneIcon({ tone }: { tone: string }) {
   )
 }
 
+function VerdictSeverityBadges({
+  severity,
+  severityAgrees,
+}: {
+  severity?: string
+  severityAgrees?: boolean | null
+}) {
+  return (
+    <div className="flex items-center gap-1.5">
+      {severity && (
+        <Badge variant="outline" size="sm" className="uppercase">
+          {severity}
+        </Badge>
+      )}
+      {severityAgrees !== null && severityAgrees !== undefined && (
+        <Badge variant={severityAgrees ? "success" : "outline"} size="sm">
+          {severityAgrees ? "Severity matched" : "Severity mismatch"}
+        </Badge>
+      )}
+    </div>
+  )
+}
+
 export function VerdictThreadCard({
   mark,
   defect,
@@ -82,9 +105,9 @@ export function VerdictThreadCard({
   verdict,
 }: VerdictThreadCardProps) {
   const title = defect?.title ?? mark.label
-  const severity = defect?.severity
   const explanation =
     defect && "explanation" in defect ? defect.explanation : undefined
+  const heading = TONE_HEADING[mark.tone] ?? mark.label
 
   return (
     <div
@@ -101,31 +124,17 @@ export function VerdictThreadCard({
             variant={TONE_BADGE_VARIANT[mark.tone] ?? "secondary"}
             size="sm"
           >
-            {TONE_HEADING[mark.tone] ?? mark.label}
+            {heading}
           </Badge>
-          {title && title !== TONE_HEADING[mark.tone] && (
+          {title && title !== heading && (
             <span className="font-semibold text-foreground">{title}</span>
           )}
         </div>
 
-        <div className="flex items-center gap-1.5">
-          {severity && (
-            <Badge variant="outline" size="sm" className="uppercase">
-              {severity}
-            </Badge>
-          )}
-          {verdict?.severityAgrees !== null &&
-            verdict?.severityAgrees !== undefined && (
-              <Badge
-                variant={verdict.severityAgrees ? "success" : "outline"}
-                size="sm"
-              >
-                {verdict.severityAgrees
-                  ? "Severity matched"
-                  : "Severity mismatch"}
-              </Badge>
-            )}
-        </div>
+        <VerdictSeverityBadges
+          severity={defect?.severity}
+          severityAgrees={verdict?.severityAgrees}
+        />
       </div>
 
       {explanation && (

@@ -173,7 +173,6 @@ const SplitDiffRowItem = React.memo(function SplitDiffRowItem({
   if (row.type === "hunk") {
     return (
       <tr
-        role="row"
         data-testid="diff-hunk-header"
         className="bg-sky-500/10 text-sky-700 dark:text-sky-300"
       >
@@ -190,7 +189,7 @@ const SplitDiffRowItem = React.memo(function SplitDiffRowItem({
 
   return (
     <>
-      <tr role="row" className="group">
+      <tr className="group">
         {row.left ? (
           <SplitPaneCells
             side="left"
@@ -205,7 +204,6 @@ const SplitDiffRowItem = React.memo(function SplitDiffRowItem({
           />
         ) : (
           <td
-            role="gridcell"
             colSpan={3}
             className="border-r border-border bg-muted/25 px-2 py-0.5"
           />
@@ -224,7 +222,7 @@ const SplitDiffRowItem = React.memo(function SplitDiffRowItem({
             keyPrefix={`${row.id}-right`}
           />
         ) : (
-          <td role="gridcell" colSpan={3} className="bg-muted/25 px-2 py-0.5" />
+          <td colSpan={3} className="bg-muted/25 px-2 py-0.5" />
         )}
       </tr>
       <InlineThreadRow at={rightAt ?? leftAt} colSpan={6} />

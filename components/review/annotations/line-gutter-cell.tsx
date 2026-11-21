@@ -98,6 +98,31 @@ function GutterGlyph({ tone, visible }: { tone: string; visible: boolean }) {
   )
 }
 
+function formatGutterLabels(
+  displayLineNumber: number,
+  ariaLabelSuffix: string,
+  annotationLabel: string,
+  isInteractive: boolean,
+  isFlagged: boolean
+) {
+  if (isInteractive) {
+    return {
+      ariaLabel: isFlagged
+        ? `Unflag line ${displayLineNumber}${ariaLabelSuffix}`
+        : `Flag line ${displayLineNumber}${ariaLabelSuffix}`,
+      title: isFlagged
+        ? `Line ${displayLineNumber} flagged. Click to unflag.`
+        : `Click to flag line ${displayLineNumber} for review`,
+    }
+  }
+  return {
+    ariaLabel: annotationLabel
+      ? `Line ${displayLineNumber}, ${annotationLabel}${ariaLabelSuffix}`
+      : `Line ${displayLineNumber}${ariaLabelSuffix}`,
+    title: annotationLabel || `Line ${displayLineNumber}`,
+  }
+}
+
 export function LineGutterCell({
   at,
   displayLineNumber,
@@ -111,21 +136,13 @@ export function LineGutterCell({
   const isFlagged = annotation.tone === "flagged"
   const isVerdict = annotation.tone !== "none" && annotation.tone !== "flagged"
   const isInteractive = !readOnly && annotation.interactive
-
-  const ariaLabel = isInteractive
-    ? isFlagged
-      ? `Unflag line ${displayLineNumber}${ariaLabelSuffix}`
-      : `Flag line ${displayLineNumber}${ariaLabelSuffix}`
-    : annotation.label
-      ? `Line ${displayLineNumber}, ${annotation.label}${ariaLabelSuffix}`
-      : `Line ${displayLineNumber}${ariaLabelSuffix}`
-
-  const title = isInteractive
-    ? isFlagged
-      ? `Line ${displayLineNumber} flagged. Click to unflag.`
-      : `Click to flag line ${displayLineNumber} for review`
-    : annotation.label || `Line ${displayLineNumber}`
-
+  const { ariaLabel, title } = formatGutterLabels(
+    displayLineNumber,
+    ariaLabelSuffix,
+    annotation.label,
+    isInteractive,
+    isFlagged
+  )
   const showGlyphAlways = isFlagged || isVerdict || annotation.isCursor
 
   return (
