@@ -1,10 +1,22 @@
 import type {
+  CommandOutcome,
+  LineSpace,
+  ReviewCommand,
+  ReviewDraft,
+  ReviewValidation,
+} from "@/lib/review"
+import type {
   ChallengeDetail,
   ChallengeHint,
+  FindingSeverity,
+  FindingVerdictPayload,
   FlaggedLine,
+  ReviewFindingPayload,
   ReviewSubmissionResponse,
   SubmissionHistoryItem,
 } from "@/types/challenge"
+
+export type { FindingSeverity, FindingVerdictPayload, ReviewFindingPayload }
 
 /**
  * Domain error parsed at the transport boundary (Axios/SWR -> domain).
@@ -28,6 +40,9 @@ export type AsyncSlice<T> =
   | { status: "ready"; data: T }
 
 export interface ArenaDraftActions {
+  reviewDraft: ReviewDraft
+  dispatch: (cmd: ReviewCommand) => CommandOutcome
+  validation: ReviewValidation
   flaggedLines: FlaggedLine[]
   comments: string
   setComments: (value: string) => void
@@ -40,6 +55,7 @@ export interface ReadyChallengeSession {
   status: "ready"
   slug: string
   challenge: ChallengeDetail
+  lineSpace: LineSpace
   hints: AsyncSlice<ChallengeHint[]>
   history: AsyncSlice<SubmissionHistoryItem[]>
   nextChallengeSlug: string | null

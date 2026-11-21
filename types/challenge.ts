@@ -98,6 +98,25 @@ export interface ChallengeFilters {
   limit?: number
 }
 
+export type FindingSeverity = "critical" | "high" | "medium" | "low"
+
+export interface ReviewFindingPayload {
+  id: string
+  file_path: string | null
+  start_line: number
+  end_line: number
+  body: string
+  severity: FindingSeverity | null
+}
+
+export interface FindingVerdictPayload {
+  finding_id: string
+  verdict: "matched" | "redundant" | "false_positive"
+  defect_id?: string | null
+  line_score: number
+  severity_agrees?: boolean | null
+}
+
 export interface ReviewDraft {
   flaggedLines: FlaggedLine[]
   comments: string
@@ -105,8 +124,10 @@ export interface ReviewDraft {
 }
 
 export interface ReviewSubmissionRequest {
-  flagged_lines: FlaggedLine[]
+  findings?: ReviewFindingPayload[]
+  flagged_lines?: FlaggedLine[]
   comments: string
+  reveal?: boolean
 }
 
 export interface DetectedIssue {
@@ -115,6 +136,7 @@ export interface DetectedIssue {
   severity: string
   matched_lines?: FlaggedLine[]
   matched_keywords?: string[]
+  finding_ids?: string[]
   line_score?: number
   concept_score?: number
   explanation?: string
@@ -146,6 +168,8 @@ export interface ReviewSubmissionResponse {
   created_at: string
   flagged_lines?: FlaggedLine[]
   comments?: string
+  findings?: ReviewFindingPayload[]
+  finding_verdicts?: FindingVerdictPayload[]
 }
 
 export interface SubmissionHistoryItem {
@@ -165,6 +189,19 @@ export interface SubmissionHistoryItem {
   detected_issues: DetectedIssue[]
   missed_issues: MissedIssue[]
   created_at: string
+  findings?: ReviewFindingPayload[]
+  finding_verdicts?: FindingVerdictPayload[]
+}
+
+export interface ChallengeExpectedIssue {
+  id: string
+  title: string
+  severity: string
+  file_path?: string | null
+  lines: FlaggedLine[]
+  matched_lines?: FlaggedLine[]
+  keywords: string[]
+  explanation: string
 }
 
 export interface ChallengeSolutionResponse {
@@ -173,16 +210,7 @@ export interface ChallengeSolutionResponse {
   slug: string
   canonical_review: string
   recommended_fix_diff: string
-  expected_issues?: Array<{
-    id: string
-    title: string
-    severity: string
-    file_path?: string | null
-    lines: FlaggedLine[]
-    matched_lines?: FlaggedLine[]
-    keywords: string[]
-    explanation: string
-  }>
+  expected_issues?: ChallengeExpectedIssue[]
 }
 
 export interface CustomChallengesListResponse {
