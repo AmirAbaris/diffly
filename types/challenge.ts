@@ -63,6 +63,9 @@ export interface ChallengeSummary {
   total_hints: number
   is_solved: boolean
   best_score: number | null
+  is_public?: boolean
+  is_shared?: boolean
+  share_token?: string | null
 }
 
 export interface ChallengeDetail extends ChallengeSummary {
@@ -70,6 +73,14 @@ export interface ChallengeDetail extends ChallengeSummary {
   defect_target: string
   code_snippet: string
   files?: ChallengeFile[]
+  is_owner?: boolean
+}
+
+export interface ShareChallengeResponse {
+  id: number
+  slug: string
+  is_shared: boolean
+  share_token: string | null
 }
 
 export interface ChallengeHint {
@@ -83,6 +94,8 @@ export interface ChallengeFilters {
   category?: Category | "All"
   language?: Language | "All"
   search?: string
+  page?: number
+  limit?: number
 }
 
 export interface ReviewDraft {

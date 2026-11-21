@@ -2,12 +2,13 @@
 
 import * as React from "react"
 import axios from "axios"
-import useSWR, { mutate as globalMutate } from "swr"
+import useSWR, { useSWRConfig } from "swr"
 import { apiClient } from "@/lib/axios"
 import type {
   CustomChallengeResponse,
   CustomChallengesListResponse,
   GenerateCustomChallengePayload,
+  ShareChallengeResponse,
 } from "@/types/challenge"
 
 export const CUSTOM_CHALLENGES_SWR_KEY = "/api/challenges/custom"
@@ -53,9 +54,21 @@ export function setStoredGeminiKey(key: string, remember: boolean): void {
   } catch {}
 }
 
-export function useCustomChallenges() {
+function isChallengeDetailKey(key: unknown, slug: string): boolean {
+  return (
+    typeof key === "string" &&
+    (key === `/api/challenges/${slug}` ||
+      key.startsWith(`/api/challenges/${slug}?`))
+  )
+}
+
+export function useCustomChallenges(options?: { enabled?: boolean }) {
+  const enabled = options?.enabled ?? true
+  const { mutate: cacheMutate } = useSWRConfig()
   const { data, error, isLoading, isValidating, mutate } =
-    useSWR<CustomChallengesListResponse>(CUSTOM_CHALLENGES_SWR_KEY)
+    useSWR<CustomChallengesListResponse>(
+      enabled ? CUSTOM_CHALLENGES_SWR_KEY : null
+    )
   const [quotaSyncState, setQuotaSyncState] =
     React.useState<QuotaSyncState>("idle")
 
@@ -70,16 +83,46 @@ export function useCustomChallenges() {
     setQuotaSyncState("idle")
   }, [])
 
+  const revalidateCustomLibrary = React.useCallback(async () => {
+    if (enabled) {
+      await mutate()
+      return
+    }
+    await cacheMutate(CUSTOM_CHALLENGES_SWR_KEY)
+  }, [enabled, mutate, cacheMutate])
+
   const deleteCustomChallenge = React.useCallback(
     async (identifier: string | number) => {
       const response = await apiClient.delete(
         `/api/challenges/custom/${identifier}`
       )
-      await mutate()
-      void globalMutate("/api/challenges")
+      await revalidateCustomLibrary()
+      void cacheMutate("/api/challenges")
       return response.data
     },
-    [mutate]
+    [revalidateCustomLibrary, cacheMutate]
+  )
+
+  const toggleChallengeShare = React.useCallback(
+    async (
+      identifier: string | number,
+      shareEnabled: boolean,
+      regenerate = false
+    ): Promise<ShareChallengeResponse> => {
+      const response = await apiClient.patch<ShareChallengeResponse>(
+        `/api/challenges/custom/${identifier}/share`,
+        { enabled: shareEnabled, regenerate }
+      )
+      const slug = response.data.slug
+      await Promise.all([
+        revalidateCustomLibrary(),
+        slug
+          ? cacheMutate((key) => isChallengeDetailKey(key, slug))
+          : Promise.resolve(),
+      ])
+      return response.data
+    },
+    [revalidateCustomLibrary, cacheMutate]
   )
 
   const generateCustomChallenge = React.useCallback(
@@ -100,14 +143,17 @@ export function useCustomChallenges() {
             },
           }
         )
-        await mutate()
-        void globalMutate("/api/challenges")
+        await revalidateCustomLibrary()
+        void cacheMutate("/api/challenges")
         return response.data
       } catch (err: unknown) {
         if (isRequestTimeoutError(err)) {
           setQuotaSyncState("syncing")
           try {
-            await Promise.all([mutate(), globalMutate("/api/challenges")])
+            await Promise.all([
+              revalidateCustomLibrary(),
+              cacheMutate("/api/challenges"),
+            ])
             setQuotaSyncState("synced")
           } catch {
             setQuotaSyncState("error")
@@ -116,7 +162,7 @@ export function useCustomChallenges() {
         throw err
       }
     },
-    [mutate]
+    [revalidateCustomLibrary, cacheMutate]
   )
 
   return {
@@ -133,6 +179,7 @@ export function useCustomChallenges() {
     error,
     mutate,
     deleteCustomChallenge,
+    toggleChallengeShare,
     generateCustomChallenge,
   }
 }

@@ -3,11 +3,14 @@
 import * as React from "react"
 import useSWR from "swr"
 import { useChallenges } from "@/hooks/use-challenges"
+import { useCustomChallenges } from "@/hooks/use-custom-challenges"
 import { useReviewDraft } from "@/hooks/use-review-draft"
 import { toast } from "@/hooks/use-toast"
 import { mutateUserStats } from "@/hooks/use-user-stats"
 import { apiClient } from "@/lib/axios"
+import { resolveNextChallengeSlug } from "@/lib/challenge-progression"
 import { validateReviewSubmission } from "@/lib/review-validation"
+import { appendShareTokenQuery } from "@/lib/share-url"
 import { useArenaUIStore } from "@/stores/arena-ui-store"
 import type {
   AsyncSlice,
@@ -130,21 +133,37 @@ function toAsyncSlice<T>(
  * parallel SWR fetches with `keepPreviousData: false`, UI reset on slug change,
  * slug verification, draft binding, and review submission.
  */
-export function useChallengeSession(slug: string): ChallengeSessionState {
-  const challengeQuery = useSWR<ChallengeDetail>(
-    slug ? `/api/challenges/${slug}` : null,
-    { keepPreviousData: false }
-  )
-  const hintsQuery = useSWR<ChallengeHint[]>(
-    slug ? `/api/challenges/${slug}/hints` : null,
-    { keepPreviousData: false }
-  )
-  const historyQuery = useSWR<SubmissionHistoryItem[]>(
-    slug ? `/api/challenges/${slug}/submissions` : null,
-    { keepPreviousData: false }
-  )
+export function useChallengeSession(
+  slug: string,
+  shareToken?: string
+): ChallengeSessionState {
+  const challengeUrl = slug
+    ? appendShareTokenQuery(`/api/challenges/${slug}`, shareToken)
+    : null
+  const hintsUrl = slug
+    ? appendShareTokenQuery(`/api/challenges/${slug}/hints`, shareToken)
+    : null
+  const historyUrl = slug
+    ? appendShareTokenQuery(`/api/challenges/${slug}/submissions`, shareToken)
+    : null
+
+  const challengeQuery = useSWR<ChallengeDetail>(challengeUrl, {
+    keepPreviousData: false,
+  })
+  const hintsQuery = useSWR<ChallengeHint[]>(hintsUrl, {
+    keepPreviousData: false,
+  })
+  const historyQuery = useSWR<SubmissionHistoryItem[]>(historyUrl, {
+    keepPreviousData: false,
+  })
 
   const { challenges } = useChallenges()
+  const isOwnedCustomChallenge =
+    challengeQuery.data?.is_public === false &&
+    challengeQuery.data?.is_owner === true
+  const { customChallenges } = useCustomChallenges({
+    enabled: isOwnedCustomChallenge,
+  })
   const draft = useReviewDraft(slug)
 
   const isSubmitting = useArenaUIStore((s) => s.isSubmitting)
@@ -174,23 +193,29 @@ export function useChallengeSession(slug: string): ChallengeSessionState {
     }
   }, [slug, resetArenaUI])
 
+  const challengeErrorStatus = (
+    challengeQuery.error as ErrorShape | null | undefined
+  )?.response?.status
+  const hasAccessError =
+    challengeErrorStatus === 401 ||
+    challengeErrorStatus === 403 ||
+    challengeErrorStatus === 404
+
   const verifiedChallenge =
-    challengeQuery.data && challengeQuery.data.slug === slug
+    !hasAccessError && challengeQuery.data && challengeQuery.data.slug === slug
       ? challengeQuery.data
       : undefined
 
-  const nextChallengeSlug = React.useMemo(() => {
-    if (!challenges || challenges.length === 0) return null
-    const currentIndex = challenges.findIndex(
-      (c) =>
-        c.slug === slug ||
-        (verifiedChallenge?.id !== undefined && c.id === verifiedChallenge.id)
-    )
-    if (currentIndex >= 0 && currentIndex < challenges.length - 1) {
-      return challenges[currentIndex + 1].slug
-    }
-    return null
-  }, [challenges, slug, verifiedChallenge?.id])
+  const nextChallengeSlug = React.useMemo(
+    () =>
+      resolveNextChallengeSlug({
+        currentSlug: slug,
+        currentChallenge: verifiedChallenge,
+        publicChallenges: challenges,
+        customChallenges,
+      }),
+    [slug, verifiedChallenge, challenges, customChallenges]
+  )
 
   const submitReview =
     React.useCallback(async (): Promise<ReviewSubmissionResponse | null> => {
@@ -208,8 +233,12 @@ export function useChallengeSession(slug: string): ChallengeSessionState {
       const submittedComments = draft.comments.trim()
 
       try {
-        const response = await apiClient.post<ReviewSubmissionResponse>(
+        const reviewEndpoint = appendShareTokenQuery(
           `/api/challenges/${targetId}/review`,
+          shareToken
+        )
+        const response = await apiClient.post<ReviewSubmissionResponse>(
+          reviewEndpoint,
           {
             flagged_lines: submittedLines,
             comments: submittedComments,
@@ -273,6 +302,7 @@ export function useChallengeSession(slug: string): ChallengeSessionState {
       setIsResultModalOpen,
       historyQuery,
       challengeQuery,
+      shareToken,
     ])
 
   const refresh = React.useCallback(() => {

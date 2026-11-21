@@ -24,6 +24,7 @@ vi.mock("next/navigation", () => ({
 }))
 
 const mockDeleteCustomChallenge = vi.fn()
+const mockToggleChallengeShare = vi.fn()
 const mockGenerateCustomChallenge = vi.fn()
 
 let mockCustomChallenges: ChallengeSummary[] = []
@@ -52,6 +53,7 @@ vi.mock("@/hooks/use-custom-challenges", async () => {
       isSyncingQuota: mockQuotaSyncState === "syncing",
       resetQuotaSyncState: mockResetQuotaSyncState,
       deleteCustomChallenge: mockDeleteCustomChallenge,
+      toggleChallengeShare: mockToggleChallengeShare,
       generateCustomChallenge: mockGenerateCustomChallenge,
       mutate: vi.fn(),
     }),
@@ -67,6 +69,7 @@ describe("Custom Challenge Generator & Quota Flow", () => {
     })
     mockPush.mockReset()
     mockDeleteCustomChallenge.mockReset()
+    mockToggleChallengeShare.mockReset()
     mockGenerateCustomChallenge.mockReset()
 
     mockCustomChallenges = [
@@ -237,6 +240,31 @@ describe("Custom Challenge Generator & Quota Flow", () => {
       await user.click(deleteBtn)
 
       expect(mockDeleteCustomChallenge).toHaveBeenCalledWith(101)
+    })
+
+    it("toggles unlisted share and copies link from Manage Library list", async () => {
+      const user = userEvent.setup()
+      const writeTextSpy = vi.spyOn(navigator.clipboard, "writeText")
+      mockToggleChallengeShare.mockResolvedValueOnce({
+        id: 101,
+        slug: "fastapi-jwt-bypass-custom",
+        is_shared: true,
+        share_token: "tok_modal_101",
+      })
+
+      render(<CustomChallengeModal open={true} initialTab="manage" />)
+
+      const shareBtn = await screen.findByTestId("toggle-share-challenge-101")
+      await user.click(shareBtn)
+
+      expect(mockToggleChallengeShare).toHaveBeenCalledWith(101, true)
+      await waitFor(() => {
+        expect(writeTextSpy).toHaveBeenCalledWith(
+          expect.stringContaining(
+            "/challenges/fastapi-jwt-bypass-custom?share_token=tok_modal_101"
+          )
+        )
+      })
     })
 
     it("successfully generates challenge and routes to /challenges/[slug]", async () => {

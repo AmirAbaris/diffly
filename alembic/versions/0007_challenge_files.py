@@ -1,7 +1,7 @@
 """Add files JSON column to challenges for multi-file PR diff mode.
 
-Revision ID: 0006_challenge_files
-Revises: 0005_github_oauth_user_columns
+Revision ID: 0007_challenge_files
+Revises: 0006_challenge_share_token
 Create Date: 2026-11-20 00:00:00.000000
 
 """
@@ -14,8 +14,8 @@ from alembic import op
 
 
 # revision identifiers, used by Alembic.
-revision: str = "0006_challenge_files"
-down_revision: str | Sequence[str] | None = "0005_github_oauth_user_columns"
+revision: str = "0007_challenge_files"
+down_revision: str | Sequence[str] | None = "0006_challenge_share_token"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

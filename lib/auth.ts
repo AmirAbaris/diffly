@@ -192,27 +192,13 @@ const isChallengeScopedKey = (key: unknown): key is string =>
   key !== CUSTOM_CHALLENGES_SWR_KEY &&
   !key.startsWith("/api/challenges/next")
 
-const isPrivateChallengeSliceKey = (key: string): boolean =>
-  key.includes("/submissions") || key.includes("/solution")
-
 async function revalidateAuthScopedCaches(
   mutateCache: ScopedMutator,
   options?: {
     clearPrivateSlices?: boolean
   }
 ): Promise<void> {
-  const challengeScopedPromise = options?.clearPrivateSlices
-    ? Promise.all([
-        mutateCache(
-          (key) => isChallengeScopedKey(key) && isPrivateChallengeSliceKey(key),
-          undefined,
-          { revalidate: true }
-        ),
-        mutateCache(
-          (key) => isChallengeScopedKey(key) && !isPrivateChallengeSliceKey(key)
-        ),
-      ])
-    : mutateCache(isChallengeScopedKey)
+  const clearPrivate = Boolean(options?.clearPrivateSlices)
 
   await Promise.all([
     mutateCache(
@@ -224,9 +210,17 @@ async function revalidateAuthScopedCaches(
     mutateCache(
       (key) => typeof key === "string" && key.startsWith("/api/challenges/next")
     ),
-    mutateCache("/api/challenges"),
-    mutateCache(CUSTOM_CHALLENGES_SWR_KEY),
-    challengeScopedPromise,
+    mutateCache(
+      (key) =>
+        typeof key === "string" &&
+        (key === "/api/challenges" || key.startsWith("/api/challenges?"))
+    ),
+    clearPrivate
+      ? mutateCache(CUSTOM_CHALLENGES_SWR_KEY, undefined, { revalidate: true })
+      : mutateCache(CUSTOM_CHALLENGES_SWR_KEY),
+    clearPrivate
+      ? mutateCache(isChallengeScopedKey, undefined, { revalidate: true })
+      : mutateCache(isChallengeScopedKey),
   ])
 }
 

@@ -21,6 +21,9 @@ vi.mock("swr", () => ({
     mutate: mockMutate,
   }),
   mutate: (...args: unknown[]) => mockGlobalMutate(...args),
+  useSWRConfig: () => ({
+    mutate: (...args: unknown[]) => mockGlobalMutate(...args),
+  }),
 }))
 
 describe("useCustomChallenges timeout and quota-sync behavior", () => {
@@ -102,5 +105,64 @@ describe("useCustomChallenges timeout and quota-sync behavior", () => {
       isRequestTimeoutError(new AxiosError("Unauthorized", "ERR_BAD_REQUEST"))
     ).toBe(false)
     expect(isRequestTimeoutError(new Error("timeout"))).toBe(false)
+  })
+
+  it("toggles unlisted share_token and revalidates custom list and challenge detail", async () => {
+    const patchSpy = vi.spyOn(apiClient, "patch").mockResolvedValueOnce({
+      data: {
+        id: 7,
+        slug: "custom-ssrf",
+        is_shared: true,
+        share_token: "tok_share_7",
+      },
+    })
+
+    const { result } = renderHook(() => useCustomChallenges())
+
+    let shareRes: unknown
+    await act(async () => {
+      shareRes = await result.current.toggleChallengeShare(7, true)
+    })
+
+    expect(patchSpy).toHaveBeenCalledWith("/api/challenges/custom/7/share", {
+      enabled: true,
+      regenerate: false,
+    })
+    expect(shareRes).toEqual({
+      id: 7,
+      slug: "custom-ssrf",
+      is_shared: true,
+      share_token: "tok_share_7",
+    })
+    expect(mockMutate).toHaveBeenCalledTimes(1)
+    expect(mockGlobalMutate).toHaveBeenCalledTimes(1)
+    const predicate = mockGlobalMutate.mock.calls[0][0] as (
+      key: unknown
+    ) => boolean
+    expect(predicate("/api/challenges/custom-ssrf")).toBe(true)
+    expect(predicate("/api/challenges/custom-ssrf?share_token=tok")).toBe(true)
+    expect(predicate("/api/challenges/custom-ssrf-2")).toBe(false)
+    expect(predicate("/api/challenges/custom-ssrf/hints")).toBe(false)
+
+    // When enabled: false (as in Arena OwnerShareControls), revalidates CUSTOM_CHALLENGES_SWR_KEY via cacheMutate
+    mockMutate.mockClear()
+    mockGlobalMutate.mockClear()
+    patchSpy.mockResolvedValueOnce({
+      data: {
+        id: 7,
+        slug: "custom-ssrf",
+        is_shared: false,
+        share_token: null,
+      },
+    })
+    const { result: disabledHook } = renderHook(() =>
+      useCustomChallenges({ enabled: false })
+    )
+    await act(async () => {
+      await disabledHook.current.toggleChallengeShare(7, false)
+    })
+    expect(mockMutate).not.toHaveBeenCalled()
+    expect(mockGlobalMutate).toHaveBeenCalledWith(CUSTOM_CHALLENGES_SWR_KEY)
+    patchSpy.mockRestore()
   })
 })
