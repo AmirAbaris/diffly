@@ -36,6 +36,16 @@ export interface ComparisonViewProps {
 
 const DEFAULT_FLAGGED_LINES: FlaggedLine[] = []
 
+function extractSolutionErrorMessage(fetchError: unknown): string | null {
+  if (!fetchError) return null
+  const detail = (fetchError as { response?: { data?: { detail?: string } } })
+    ?.response?.data?.detail
+  if (detail) return detail
+  return fetchError instanceof Error
+    ? fetchError.message
+    : "Failed to load canonical solution"
+}
+
 export function ComparisonView({
   challengeId,
   challengeSlug,
@@ -76,14 +86,7 @@ export function ComparisonView({
   })
 
   const solution = propSolution ?? fetchedSolution ?? null
-
-  const errorMessage = fetchError
-    ? (fetchError as { response?: { data?: { detail?: string } } })?.response
-        ?.data?.detail ||
-      (fetchError instanceof Error
-        ? fetchError.message
-        : "Failed to load canonical solution")
-    : null
+  const errorMessage = extractSolutionErrorMessage(fetchError)
 
   const handleTabChange = React.useCallback(
     (tab: ComparisonTab) => {
