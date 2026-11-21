@@ -1,21 +1,32 @@
 import * as React from "react"
 import { AlertCircle, RefreshCw } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import type { ChallengeSolutionResponse, FlaggedLine } from "@/types/challenge"
+import type { GradeReport } from "@/lib/review"
+import type {
+  ChallengeFile,
+  ChallengeSolutionResponse,
+  FlaggedLine,
+} from "@/types/challenge"
+import { AnnotatedCodeTab } from "./annotated-code-tab"
 import { CodeDiffViewer } from "./code-diff-viewer"
 import { StaffReviewColumn } from "./staff-review-column"
 import { UserReviewColumn } from "./user-review-column"
 
+export type ComparisonTab = "comparison" | "diff" | "annotated"
+
 export interface ComparisonBodyProps {
   isLoading: boolean
   errorMessage: string | null
-  activeTab: "comparison" | "diff"
+  activeTab: ComparisonTab
   userFlaggedLines: FlaggedLine[]
   userComments: string
   solution: ChallengeSolutionResponse | null
+  codeSnippet?: string
+  files?: ChallengeFile[]
+  gradeReport?: GradeReport | null
   language?: string
   onRetry: () => void
-  onTabChange: (tab: "comparison" | "diff") => void
+  onTabChange: (tab: ComparisonTab) => void
 }
 
 export function ComparisonBody({
@@ -25,6 +36,9 @@ export function ComparisonBody({
   userFlaggedLines,
   userComments,
   solution,
+  codeSnippet,
+  files,
+  gradeReport,
   language,
   onRetry,
   onTabChange,
@@ -35,7 +49,10 @@ export function ComparisonBody({
         data-testid="comparison-loading-state"
         className="flex min-h-[200px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border bg-muted/20 p-8 text-center"
       >
-        <RefreshCw className="size-5 animate-spin text-muted-foreground" />
+        <RefreshCw
+          aria-hidden="true"
+          className="size-5 animate-spin text-muted-foreground"
+        />
         <p className="text-xs font-medium text-muted-foreground">
           Loading canonical review and expert fix…
         </p>
@@ -49,7 +66,7 @@ export function ComparisonBody({
         data-testid="comparison-error-state"
         className="flex flex-col items-center justify-center gap-3 rounded-xl border border-destructive/30 bg-destructive/5 p-6 text-center"
       >
-        <AlertCircle className="size-5 text-destructive" />
+        <AlertCircle aria-hidden="true" className="size-5 text-destructive" />
         <div className="flex flex-col gap-1">
           <span className="text-xs font-semibold text-destructive">
             Could not load canonical solution
@@ -63,7 +80,7 @@ export function ComparisonBody({
           onClick={onRetry}
           className="h-8 gap-1.5 text-xs"
         >
-          <RefreshCw className="size-3" />
+          <RefreshCw aria-hidden="true" className="size-3" />
           <span>Try Again</span>
         </Button>
       </div>
@@ -75,6 +92,18 @@ export function ComparisonBody({
       <CodeDiffViewer
         rawDiff={solution?.recommended_fix_diff}
         language={language}
+      />
+    )
+  }
+
+  if (activeTab === "annotated") {
+    return (
+      <AnnotatedCodeTab
+        codeSnippet={codeSnippet}
+        files={files}
+        language={language}
+        gradeReport={gradeReport}
+        solution={solution}
       />
     )
   }

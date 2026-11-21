@@ -3,6 +3,11 @@
 import * as React from "react"
 import { themes } from "prism-react-renderer"
 import { useTheme } from "next-themes"
+import {
+  AnnotationProvider,
+  useAnnotationLayer,
+  type AnnotationLayer,
+} from "@/components/review/annotations/annotation-layer"
 import { CodeLinesView } from "@/components/review/code-viewer/code-lines-view"
 import { CodeViewerHeader } from "@/components/review/code-viewer/code-viewer-header"
 import { CodeViewerSkeleton } from "@/components/review/code-viewer/code-viewer-skeleton"
@@ -15,6 +20,7 @@ import {
   resolveActiveFileLanguage,
 } from "@/components/review/code-viewer/pr-file-utils"
 import { useClipboard } from "@/hooks/use-clipboard"
+import type { LineRef } from "@/lib/review"
 import { cn } from "@/lib/utils"
 import type { ChallengeFile, FlaggedLine, Language } from "@/types/challenge"
 
@@ -35,6 +41,8 @@ export type CodeViewerProps =
       onOpenGuide?: () => void
       fileName?: string
       defaultDiffMode?: "unified" | "split"
+      selectedFilePath?: string
+      onSelectFilePath?: (path: string) => void
       className?: string
       readOnly?: boolean
     }
@@ -51,6 +59,63 @@ function useMounted() {
   )
 }
 
+function useFallbackAnnotationLayer(
+  flaggedLines: FlaggedLine[],
+  onToggleLine: (line: FlaggedLine) => void,
+  activeFilePath: string | null,
+  readOnly: boolean
+): AnnotationLayer {
+  const listenersRef = React.useRef(new Set<() => void>())
+  const flaggedSet = React.useMemo(
+    () => collectFlaggedLineNumbers(flaggedLines, activeFilePath),
+    [flaggedLines, activeFilePath]
+  )
+  const snapshotRef = React.useRef({ flaggedSet, activeFilePath, readOnly })
+
+  React.useEffect(() => {
+    snapshotRef.current = { flaggedSet, activeFilePath, readOnly }
+    for (const listener of listenersRef.current) {
+      listener()
+    }
+  }, [flaggedSet, activeFilePath, readOnly])
+
+  return React.useMemo<AnnotationLayer>(
+    () => ({
+      mode: "draft",
+      subscribe(listener) {
+        listenersRef.current.add(listener)
+        return () => {
+          listenersRef.current.delete(listener)
+        }
+      },
+      row(at: LineRef) {
+        const isFlagged = at.file === activeFilePath && flaggedSet.has(at.line)
+        return {
+          tone: isFlagged ? "flagged" : "none",
+          rangeEdge: isFlagged ? "single" : null,
+          isCursor: false,
+          isPendingSelection: false,
+          hasThread: false,
+          label: isFlagged ? "Flagged" : `Line ${at.line}`,
+          interactive: !readOnly,
+        }
+      },
+      threadAfter() {
+        return null
+      },
+      activate(at: LineRef) {
+        if (readOnly) return
+        onToggleLine(
+          at.file !== null
+            ? { file_path: at.file, line_number: at.line }
+            : at.line
+        )
+      },
+    }),
+    [flaggedSet, activeFilePath, onToggleLine, readOnly]
+  )
+}
+
 function ReadyCodeViewer({
   code = "",
   files,
@@ -60,23 +125,46 @@ function ReadyCodeViewer({
   onOpenGuide,
   fileName,
   defaultDiffMode = "unified",
+  selectedFilePath: controlledFilePath,
+  onSelectFilePath,
   className,
   readOnly = false,
 }: ReadyCodeViewerProps) {
   const { resolvedTheme } = useTheme()
   const mounted = useMounted()
   const { copied, copy } = useClipboard()
-  const [selectedFilePath, setSelectedFilePath] = React.useState<string>(
+  const parentLayer = useAnnotationLayer()
+  const [internalFilePath, setInternalFilePath] = React.useState<string>(
     () => files?.[0]?.path ?? ""
   )
   const [diffMode, setDiffMode] = React.useState<"unified" | "split">(
     defaultDiffMode
   )
 
+  const selectedFilePath = controlledFilePath ?? internalFilePath
+  const setSelectedFilePath = React.useCallback(
+    (path: string) => {
+      if (onSelectFilePath) {
+        onSelectFilePath(path)
+      } else {
+        setInternalFilePath(path)
+      }
+    },
+    [onSelectFilePath]
+  )
+
   const activeFile = React.useMemo(() => {
     if (!files || files.length === 0) return null
     return files.find((f) => f.path === selectedFilePath) ?? files[0]
   }, [files, selectedFilePath])
+
+  const activeFilePath = activeFile?.path ?? null
+  const fallbackLayer = useFallbackAnnotationLayer(
+    flaggedLines,
+    onToggleLine,
+    activeFilePath,
+    readOnly
+  )
 
   const fileSummaries = React.useMemo(
     () => buildPrFileSummaries(files, flaggedLines),
@@ -102,28 +190,31 @@ function ReadyCodeViewer({
     [activeFile, fileSummaries]
   )
 
-  const flaggedLineNumbers = React.useMemo(
-    () => collectFlaggedLineNumbers(flaggedLines, activeFile?.path ?? null),
-    [flaggedLines, activeFile]
-  )
-
-  const handleToggleLineNumber = React.useCallback(
-    (lineNumber: number) => {
-      onToggleLine(
-        activeFile
-          ? { file_path: activeFile.path, line_number: lineNumber }
-          : lineNumber
-      )
-    },
-    [activeFile, onToggleLine]
-  )
-
   const handleCopy = React.useCallback(() => {
     void copy(copyPayload)
   }, [copy, copyPayload])
 
   const currentTheme =
     mounted && resolvedTheme === "light" ? themes.vsLight : themes.vsDark
+
+  const content = activePatch ? (
+    <DiffHunkView
+      patch={activePatch}
+      filePath={activeFilePath}
+      normalizedLanguage={normalizedLanguage}
+      theme={currentTheme}
+      diffMode={diffMode}
+      readOnly={readOnly}
+    />
+  ) : (
+    <CodeLinesView
+      code={activeCode}
+      filePath={activeFilePath}
+      normalizedLanguage={normalizedLanguage}
+      theme={currentTheme}
+      readOnly={readOnly}
+    />
+  )
 
   return (
     <div
@@ -155,25 +246,10 @@ function ReadyCodeViewer({
         />
       )}
 
-      {activePatch ? (
-        <DiffHunkView
-          patch={activePatch}
-          normalizedLanguage={normalizedLanguage}
-          theme={currentTheme}
-          diffMode={diffMode}
-          flaggedLineNumbers={flaggedLineNumbers}
-          onToggleLineNumber={handleToggleLineNumber}
-          readOnly={readOnly}
-        />
+      {parentLayer ? (
+        content
       ) : (
-        <CodeLinesView
-          code={activeCode}
-          normalizedLanguage={normalizedLanguage}
-          theme={currentTheme}
-          flaggedLineNumbers={flaggedLineNumbers}
-          onToggleLineNumber={handleToggleLineNumber}
-          readOnly={readOnly}
-        />
+        <AnnotationProvider layer={fallbackLayer}>{content}</AnnotationProvider>
       )}
     </div>
   )

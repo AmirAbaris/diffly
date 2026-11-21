@@ -33,6 +33,7 @@ from backend.models.challenge import (
     DefectCriterion,
     Difficulty,
     FlaggedLineItem,
+    FlaggedLineRef,
     FlaggedLines,
     GenerateCustomChallengeRequest,
     HintResponse,
@@ -56,6 +57,15 @@ from backend.services.gemini_generator import (
     GeminiRateLimitError,
     GeminiSchemaError,
     generate_custom_challenge,
+)
+from backend.services.grading import (
+    Finding,
+    FindingVerdict,
+    GradingPolicy,
+    ReviewSubmission,
+    grade_review,
+    validate_review_bounds,
+    validate_review_text,
 )
 from backend.services.ownership import (
     CUSTOM_CHALLENGE_QUOTA,
@@ -226,15 +236,36 @@ class CustomEvaluationRequest(BaseModel):
         default_factory=list,
         description="Line numbers flagged by reviewer as defective",
     )
+    findings: list[Finding] | None = Field(
+        default=None,
+        max_length=200,
+        description="v2 inline review findings anchored to lines or ranges",
+    )
     comments: str = Field(
         default="",
         max_length=20000,
         description="User review critique explaining the defect",
     )
+    summary_note: str | None = Field(
+        default=None,
+        max_length=20000,
+        description="Optional v2 summary note alias for comments",
+    )
 
     @model_validator(mode="after")
     def validate_flagged_lines_bounds(self) -> "CustomEvaluationRequest":
-        if self.flagged_lines and (self.code_snippet or self.files):
+        if self.findings is not None:
+            note = (
+                self.summary_note if self.summary_note is not None else self.comments
+            ).strip()
+            review = ReviewSubmission(findings=self.findings, summary_note=note)
+            validate_review_text(review)
+            if self.code_snippet or self.files:
+                validate_review_bounds(
+                    review,
+                    {"code_snippet": self.code_snippet, "files": self.files},
+                )
+        elif self.flagged_lines and (self.code_snippet or self.files):
             validate_flagged_line_bounds(
                 self.flagged_lines,
                 code_snippet=self.code_snippet,
@@ -259,6 +290,8 @@ class CustomEvaluationResponse(BaseModel):
     feedback: str = ""
     execution_time_ms: float = 0.0
     flagged_lines: list[FlaggedLineItem] = Field(default_factory=list)
+    findings: list[dict[str, Any]] = Field(default_factory=list)
+    finding_verdicts: list[FindingVerdict] = Field(default_factory=list)
     comments: str = ""
 
 
@@ -608,12 +641,55 @@ def evaluate_custom_challenge_endpoint(
     payload: CustomEvaluationRequest,
 ) -> CustomEvaluationResponse:
     """Statelessly evaluate a review submission against custom challenge metadata."""
+    challenge_payload = {
+        "expected_issues": payload.expected_issues,
+        "code_snippet": payload.code_snippet,
+        "files": payload.files,
+    }
+    if payload.findings is not None:
+        note = (
+            payload.summary_note
+            if payload.summary_note is not None
+            else payload.comments
+        ).strip()
+        review = ReviewSubmission(findings=payload.findings, summary_note=note)
+        report = grade_review(
+            challenge=challenge_payload,
+            review=review,
+            policy=GradingPolicy(),
+        )
+        derived_lines: list[FlaggedLineItem] = []
+        seen_lines: set[tuple[str | None, int]] = set()
+        for finding in review.findings:
+            fp = finding.anchor.file_path
+            for ln in finding.anchor.lines():
+                if (fp, ln) in seen_lines:
+                    continue
+                seen_lines.add((fp, ln))
+                if fp is not None:
+                    derived_lines.append(FlaggedLineRef(file_path=fp, line_number=ln))
+                else:
+                    derived_lines.append(ln)
+        return CustomEvaluationResponse(
+            score=report.score,
+            line_precision_score=report.line_precision_score,
+            concept_score=report.concept_score,
+            false_positive_penalty=report.false_positive_penalty,
+            false_positive_lines=report.false_positive_lines,
+            detected_issues=report.detected_issues,
+            missed_issues=report.missed_issues,
+            summary=report.summary,
+            critique=report.critique,
+            feedback=report.critique,
+            execution_time_ms=report.execution_time_ms,
+            flagged_lines=derived_lines,
+            findings=[f.model_dump() for f in review.findings],
+            finding_verdicts=report.finding_verdicts,
+            comments=note,
+        )
+
     eval_result = evaluate_review(
-        challenge={
-            "expected_issues": payload.expected_issues,
-            "code_snippet": payload.code_snippet,
-            "files": payload.files,
-        },
+        challenge=challenge_payload,
         flagged_lines=payload.flagged_lines,
         user_comments=payload.comments,
     )

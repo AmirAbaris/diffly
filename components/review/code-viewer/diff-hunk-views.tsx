@@ -8,21 +8,19 @@ import { UnifiedDiffView } from "./unified-diff-view"
 
 export interface DiffHunkViewProps {
   patch: string
+  filePath?: string | null
   normalizedLanguage: string
   theme: PrismTheme
   diffMode: "unified" | "split"
-  flaggedLineNumbers: Set<number>
-  onToggleLineNumber: (lineNumber: number) => void
   readOnly?: boolean
 }
 
 export function DiffHunkView({
   patch,
+  filePath = null,
   normalizedLanguage,
   theme,
   diffMode,
-  flaggedLineNumbers,
-  onToggleLineNumber,
   readOnly = false,
 }: DiffHunkViewProps) {
   const diffLines = React.useMemo(() => parseUnifiedDiff(patch), [patch])
@@ -31,10 +29,9 @@ export function DiffHunkView({
     return (
       <SplitDiffView
         diffLines={diffLines}
+        filePath={filePath}
         normalizedLanguage={normalizedLanguage}
         theme={theme}
-        flaggedLineNumbers={flaggedLineNumbers}
-        onToggleLineNumber={onToggleLineNumber}
         readOnly={readOnly}
       />
     )
@@ -43,10 +40,9 @@ export function DiffHunkView({
   return (
     <UnifiedDiffView
       diffLines={diffLines}
+      filePath={filePath}
       normalizedLanguage={normalizedLanguage}
       theme={theme}
-      flaggedLineNumbers={flaggedLineNumbers}
-      onToggleLineNumber={onToggleLineNumber}
       readOnly={readOnly}
     />
   )

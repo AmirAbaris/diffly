@@ -5,6 +5,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { CodeViewer } from "@/components/review/code-viewer"
 import { buildPrFileSummaries } from "@/components/review/code-viewer/pr-file-utils"
 import { parseUnifiedDiff } from "@/components/review/comparison/diff-parser"
+import {
+  buildUnboundedLineSpace,
+  expandFlaggedLines,
+  toLineRef,
+} from "@/lib/review"
 import { useReviewDraftStore } from "@/stores/review-draft-store"
 import type { ChallengeFile, FlaggedLine } from "@/types/challenge"
 
@@ -92,7 +97,7 @@ describe("Multi-file PR Diff Mode", () => {
     )
 
     // Flagging line 19 in active file emits file-scoped reference
-    await user.click(screen.getByRole("button", { name: "19" }))
+    await user.click(screen.getByRole("button", { name: "Flag line 19" }))
     expect(onToggleLine).toHaveBeenCalledWith({
       file_path: "api/routes/oauth.py",
       line_number: 19,
@@ -119,7 +124,7 @@ describe("Multi-file PR Diff Mode", () => {
     await user.click(screen.getByTestId("pr-file-tab-config/settings.py"))
     expect(screen.queryByTestId("code-diff-mode-split")).not.toBeInTheDocument()
     expect(screen.getByText(/OAUTH_ENABLED/)).toBeInTheDocument()
-    await user.click(screen.getByRole("button", { name: "2" }))
+    await user.click(screen.getByRole("button", { name: "Flag line 2" }))
     expect(onToggleLine).toHaveBeenCalledWith({
       file_path: "config/settings.py",
       line_number: 2,
@@ -132,20 +137,35 @@ describe("Multi-file PR Diff Mode", () => {
 
   it("persists and restores file-scoped FlaggedLineRef items in review draft store", () => {
     const store = useReviewDraftStore.getState()
+    const space = buildUnboundedLineSpace()
     act(() => {
-      store.initDraft("pr-slug")
-      store.toggleFlaggedLine("pr-slug", {
-        file_path: "api/routes/oauth.py",
-        line_number: 19,
-      })
-      store.toggleFlaggedLine("pr-slug", {
-        file_path: "backend/core/cookies.py",
-        line_number: 10,
-      })
+      store.hydrate("pr-slug")
+      store.dispatch(
+        "pr-slug",
+        {
+          type: "toggle",
+          at: toLineRef({
+            file_path: "api/routes/oauth.py",
+            line_number: 19,
+          }),
+        },
+        space
+      )
+      store.dispatch(
+        "pr-slug",
+        {
+          type: "toggle",
+          at: toLineRef({
+            file_path: "backend/core/cookies.py",
+            line_number: 10,
+          }),
+        },
+        space
+      )
     })
 
     expect(
-      useReviewDraftStore.getState().drafts["pr-slug"].flaggedLines
+      expandFlaggedLines(useReviewDraftStore.getState().drafts["pr-slug"].draft)
     ).toEqual([
       { file_path: "api/routes/oauth.py", line_number: 19 },
       { file_path: "backend/core/cookies.py", line_number: 10 },
@@ -153,22 +173,29 @@ describe("Multi-file PR Diff Mode", () => {
 
     // Toggle existing line off
     act(() => {
-      store.toggleFlaggedLine("pr-slug", {
-        file_path: "api/routes/oauth.py",
-        line_number: 19,
-      })
+      store.dispatch(
+        "pr-slug",
+        {
+          type: "toggle",
+          at: toLineRef({
+            file_path: "api/routes/oauth.py",
+            line_number: 19,
+          }),
+        },
+        space
+      )
     })
     expect(
-      useReviewDraftStore.getState().drafts["pr-slug"].flaggedLines
+      expandFlaggedLines(useReviewDraftStore.getState().drafts["pr-slug"].draft)
     ).toEqual([{ file_path: "backend/core/cookies.py", line_number: 10 }])
 
     // Rehydrate fresh store instance from localStorage
     useReviewDraftStore.setState({ drafts: {} })
     act(() => {
-      useReviewDraftStore.getState().initDraft("pr-slug")
+      useReviewDraftStore.getState().hydrate("pr-slug")
     })
     expect(
-      useReviewDraftStore.getState().drafts["pr-slug"].flaggedLines
+      expandFlaggedLines(useReviewDraftStore.getState().drafts["pr-slug"].draft)
     ).toEqual([{ file_path: "backend/core/cookies.py", line_number: 10 }])
   })
 
@@ -234,12 +261,16 @@ describe("Multi-file PR Diff Mode", () => {
       Array.from(container.querySelectorAll("td")).filter((td) =>
         td.className.includes("bg-amber-500/15")
       )
-    ).toHaveLength(4)
+    ).toHaveLength(3)
 
     // Switch to SQL content file: shows SQL badge and exactly 2 selectable lines
     await user.click(screen.getByTestId("pr-file-tab-db/schema.sql"))
     expect(screen.getByText(/^sql$/i)).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "2" })).toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: "3" })).not.toBeInTheDocument()
+    expect(
+      screen.getByRole("button", { name: "Flag line 2" })
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole("button", { name: "Flag line 3" })
+    ).not.toBeInTheDocument()
   })
 })

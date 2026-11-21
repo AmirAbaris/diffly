@@ -9,7 +9,12 @@ import { toast } from "@/hooks/use-toast"
 import { mutateUserStats } from "@/hooks/use-user-stats"
 import { apiClient } from "@/lib/axios"
 import { resolveNextChallengeSlug } from "@/lib/challenge-progression"
-import { validateReviewSubmission } from "@/lib/review-validation"
+import {
+  buildLineSpace,
+  buildUnboundedLineSpace,
+  parseGradeReport,
+  toSubmissionBody,
+} from "@/lib/review"
 import { appendShareTokenQuery } from "@/lib/share-url"
 import { useArenaUIStore } from "@/stores/arena-ui-store"
 import type {
@@ -164,11 +169,36 @@ export function useChallengeSession(
   const { customChallenges } = useCustomChallenges({
     enabled: isOwnedCustomChallenge,
   })
-  const draft = useReviewDraft(slug)
+  const challengeErrorStatus = (
+    challengeQuery.error as ErrorShape | null | undefined
+  )?.response?.status
+  const hasAccessError =
+    challengeErrorStatus === 401 ||
+    challengeErrorStatus === 403 ||
+    challengeErrorStatus === 404
+
+  const verifiedChallenge =
+    !hasAccessError && challengeQuery.data && challengeQuery.data.slug === slug
+      ? challengeQuery.data
+      : undefined
+
+  const lineSpace = React.useMemo(
+    () =>
+      verifiedChallenge
+        ? buildLineSpace({
+            code: verifiedChallenge.code_snippet,
+            files: verifiedChallenge.files,
+          })
+        : buildUnboundedLineSpace(),
+    [verifiedChallenge]
+  )
+
+  const draft = useReviewDraft(slug, lineSpace)
 
   const isSubmitting = useArenaUIStore((s) => s.isSubmitting)
   const setIsSubmitting = useArenaUIStore((s) => s.setIsSubmitting)
   const setSubmissionResult = useArenaUIStore((s) => s.setSubmissionResult)
+  const setGradeReport = useArenaUIStore((s) => s.setGradeReport)
   const setIsResultModalOpen = useArenaUIStore((s) => s.setIsResultModalOpen)
   const setSubmittedReview = useArenaUIStore((s) => s.setSubmittedReview)
 
@@ -193,19 +223,6 @@ export function useChallengeSession(
     }
   }, [slug, resetArenaUI])
 
-  const challengeErrorStatus = (
-    challengeQuery.error as ErrorShape | null | undefined
-  )?.response?.status
-  const hasAccessError =
-    challengeErrorStatus === 401 ||
-    challengeErrorStatus === 403 ||
-    challengeErrorStatus === 404
-
-  const verifiedChallenge =
-    !hasAccessError && challengeQuery.data && challengeQuery.data.slug === slug
-      ? challengeQuery.data
-      : undefined
-
   const nextChallengeSlug = React.useMemo(
     () =>
       resolveNextChallengeSlug({
@@ -219,11 +236,7 @@ export function useChallengeSession(
 
   const submitReview =
     React.useCallback(async (): Promise<ReviewSubmissionResponse | null> => {
-      const validation = validateReviewSubmission(
-        draft.flaggedLines,
-        draft.comments
-      )
-      if (!verifiedChallenge || !validation.canSubmit || isSubmitting) {
+      if (!verifiedChallenge || !draft.validation.valid || isSubmitting) {
         return null
       }
 
@@ -231,6 +244,7 @@ export function useChallengeSession(
       const targetId = verifiedChallenge.id ?? slug
       const submittedLines = draft.flaggedLines
       const submittedComments = draft.comments.trim()
+      const requestBody = toSubmissionBody(draft.draft, false)
 
       try {
         const reviewEndpoint = appendShareTokenQuery(
@@ -239,10 +253,7 @@ export function useChallengeSession(
         )
         const response = await apiClient.post<ReviewSubmissionResponse>(
           reviewEndpoint,
-          {
-            flagged_lines: submittedLines,
-            comments: submittedComments,
-          }
+          requestBody
         )
 
         if (!isMountedRef.current || activeSlugRef.current !== slug) {
@@ -267,6 +278,7 @@ export function useChallengeSession(
               : (prev?.comments ?? submittedComments),
         }))
         setSubmissionResult(response.data)
+        setGradeReport(parseGradeReport(response.data))
         setIsResultModalOpen(true)
 
         void historyQuery.mutate()
@@ -299,6 +311,7 @@ export function useChallengeSession(
       slug,
       setSubmittedReview,
       setSubmissionResult,
+      setGradeReport,
       setIsResultModalOpen,
       historyQuery,
       challengeQuery,
@@ -353,10 +366,14 @@ export function useChallengeSession(
     status: "ready",
     slug,
     challenge: verifiedChallenge,
+    lineSpace,
     hints,
     history,
     nextChallengeSlug,
     draft: {
+      reviewDraft: draft.draft,
+      dispatch: draft.dispatch,
+      validation: draft.validation,
       flaggedLines: draft.flaggedLines,
       comments: draft.comments,
       setComments: draft.setComments,

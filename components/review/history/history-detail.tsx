@@ -37,6 +37,55 @@ export function HistoryDetail({ item }: HistoryDetailProps) {
         )}
       </div>
 
+      {item.findings && item.findings.some((f) => f.body.trim().length > 0) && (
+        <div className="flex flex-col gap-1.5">
+          <span className="font-semibold text-muted-foreground">
+            Inline Findings ({item.findings.length})
+          </span>
+          <ul className="flex flex-col gap-1.5">
+            {item.findings.map((finding) => {
+              const rangeLabel =
+                finding.start_line === finding.end_line
+                  ? `L${finding.start_line}`
+                  : `L${finding.start_line}-L${finding.end_line}`
+              const fullLabel = finding.file_path
+                ? `${finding.file_path}:${rangeLabel}`
+                : rangeLabel
+              return (
+                <li
+                  key={finding.id}
+                  className="rounded-lg border border-border bg-muted/30 p-2 text-xs"
+                >
+                  <div className="mb-1 flex items-center gap-1.5">
+                    <Badge
+                      variant="outline"
+                      size="sm"
+                      className="font-mono tabular-nums"
+                    >
+                      {fullLabel}
+                    </Badge>
+                    {finding.severity && (
+                      <Badge
+                        variant="secondary"
+                        size="sm"
+                        className="capitalize"
+                      >
+                        {finding.severity}
+                      </Badge>
+                    )}
+                  </div>
+                  {finding.body.trim() && (
+                    <p className="whitespace-pre-wrap text-foreground">
+                      {finding.body}
+                    </p>
+                  )}
+                </li>
+              )
+            })}
+          </ul>
+        </div>
+      )}
+
       <div className="flex flex-col gap-1.5">
         <span className="font-semibold text-muted-foreground">
           Written Review Comment

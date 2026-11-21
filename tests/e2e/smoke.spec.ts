@@ -60,18 +60,20 @@ test.describe("Diffly E2E Smoke Suite", () => {
     const codeViewer = page.getByTestId("code-viewer")
     await expect(codeViewer).toBeVisible()
 
-    await codeViewer.getByRole("button", { name: "1", exact: true }).click()
+    await codeViewer
+      .getByRole("button", { name: "Flag line 1", exact: true })
+      .click()
     await expect(page.getByTestId("flagged-lines-container")).toContainText(
       "L1"
     )
 
-    const critiqueInput = page.getByLabel("Review critique")
+    const critiqueInput = page.getByLabel("Review summary note")
     await critiqueInput.fill(
       "Line 1 introduces a potential security and correctness defect that lacks proper validation and error handling."
     )
 
     await page
-      .getByTestId("review-comment-editor")
+      .getByTestId("review-summary-panel")
       .getByRole("button", { name: "Submit Review" })
       .click()
 
@@ -125,16 +127,18 @@ test.describe("Diffly E2E Smoke Suite", () => {
 
     const codeViewer = page.getByTestId("code-viewer")
     await expect(codeViewer).toBeVisible()
-    await codeViewer.getByRole("button", { name: "28", exact: true }).click()
+    await codeViewer
+      .getByRole("button", { name: "Flag line 28", exact: true })
+      .click()
 
     await page
-      .getByLabel("Review critique")
+      .getByLabel("Review summary note")
       .fill(
         "Line 28 uses eval() on untrusted input with builtins exposed, enabling remote code execution (RCE); replace it with an ast parser."
       )
 
     await page
-      .getByTestId("review-comment-editor")
+      .getByTestId("review-summary-panel")
       .getByRole("button", { name: "Submit Review" })
       .click()
 

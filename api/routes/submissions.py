@@ -4,24 +4,24 @@ from datetime import datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlmodel import func, select
 
 from api.deps import ActorDep, SessionDep
 from api.routes.challenges import ShareTokenQuery, get_challenge_or_404
 from backend.core.guest_session import mint_guest_session, write_guest_cookie
 from backend.core.rate_limit import rate_limit
-from backend.models.challenge import (
-    FlaggedLineItem,
-    FlaggedLineRef,
-    FlaggedLines,
-    validate_flagged_line_bounds,
-)
+from backend.models.challenge import FlaggedLineItem, FlaggedLines
 from backend.models.submission import Submission
-from backend.services.evaluation_service import (
+from backend.services.grading import (
     MAX_BLIND_ATTEMPTS,
     PASS_SCORE_THRESHOLD,
-    evaluate_review,
+    Finding,
+    GradingPolicy,
+    ReviewSubmission,
+    grade_review,
+    validate_review_bounds,
+    validate_review_text,
 )
 from backend.services.ownership import Actor, submission_owner_filter
 
@@ -36,24 +36,49 @@ class ReviewSubmissionRequest(BaseModel):
         default_factory=list,
         description="Line numbers flagged as defective in the code snippet",
     )
+    findings: list[Finding] | None = Field(
+        default=None,
+        max_length=200,
+        description="v2 inline review findings anchored to lines or ranges",
+    )
     comments: str = Field(
-        ...,
-        min_length=5,
+        default="",
         max_length=20000,
         description="Written review critique explaining the defect",
+    )
+    summary_note: str | None = Field(
+        default=None,
+        max_length=20000,
+        description="Optional v2 summary note alias for comments",
     )
     reveal: bool = Field(
         default=False,
         description="Explicitly reveal missed issue details on this submission",
     )
 
-    @field_validator("comments")
-    @classmethod
-    def validate_comments(cls, comments: str) -> str:
-        trimmed = comments.strip()
-        if len(trimmed) < 5:
-            raise ValueError("Comments must contain at least 5 characters")
-        return trimmed
+    def to_review_submission(self) -> ReviewSubmission:
+        note = (
+            self.summary_note if self.summary_note is not None else self.comments
+        ).strip()
+        if self.findings is not None:
+            return ReviewSubmission(
+                findings=self.findings,
+                summary_note=note,
+                reveal=self.reveal,
+            )
+        return ReviewSubmission.model_validate(
+            {
+                "flagged_lines": self.flagged_lines,
+                "summary_note": note,
+                "reveal": self.reveal,
+            }
+        )
+
+    @model_validator(mode="after")
+    def validate_review_payload(self) -> "ReviewSubmissionRequest":
+        review = self.to_review_submission()
+        validate_review_text(review)
+        return self
 
 
 class ReviewSubmissionResponse(BaseModel):
@@ -72,6 +97,8 @@ class ReviewSubmissionResponse(BaseModel):
     missed_issues: list[dict[str, Any]] = Field(default_factory=list)
     created_at: datetime
     flagged_lines: list[FlaggedLineItem] = Field(default_factory=list)
+    findings: list[dict[str, Any]] = Field(default_factory=list)
+    finding_verdicts: list[dict[str, Any]] = Field(default_factory=list)
     comments: str = ""
     session_id: str | None = None
 
@@ -84,6 +111,8 @@ class SubmissionHistoryResponse(BaseModel):
     submission_id: int
     challenge_id: int
     flagged_lines: list[FlaggedLineItem] = Field(default_factory=list)
+    findings: list[dict[str, Any]] = Field(default_factory=list)
+    finding_verdicts: list[dict[str, Any]] = Field(default_factory=list)
     comments: str
     score: int
     line_precision_score: float = 0.0
@@ -123,13 +152,9 @@ def submit_review(
         share_token=share_token,
     )
 
+    review = payload.to_review_submission()
     try:
-        validate_flagged_line_bounds(
-            payload.flagged_lines,
-            code_snippet=challenge.code_snippet,
-            files=challenge.get_files(),
-            require_non_empty=True,
-        )
+        validate_review_bounds(review, challenge)
     except ValueError as err:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -151,44 +176,29 @@ def submit_review(
             )
         ).one()
 
-    eval_result = evaluate_review(
-        challenge=challenge,
-        flagged_lines=payload.flagged_lines,
-        user_comments=payload.comments,
+    policy = GradingPolicy(
         attempt_number=prior_attempts + 1,
-        reveal_solution=reveal or payload.reveal,
+        reveal=reveal or review.reveal,
+    )
+    report = grade_review(
+        challenge=challenge,
+        review=review,
+        policy=policy,
     )
 
-    detected_issues_data = [issue.model_dump() for issue in eval_result.detected_issues]
-    missed_issues_data = [issue.model_dump() for issue in eval_result.missed_issues]
-    flagged_lines_data = [
-        item.model_dump() if isinstance(item, FlaggedLineRef) else item
-        for item in payload.flagged_lines
-    ]
-    false_positive_lines_data = [
-        item.model_dump() if isinstance(item, FlaggedLineRef) else item
-        for item in eval_result.false_positive_lines
-    ]
-
-    submission = Submission(
-        challenge_id=challenge.id,
+    submission = Submission.record(
+        challenge_id=challenge.id or 0,
         user_id=actor.user_id,
         session_id=actor.guest_session_id,
-        flagged_lines=flagged_lines_data,
-        comments=payload.comments,
-        score=eval_result.score,
-        line_precision_score=eval_result.line_precision_score,
-        concept_score=eval_result.concept_score,
-        false_positive_penalty=eval_result.false_positive_penalty,
-        false_positive_lines=false_positive_lines_data,
-        summary=eval_result.summary,
-        feedback=eval_result.critique,
-        detected_issues=detected_issues_data,
-        missed_issues=missed_issues_data,
+        review=review,
+        report=report,
     )
     session.add(submission)
     session.commit()
     session.refresh(submission)
+
+    detected_issues_data = submission.get_detected_issues()
+    missed_issues_data = submission.get_missed_issues()
 
     return ReviewSubmissionResponse(
         submission_id=submission.id or 0,
@@ -204,6 +214,8 @@ def submit_review(
         missed_issues=missed_issues_data,
         created_at=submission.created_at,
         flagged_lines=submission.get_flagged_lines(),
+        findings=submission.get_findings(),
+        finding_verdicts=submission.get_finding_verdicts(),
         comments=submission.comments,
         session_id=submission.session_id,
     )
@@ -278,6 +290,8 @@ def get_submission_history(
                 submission_id=sub.id or 0,
                 challenge_id=sub.challenge_id,
                 flagged_lines=sub.get_flagged_lines(),
+                findings=sub.get_findings(),
+                finding_verdicts=sub.get_finding_verdicts(),
                 comments=sub.comments,
                 score=sub.score,
                 line_precision_score=sub.line_precision_score,

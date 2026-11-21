@@ -19,8 +19,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { parseGradeReport, type GradeReport } from "@/lib/review"
 import { cn } from "@/lib/utils"
 import type {
+  ChallengeFile,
   ChallengeSolutionResponse,
   FlaggedLine,
   ReviewSubmissionResponse,
@@ -33,6 +35,7 @@ export interface ReviewResultModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   result: ReviewSubmissionResponse | null
+  gradeReport?: GradeReport | null
   challengeSlug: string
   challengeTitle?: string
   nextChallengeSlug?: string | null
@@ -43,6 +46,7 @@ export interface ReviewResultModalProps {
   userFlaggedLines?: FlaggedLine[]
   userComments?: string
   codeSnippet?: string
+  files?: ChallengeFile[]
   language?: string
 }
 
@@ -50,6 +54,7 @@ export function ReviewResultModal({
   open,
   onOpenChange,
   result,
+  gradeReport: propGradeReport,
   challengeSlug,
   challengeTitle,
   nextChallengeSlug,
@@ -60,6 +65,7 @@ export function ReviewResultModal({
   userFlaggedLines,
   userComments,
   codeSnippet,
+  files,
   language,
 }: ReviewResultModalProps) {
   const router = useRouter()
@@ -172,6 +178,8 @@ export function ReviewResultModal({
               userComments={userComments ?? result.comments ?? ""}
               canonicalSolution={propSolution}
               codeSnippet={codeSnippet}
+              files={files}
+              gradeReport={propGradeReport ?? parseGradeReport(result)}
               language={language}
             />
           </div>

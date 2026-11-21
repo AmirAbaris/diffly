@@ -126,6 +126,34 @@ export function PrFileTree({
       <div
         role="tablist"
         aria-label="Pull request file tabs"
+        onKeyDown={(e) => {
+          if (
+            e.key !== "ArrowRight" &&
+            e.key !== "ArrowLeft" &&
+            e.key !== "Home" &&
+            e.key !== "End"
+          ) {
+            return
+          }
+          const currentIndex = files.findIndex((f) => f.path === activeFilePath)
+          if (currentIndex === -1) return
+          let nextIndex = currentIndex
+          if (e.key === "ArrowRight") {
+            nextIndex = (currentIndex + 1) % files.length
+          } else if (e.key === "ArrowLeft") {
+            nextIndex = (currentIndex - 1 + files.length) % files.length
+          } else if (e.key === "Home") {
+            nextIndex = 0
+          } else if (e.key === "End") {
+            nextIndex = files.length - 1
+          }
+          e.preventDefault()
+          const nextFile = files[nextIndex]
+          onSelectFile(nextFile.path)
+          const tabs =
+            e.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]')
+          tabs[nextIndex]?.focus()
+        }}
         className="flex items-center gap-1 overflow-x-auto border-t border-border/60 px-2 py-1.5"
       >
         {files.map((file) => {

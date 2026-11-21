@@ -2,12 +2,18 @@
 
 import * as React from "react"
 import { ChevronDown, ChevronUp } from "lucide-react"
+import { ReviewCommentEditor } from "@/components/review/review-comment-editor"
+import { ReviewSummaryPanel } from "@/components/review/summary/review-summary-panel"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { ReviewCommentEditor } from "@/components/review/review-comment-editor"
+import type { Finding, FindingId, ReviewDraft } from "@/lib/review"
 import type { FlaggedLine } from "@/types/challenge"
 
 export interface ArenaCommentDrawerProps {
+  reviewDraft?: ReviewDraft
+  onChangeSummaryNote?: (note: string) => void
+  onSelectFinding?: (finding: Finding) => void
+  onRemoveFinding?: (id: FindingId) => void
   flaggedLines: FlaggedLine[]
   onToggleLine: (line: FlaggedLine) => void
   onClearFlaggedLines: () => void
@@ -19,6 +25,10 @@ export interface ArenaCommentDrawerProps {
 }
 
 export function ArenaCommentDrawer({
+  reviewDraft,
+  onChangeSummaryNote,
+  onSelectFinding,
+  onRemoveFinding,
   flaggedLines,
   onToggleLine,
   onClearFlaggedLines,
@@ -30,6 +40,10 @@ export function ArenaCommentDrawer({
 }: ArenaCommentDrawerProps) {
   const [isCollapsed, setIsCollapsed] = React.useState(false)
 
+  const findingCount = reviewDraft
+    ? reviewDraft.findings.length
+    : flaggedLines.length
+
   return (
     <div
       data-testid="arena-comment-drawer"
@@ -40,10 +54,16 @@ export function ArenaCommentDrawer({
           <h3 className="text-xs font-semibold text-foreground">
             Review Findings & Comments
           </h3>
-          {flaggedLines.length > 0 && (
+          {findingCount > 0 && (
             <Badge variant="secondary" size="sm" className="tabular-nums">
-              {flaggedLines.length}{" "}
-              {flaggedLines.length === 1 ? "line" : "lines"} targeted
+              {findingCount}{" "}
+              {reviewDraft
+                ? findingCount === 1
+                  ? "finding"
+                  : "findings"
+                : findingCount === 1
+                  ? "line targeted"
+                  : "lines targeted"}
             </Badge>
           )}
         </div>
@@ -59,9 +79,9 @@ export function ArenaCommentDrawer({
             }
           >
             {isCollapsed ? (
-              <ChevronUp className="size-4" />
+              <ChevronUp aria-hidden="true" className="size-4" />
             ) : (
-              <ChevronDown className="size-4" />
+              <ChevronDown aria-hidden="true" className="size-4" />
             )}
           </Button>
         </div>
@@ -69,16 +89,31 @@ export function ArenaCommentDrawer({
 
       {!isCollapsed && (
         <div className="p-4">
-          <ReviewCommentEditor
-            flaggedLines={flaggedLines}
-            onToggleLine={onToggleLine}
-            onClearFlaggedLines={onClearFlaggedLines}
-            onOpenFlagGuide={onOpenFlagGuide}
-            comment={comment}
-            onChangeComment={onChangeComment}
-            onSubmitReview={onSubmitReview}
-            isSubmitting={isSubmitting}
-          />
+          {reviewDraft &&
+          onChangeSummaryNote &&
+          onSelectFinding &&
+          onRemoveFinding ? (
+            <ReviewSummaryPanel
+              draft={reviewDraft}
+              onChangeSummaryNote={onChangeSummaryNote}
+              onSelectFinding={onSelectFinding}
+              onRemoveFinding={onRemoveFinding}
+              onOpenFlagGuide={onOpenFlagGuide}
+              onSubmitReview={onSubmitReview}
+              isSubmitting={isSubmitting}
+            />
+          ) : (
+            <ReviewCommentEditor
+              flaggedLines={flaggedLines}
+              onToggleLine={onToggleLine}
+              onClearFlaggedLines={onClearFlaggedLines}
+              onOpenFlagGuide={onOpenFlagGuide}
+              comment={comment}
+              onChangeComment={onChangeComment}
+              onSubmitReview={onSubmitReview}
+              isSubmitting={isSubmitting}
+            />
+          )}
         </div>
       )}
     </div>
