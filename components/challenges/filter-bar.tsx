@@ -90,6 +90,7 @@ export function FilterBar({
             name="search"
             autoComplete="off"
             spellCheck={false}
+            maxLength={200}
             value={search}
             onChange={(e) => onSearchChange(e.target.value)}
             placeholder="Search challenges by title or keyword…"
@@ -184,7 +185,10 @@ export function FilterBar({
               totalCount !== filteredCount ? (
                 <span> of {totalCount}</span>
               ) : null}{" "}
-              {filteredCount === 1 ? "challenge" : "challenges"}
+              {(typeof totalCount === "number" ? totalCount : filteredCount) ===
+              1
+                ? "challenge"
+                : "challenges"}
             </span>
           )}
 

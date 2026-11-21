@@ -3,14 +3,17 @@
 import * as React from "react"
 import useSWR from "swr"
 import { ComparisonBody } from "@/components/review/comparison/comparison-body"
+import { useShareTokenContext } from "@/components/review/share-token-context"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { appendShareTokenQuery } from "@/lib/share-url"
 import { cn } from "@/lib/utils"
 import type { ChallengeSolutionResponse } from "@/types/challenge"
 
 export interface ComparisonViewProps {
   challengeId?: string | number
   challengeSlug?: string
+  shareToken?: string | null
   userFlaggedLines?: number[]
   userComments?: string
   canonicalSolution?: ChallengeSolutionResponse | null
@@ -26,6 +29,7 @@ const DEFAULT_FLAGGED_LINES: number[] = []
 export function ComparisonView({
   challengeId,
   challengeSlug,
+  shareToken: propShareToken,
   userFlaggedLines = DEFAULT_FLAGGED_LINES,
   userComments = "",
   canonicalSolution: propSolution,
@@ -37,11 +41,18 @@ export function ComparisonView({
   const [activeTab, setActiveTab] = React.useState<"comparison" | "diff">(
     defaultView
   )
+  const { slug: ctxSlug, shareToken: ctxToken } = useShareTokenContext()
+  const activeShareToken =
+    propShareToken ??
+    (challengeSlug && ctxSlug === challengeSlug ? ctxToken : null)
 
   const targetIdentifier = challengeId ?? challengeSlug
   const swrKey =
     !propSolution && targetIdentifier
-      ? `/api/challenges/${targetIdentifier}/solution?reveal=true`
+      ? appendShareTokenQuery(
+          `/api/challenges/${targetIdentifier}/solution?reveal=true`,
+          activeShareToken
+        )
       : null
 
   const {

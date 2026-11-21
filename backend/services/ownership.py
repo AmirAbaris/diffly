@@ -5,9 +5,11 @@ Ownership rules:
   always have session_id = NULL.
 - Guest rows (user_id IS NULL) are only visible via a verified signed guest cookie.
 - Private custom challenges (is_public IS False) are only visible and modifiable
-  by their owning user_id or owning unclaimed guest session.
+  by their owning user_id or owning unclaimed guest session, unless an unlisted
+  share_token is explicitly enabled by the owner for read-only link access.
 """
 
+import hmac
 from dataclasses import dataclass
 from typing import Any
 
@@ -115,9 +117,33 @@ def is_challenge_owner(challenge: Challenge, actor: Actor) -> bool:
     )
 
 
-def can_access_challenge(challenge: Challenge, actor: Actor) -> bool:
-    """Return True when challenge is public or owned by actor."""
-    return challenge.is_public or is_challenge_owner(challenge, actor)
+def has_valid_share_token(challenge: Challenge, share_token: str | None) -> bool:
+    """Return True when a private challenge has an exact matching share token."""
+    if (
+        challenge.is_public
+        or not challenge.share_token
+        or not share_token
+        or not challenge.share_token.isascii()
+        or not share_token.isascii()
+    ):
+        return False
+    return hmac.compare_digest(
+        challenge.share_token.encode("ascii"),
+        share_token.encode("ascii"),
+    )
+
+
+def can_access_challenge(
+    challenge: Challenge,
+    actor: Actor,
+    share_token: str | None = None,
+) -> bool:
+    """Return True when public, owned by actor, or matching share_token."""
+    return (
+        challenge.is_public
+        or is_challenge_owner(challenge, actor)
+        or has_valid_share_token(challenge, share_token)
+    )
 
 
 def _lock_actor_scope(session: Session, actor: Actor) -> None:

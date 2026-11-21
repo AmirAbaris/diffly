@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlmodel import func, select
 
 from api.deps import ActorDep, SessionDep
-from api.routes.challenges import get_challenge_or_404
+from api.routes.challenges import ShareTokenQuery, get_challenge_or_404
 from backend.core.guest_session import mint_guest_session, write_guest_cookie
 from backend.core.rate_limit import rate_limit
 from backend.models.challenge import FlaggedLines
@@ -108,9 +108,15 @@ def submit_review(
         bool,
         Query(description="Explicitly reveal missed issue details"),
     ] = False,
+    share_token: ShareTokenQuery = None,
 ) -> ReviewSubmissionResponse:
     # Authorize challenge access before minting a guest cookie so 404s do not mint
-    challenge = get_challenge_or_404(identifier, session, actor=actor)
+    challenge = get_challenge_or_404(
+        identifier,
+        session,
+        actor=actor,
+        share_token=share_token,
+    )
 
     snippet_line_count = len(challenge.code_snippet.splitlines())
     if snippet_line_count == 0:
@@ -225,8 +231,14 @@ def get_submission_history(
         bool,
         Query(description="Explicitly reveal missed issue details"),
     ] = False,
+    share_token: ShareTokenQuery = None,
 ) -> list[SubmissionHistoryResponse]:
-    challenge = get_challenge_or_404(identifier, session, actor=actor)
+    challenge = get_challenge_or_404(
+        identifier,
+        session,
+        actor=actor,
+        share_token=share_token,
+    )
 
     owner_filter = submission_owner_filter(actor)
     if owner_filter is None:

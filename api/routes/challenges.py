@@ -1,10 +1,19 @@
 import json
+import secrets
 from collections import defaultdict
 from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    Header,
+    HTTPException,
+    Query,
+    Response,
+    status,
+)
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, func, or_, select
@@ -92,8 +101,23 @@ def _compute_best_scores_map(
     }
 
 
+ShareTokenQuery = Annotated[
+    str | None,
+    Query(
+        max_length=128,
+        description="Unlisted share token for read-only custom challenge access",
+    ),
+]
+
+
+def _escape_like_pattern(term: str) -> str:
+    cleaned = term.replace("\x00", "").strip()
+    return cleaned.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 @router.get("", response_model=list[ChallengeSummary])
 def list_challenges(
+    response: Response,
     session: SessionDep,
     actor: ActorDep,
     difficulty: Annotated[
@@ -110,29 +134,57 @@ def list_challenges(
     ] = None,
     search: Annotated[
         str | None,
-        Query(description="Search by title, description, or slug"),
+        Query(max_length=200, description="Search by title, description, or slug"),
     ] = None,
+    limit: Annotated[
+        int | None,
+        Query(ge=1, le=100, description="Maximum number of challenges to return"),
+    ] = None,
+    offset: Annotated[
+        int,
+        Query(
+            ge=0,
+            le=100_000,
+            description="Number of challenges to skip for pagination",
+        ),
+    ] = 0,
 ) -> list[ChallengeSummary]:
-    """Retrieve list of challenges with optional filtering and completion status."""
-    statement = select(Challenge).where(Challenge.is_public.is_(True))
+    """Retrieve list of challenges with optional filtering, pagination, and status."""
+    conditions: list[Any] = [Challenge.is_public.is_(True)]
 
     if difficulty is not None:
-        statement = statement.where(Challenge.difficulty == difficulty)
+        conditions.append(Challenge.difficulty == difficulty)
     if category is not None:
-        statement = statement.where(Challenge.category == category)
+        conditions.append(Challenge.category == category)
     if language is not None:
-        statement = statement.where(Challenge.language == language)
-    if search and search.strip():
-        search_pattern = f"%{search.strip()}%"
-        statement = statement.where(
-            or_(
-                Challenge.title.ilike(search_pattern),
-                Challenge.description.ilike(search_pattern),
-                Challenge.slug.ilike(search_pattern),
+        conditions.append(Challenge.language == language)
+    if search is not None:
+        if "\x00" in search:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Search query cannot contain null characters",
             )
-        )
+        if search.strip():
+            search_pattern = f"%{_escape_like_pattern(search)}%"
+            conditions.append(
+                or_(
+                    Challenge.title.ilike(search_pattern, escape="\\"),
+                    Challenge.description.ilike(search_pattern, escape="\\"),
+                    Challenge.slug.ilike(search_pattern, escape="\\"),
+                )
+            )
 
-    statement = statement.order_by(Challenge.id)
+    total_count = int(
+        session.exec(select(func.count(Challenge.id)).where(*conditions)).one()
+    )
+    response.headers["X-Total-Count"] = str(total_count)
+
+    statement = select(Challenge).where(*conditions).order_by(Challenge.id)
+    if offset > 0:
+        statement = statement.offset(offset)
+    if limit is not None:
+        statement = statement.limit(limit)
+
     challenges = list(session.exec(statement).all())
 
     best_scores_map = _compute_best_scores_map(session, challenges, actor)
@@ -379,6 +431,7 @@ def list_custom_challenges(
                 and best_scores_map[ch.id or 0] >= 80
             ),
             best_score=best_scores_map.get(ch.id or 0),
+            include_share_token=True,
         )
         for ch in challenges
     ]
@@ -462,6 +515,78 @@ def delete_custom_challenge(
     }
 
 
+class ShareChallengeRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    enabled: bool = Field(
+        default=True,
+        description="Whether unlisted link sharing is enabled for this challenge",
+    )
+    regenerate: bool = Field(
+        default=False,
+        description="Generate a new share token even when sharing is already enabled",
+    )
+
+
+class ShareChallengeResponse(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    id: int
+    slug: str
+    is_shared: bool
+    share_token: str | None = None
+
+
+@router.patch(
+    "/custom/{identifier}/share",
+    response_model=ShareChallengeResponse,
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(rate_limit("share-toggle", 30, 60))],
+)
+def toggle_custom_challenge_share(
+    identifier: str,
+    payload: ShareChallengeRequest,
+    session: SessionDep,
+    actor: ActorDep,
+) -> ShareChallengeResponse:
+    """Enable, rotate, or revoke an unlisted share token for an owned challenge."""
+    challenge = session.exec(_challenge_lookup_statement(identifier)).first()
+    if challenge is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Challenge not found",
+        )
+
+    if challenge.is_public:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot change sharing on public catalog challenges",
+        )
+
+    if not is_challenge_owner(challenge, actor):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Challenge not found",
+        )
+
+    if payload.enabled:
+        if payload.regenerate or not challenge.share_token:
+            challenge.share_token = secrets.token_urlsafe(24)
+    else:
+        challenge.share_token = None
+
+    session.add(challenge)
+    session.commit()
+    session.refresh(challenge)
+
+    return ShareChallengeResponse(
+        id=challenge.id or 0,
+        slug=challenge.slug,
+        is_shared=bool(challenge.share_token),
+        share_token=challenge.share_token,
+    )
+
+
 @router.post(
     "/evaluate-custom",
     response_model=CustomEvaluationResponse,
@@ -502,12 +627,17 @@ def get_challenge_or_404(
     identifier: str,
     session: Session,
     actor: Actor | None = None,
+    share_token: str | None = None,
 ) -> Challenge:
     """Find a challenge by ID or slug, raising 404 if missing or unauthorized."""
     statement = _challenge_lookup_statement(identifier)
 
     challenge = session.exec(statement).first()
-    if challenge is None or not can_access_challenge(challenge, actor or Actor()):
+    if challenge is None or not can_access_challenge(
+        challenge,
+        actor or Actor(),
+        share_token=share_token,
+    ):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Challenge not found",
@@ -700,9 +830,15 @@ def get_challenge(
     identifier: str,
     session: SessionDep,
     actor: ActorDep,
+    share_token: ShareTokenQuery = None,
 ) -> ChallengeDetail:
     """Retrieve challenge detail by numeric ID or URL slug with completion status."""
-    challenge = get_challenge_or_404(identifier, session, actor=actor)
+    challenge = get_challenge_or_404(
+        identifier,
+        session,
+        actor=actor,
+        share_token=share_token,
+    )
 
     owner_filter = submission_owner_filter(actor)
 
@@ -718,8 +854,14 @@ def get_challenge(
             best_score = int(max_score)
 
     is_solved = best_score is not None and best_score >= 80
+    owner = is_challenge_owner(challenge, actor)
 
-    return challenge.to_detail(is_solved=is_solved, best_score=best_score)
+    return challenge.to_detail(
+        is_solved=is_solved,
+        best_score=best_score,
+        is_owner=owner,
+        include_share_token=owner,
+    )
 
 
 @router.get("/{identifier}/hints", response_model=list[HintResponse])
@@ -735,9 +877,15 @@ def get_challenge_hints(
             description="Filter by progressive hint tier (1, 2, or 3)",
         ),
     ] = None,
+    share_token: ShareTokenQuery = None,
 ) -> list[HintResponse]:
     """Retrieve progressive tiered hints for a challenge by numeric ID or URL slug."""
-    challenge = get_challenge_or_404(identifier, session, actor=actor)
+    challenge = get_challenge_or_404(
+        identifier,
+        session,
+        actor=actor,
+        share_token=share_token,
+    )
 
     hints = [h.to_response() for h in challenge.get_hints()]
     hints.sort(key=lambda h: h.tier)
@@ -757,12 +905,18 @@ def get_challenge_solution(
         bool,
         Query(description="Explicitly reveal solution without prior submission"),
     ] = False,
+    share_token: ShareTokenQuery = None,
 ) -> ChallengeSolutionResponse:
     """Retrieve canonical expert review, recommended fix diff, and expected issues.
 
     Requires at least one submission attempt for the challenge or explicit ?reveal=true.
     """
-    challenge = get_challenge_or_404(identifier, session, actor=actor)
+    challenge = get_challenge_or_404(
+        identifier,
+        session,
+        actor=actor,
+        share_token=share_token,
+    )
 
     if not reveal:
         owner_filter = submission_owner_filter(actor)

@@ -334,6 +334,7 @@ class Challenge(ChallengeBase, table=True):
     id: int | None = Field(default=None, primary_key=True)
     created_at: datetime = Field(default_factory=get_utc_now)
     content_hash: str | None = Field(default=None)
+    share_token: str | None = Field(default=None, index=True, unique=True)
 
     user: Optional["User"] = Relationship(back_populates="challenges")
     submissions: list["Submission"] = Relationship(
@@ -389,6 +390,8 @@ class Challenge(ChallengeBase, table=True):
         self,
         is_solved: bool = False,
         best_score: int | None = None,
+        *,
+        include_share_token: bool = False,
     ) -> "ChallengeSummary":
         line_count = len(self.code_snippet.splitlines()) if self.code_snippet else 0
         total_hints = len(self.get_hints())
@@ -406,12 +409,17 @@ class Challenge(ChallengeBase, table=True):
             is_solved=is_solved,
             best_score=best_score,
             is_public=self.is_public,
+            is_shared=bool(self.share_token),
+            share_token=self.share_token if include_share_token else None,
         )
 
     def to_detail(
         self,
         is_solved: bool = False,
         best_score: int | None = None,
+        *,
+        is_owner: bool = False,
+        include_share_token: bool = False,
     ) -> "ChallengeDetail":
         line_count = len(self.code_snippet.splitlines()) if self.code_snippet else 0
         total_hints = len(self.get_hints())
@@ -432,6 +440,9 @@ class Challenge(ChallengeBase, table=True):
             is_solved=is_solved,
             best_score=best_score,
             is_public=self.is_public,
+            is_shared=bool(self.share_token),
+            share_token=self.share_token if include_share_token else None,
+            is_owner=is_owner,
         )
 
 
@@ -451,12 +462,15 @@ class ChallengeSummary(BaseModel):
     is_solved: bool = False
     best_score: int | None = None
     is_public: bool = True
+    is_shared: bool = False
+    share_token: str | None = None
 
 
 class ChallengeDetail(ChallengeSummary):
     threat_model: str = ""
     defect_target: str = ""
     code_snippet: str
+    is_owner: bool = False
 
 
 class CustomChallengesListResponse(BaseModel):

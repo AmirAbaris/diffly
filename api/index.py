@@ -54,7 +54,11 @@ cors_kwargs: dict[str, Any] = {
     "allow_credentials": True,
     "allow_methods": ["*"],
     "allow_headers": ["*"],
-    "expose_headers": ["X-Diffly-Claim-Status", "X-Diffly-Session-Id"],
+    "expose_headers": [
+        "X-Diffly-Claim-Status",
+        "X-Diffly-Session-Id",
+        "X-Total-Count",
+    ],
 }
 if settings.CORS_ORIGIN_REGEX:
     cors_kwargs["allow_origin_regex"] = settings.CORS_ORIGIN_REGEX

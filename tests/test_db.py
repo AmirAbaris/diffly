@@ -803,6 +803,7 @@ def test_alembic_postgres_offline_sql_generation_and_percent_url():
     assert "ix_users_email_lower" in up_sql
     assert "ix_users_username_lower" in up_sql
     assert "content_hash" in up_sql
+    assert "share_token" in up_sql
 
     downgrade_buf = io.StringIO()
     cfg_down = Config(str(ALEMBIC_INI_PATH), stdout=downgrade_buf)
@@ -811,6 +812,7 @@ def test_alembic_postgres_offline_sql_generation_and_percent_url():
     cfg_down.attributes["configure_logger"] = False
     command.downgrade(cfg_down, "head:base", sql=True)
     down_sql = downgrade_buf.getvalue()
+    assert "DROP COLUMN share_token" in down_sql
     assert "DROP COLUMN content_hash" in down_sql
     assert "DROP INDEX ix_users_email_lower" in down_sql
     assert "DROP INDEX ix_users_username_lower" in down_sql
@@ -898,6 +900,137 @@ def test_alembic_0003_adds_content_hash_and_preserves_challenges(tmp_path):
             ).one()
             assert row.slug == "legacy-ch"
             assert row.content_hash is None
+    finally:
+        test_engine.dispose()
+
+
+def test_alembic_0005_adds_share_token_with_nullable_uniqueness(tmp_path):
+    db_url = f"sqlite:///{tmp_path / 'share_token_mig.db'}"
+    cfg = Config(str(ALEMBIC_INI_PATH))
+    cfg.set_main_option("script_location", str(ALEMBIC_SCRIPT_LOCATION))
+    cfg.attributes["sqlalchemy.url"] = db_url
+    cfg.attributes["configure_logger"] = False
+
+    command.upgrade(cfg, "0004_composite_indexes_and_submission_scores")
+
+    test_engine = create_db_engine(db_url)
+    try:
+        with test_engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO challenges "
+                    "(slug, title, difficulty, category, language, description, "
+                    "threat_model, defect_target, code_snippet, expected_issues, "
+                    "hints, canonical_review, recommended_fix_diff, "
+                    "estimated_minutes, is_public, created_at) "
+                    "VALUES ('pre-share-ch', 'Pre Share', 'EASY', 'SECURITY', "
+                    "'PYTHON', 'desc', '', '', 'x = 1', '[]', '[]', '', '', 5, 1, "
+                    "'2026-01-01 00:00:00')"
+                )
+            )
+    finally:
+        test_engine.dispose()
+
+    command.upgrade(cfg, "head")
+
+    test_engine = create_db_engine(db_url)
+    try:
+        cols = {c["name"] for c in inspect(test_engine).get_columns("challenges")}
+        assert "share_token" in cols
+        indexes = {
+            idx["name"]: idx for idx in inspect(test_engine).get_indexes("challenges")
+        }
+        assert indexes["ix_challenges_share_token"]["unique"] == 1
+
+        with Session(test_engine) as db:
+            # Multiple challenges with share_token=None are permitted
+            db.add_all(
+                [
+                    Challenge(
+                        slug="null-share-1",
+                        title="Null Share 1",
+                        difficulty=Difficulty.EASY,
+                        category=Category.SECURITY,
+                        language=Language.PYTHON,
+                        description="desc",
+                        code_snippet="x = 1",
+                        is_public=False,
+                        share_token=None,
+                    ),
+                    Challenge(
+                        slug="null-share-2",
+                        title="Null Share 2",
+                        difficulty=Difficulty.EASY,
+                        category=Category.SECURITY,
+                        language=Language.PYTHON,
+                        description="desc",
+                        code_snippet="x = 1",
+                        is_public=False,
+                        share_token=None,
+                    ),
+                ]
+            )
+            db.commit()
+
+            # Duplicate non-null share_token is rejected by unique index
+            db.add(
+                Challenge(
+                    slug="dup-share-1",
+                    title="Dup Share 1",
+                    difficulty=Difficulty.EASY,
+                    category=Category.SECURITY,
+                    language=Language.PYTHON,
+                    description="desc",
+                    code_snippet="x = 1",
+                    is_public=False,
+                    share_token="shared-token-dup-check",
+                )
+            )
+            db.commit()
+            db.add(
+                Challenge(
+                    slug="dup-share-2",
+                    title="Dup Share 2",
+                    difficulty=Difficulty.EASY,
+                    category=Category.SECURITY,
+                    language=Language.PYTHON,
+                    description="desc",
+                    code_snippet="x = 1",
+                    is_public=False,
+                    share_token="shared-token-dup-check",
+                )
+            )
+            with pytest.raises(IntegrityError):
+                db.commit()
+            db.rollback()
+    finally:
+        test_engine.dispose()
+
+    command.downgrade(cfg, "0004_composite_indexes_and_submission_scores")
+    test_engine = create_db_engine(db_url)
+    try:
+        cols_after_downgrade = {
+            c["name"] for c in inspect(test_engine).get_columns("challenges")
+        }
+        assert "share_token" not in cols_after_downgrade
+        with test_engine.connect() as conn:
+            remaining_slugs = {
+                row[0] for row in conn.execute(text("SELECT slug FROM challenges"))
+            }
+            assert {"pre-share-ch", "null-share-1", "dup-share-1"} <= remaining_slugs
+    finally:
+        test_engine.dispose()
+
+    command.upgrade(cfg, "head")
+    test_engine = create_db_engine(db_url)
+    try:
+        cols_after_reupgrade = {
+            c["name"] for c in inspect(test_engine).get_columns("challenges")
+        }
+        assert "share_token" in cols_after_reupgrade
+        with Session(test_engine) as db:
+            reupgraded_slugs = {row.slug for row in db.exec(select(Challenge)).all()}
+            assert {"pre-share-ch", "null-share-1", "dup-share-1"} <= reupgraded_slugs
     finally:
         test_engine.dispose()
 

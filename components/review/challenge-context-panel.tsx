@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { ChevronDown, ChevronUp } from "lucide-react"
+import { CustomChallengeShare } from "@/components/review/context-panel/custom-challenge-share"
 import { DefectTargetSection } from "@/components/review/context-panel/defect-target"
 import { EnvironmentSpecsSection } from "@/components/review/context-panel/environment-specs"
 import {
@@ -187,6 +188,7 @@ export function ChallengeContextPanel({
           isMobileCollapsed ? "hidden lg:flex" : "flex"
         )}
       >
+        <CustomChallengeShare challenge={challenge} />
         <ScenarioOverviewSection challenge={challenge} />
         <ThreatModelSection challenge={challenge} />
         <DefectTargetSection challenge={challenge} />
