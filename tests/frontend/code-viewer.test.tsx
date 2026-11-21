@@ -31,10 +31,16 @@ describe("CodeViewer Component", () => {
     expect(screen.getByText(/python/i)).toBeInTheDocument()
     expect(screen.getByText("3 lines")).toBeInTheDocument()
 
-    // Line number buttons
-    expect(screen.getByRole("button", { name: "1" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "2" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "3" })).toBeInTheDocument()
+    // Single consolidated line control buttons
+    expect(
+      screen.getByRole("button", { name: "Flag line 1" })
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole("button", { name: "Flag line 2" })
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole("button", { name: "Flag line 3" })
+    ).toBeInTheDocument()
   })
 
   it("normalizes language shortcuts and falls back to default file names", async () => {
@@ -76,7 +82,9 @@ describe("CodeViewer Component", () => {
       />
     )
 
-    const line2Button = await screen.findByRole("button", { name: "2" })
+    const line2Button = await screen.findByRole("button", {
+      name: /Line 2/i,
+    })
     await user.click(line2Button)
 
     expect(onToggleLineMock).toHaveBeenCalledTimes(1)
@@ -97,7 +105,9 @@ describe("CodeViewer Component", () => {
       />
     )
 
-    const line2Button = await screen.findByRole("button", { name: "2" })
+    const line2Button = await screen.findByRole("button", {
+      name: /Line 2/i,
+    })
     expect(line2Button).toBeDisabled()
     await user.click(line2Button)
 
@@ -117,15 +127,13 @@ describe("CodeViewer Component", () => {
     // Flagged count badge in file bar
     expect(await screen.findByText("1 flagged")).toBeInTheDocument()
 
-    // Title on flagged line button
-    const line2Button = screen.getByRole("button", { name: "2" })
+    // Single consolidated flagged button
+    const line2Button = screen.getByRole("button", { name: "Unflag line 2" })
+    expect(line2Button).toHaveAttribute("aria-pressed", "true")
     expect(line2Button).toHaveAttribute(
       "title",
       "Line 2 flagged. Click to unflag."
     )
-
-    // Flag icon marker
-    expect(screen.getByTitle("Flagged for review")).toBeInTheDocument()
   })
 
   it("copies code to clipboard when copy button is clicked", async () => {
@@ -263,6 +271,8 @@ describe("CodeViewer Component", () => {
     expect(screen.queryByTestId("code-viewer")).not.toBeInTheDocument()
     expect(screen.queryByText("solution.py")).not.toBeInTheDocument()
     expect(screen.queryByText("PYTHON")).not.toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: "1" })).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole("button", { name: /Flag line 1/i })
+    ).not.toBeInTheDocument()
   })
 })

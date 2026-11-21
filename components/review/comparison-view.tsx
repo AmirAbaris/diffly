@@ -2,13 +2,21 @@
 
 import * as React from "react"
 import useSWR from "swr"
-import { ComparisonBody } from "@/components/review/comparison/comparison-body"
+import {
+  ComparisonBody,
+  type ComparisonTab,
+} from "@/components/review/comparison/comparison-body"
 import { useShareTokenContext } from "@/components/review/share-token-context"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import type { GradeReport } from "@/lib/review"
 import { appendShareTokenQuery } from "@/lib/share-url"
 import { cn } from "@/lib/utils"
-import type { ChallengeSolutionResponse, FlaggedLine } from "@/types/challenge"
+import type {
+  ChallengeFile,
+  ChallengeSolutionResponse,
+  FlaggedLine,
+} from "@/types/challenge"
 
 export interface ComparisonViewProps {
   challengeId?: string | number
@@ -18,10 +26,12 @@ export interface ComparisonViewProps {
   userComments?: string
   canonicalSolution?: ChallengeSolutionResponse | null
   codeSnippet?: string
+  files?: ChallengeFile[]
+  gradeReport?: GradeReport | null
   language?: string
   className?: string
-  defaultView?: "comparison" | "diff"
-  onViewChange?: (view: "comparison" | "diff") => void
+  defaultView?: ComparisonTab
+  onViewChange?: (view: ComparisonTab) => void
 }
 
 const DEFAULT_FLAGGED_LINES: FlaggedLine[] = []
@@ -33,14 +43,15 @@ export function ComparisonView({
   userFlaggedLines = DEFAULT_FLAGGED_LINES,
   userComments = "",
   canonicalSolution: propSolution,
+  codeSnippet,
+  files,
+  gradeReport = null,
   language,
   className,
   defaultView = "comparison",
   onViewChange,
 }: ComparisonViewProps) {
-  const [activeTab, setActiveTab] = React.useState<"comparison" | "diff">(
-    defaultView
-  )
+  const [activeTab, setActiveTab] = React.useState<ComparisonTab>(defaultView)
   const { slug: ctxSlug, shareToken: ctxToken } = useShareTokenContext()
   const activeShareToken =
     propShareToken ??
@@ -75,7 +86,7 @@ export function ComparisonView({
     : null
 
   const handleTabChange = React.useCallback(
-    (tab: "comparison" | "diff") => {
+    (tab: ComparisonTab) => {
       setActiveTab(tab)
       onViewChange?.(tab)
     },
@@ -85,6 +96,9 @@ export function ComparisonView({
   const handleRetry = React.useCallback(() => {
     void mutate()
   }, [mutate])
+
+  const hasAnnotatedSource =
+    Boolean(codeSnippet) || Boolean(files && files.length > 0)
 
   return (
     <div
@@ -112,10 +126,15 @@ export function ComparisonView({
 
         <Tabs
           value={activeTab}
-          onValueChange={(val) => handleTabChange(val as "comparison" | "diff")}
+          onValueChange={(val) => handleTabChange(val as ComparisonTab)}
           className="w-full sm:w-auto"
         >
-          <TabsList className="grid w-full grid-cols-2 sm:w-auto">
+          <TabsList
+            className={cn(
+              "grid w-full sm:w-auto",
+              hasAnnotatedSource ? "grid-cols-3" : "grid-cols-2"
+            )}
+          >
             <TabsTrigger
               value="comparison"
               data-testid="toggle-comment-view"
@@ -123,6 +142,15 @@ export function ComparisonView({
             >
               <span>Critique Comparison</span>
             </TabsTrigger>
+            {hasAnnotatedSource && (
+              <TabsTrigger
+                value="annotated"
+                data-testid="toggle-annotated-view"
+                className="text-xs"
+              >
+                <span>Annotated Code</span>
+              </TabsTrigger>
+            )}
             <TabsTrigger
               value="diff"
               data-testid="toggle-diff-view"
@@ -141,6 +169,9 @@ export function ComparisonView({
         userFlaggedLines={userFlaggedLines}
         userComments={userComments}
         solution={solution}
+        codeSnippet={codeSnippet}
+        files={files}
+        gradeReport={gradeReport}
         language={language}
         onRetry={handleRetry}
         onTabChange={handleTabChange}

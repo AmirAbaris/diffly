@@ -12,13 +12,18 @@ import {
 } from "@/components/ui/tooltip"
 import { toast } from "@/hooks/use-toast"
 import {
-  MIN_REVIEW_COMMENT_CHARS,
-  validateReviewSubmission,
-} from "@/lib/review-validation"
+  asFindingId,
+  MIN_REVIEW_TEXT_CHARS,
+  toLineRef,
+  validateReview,
+  type ReviewDraft,
+  type ReviewValidation,
+} from "@/lib/review"
 import { cn } from "@/lib/utils"
 import type { FlaggedLine } from "@/types/challenge"
 
 export interface SubmissionBarProps {
+  reviewDraft?: ReviewDraft
   flaggedLines: FlaggedLine[]
   comments: string
   onResetDraft: () => void
@@ -34,30 +39,39 @@ export interface SubmissionBarProps {
 
 function getSubmissionTooltip(
   isSubmitting: boolean,
-  hasLines: boolean,
-  hasMinComment: boolean,
-  remainingChars: number
+  validation: ReviewValidation
 ): string {
   if (isSubmitting) {
     return "Submitting your review…"
   }
-  if (!hasLines && !hasMinComment) {
-    return `Flag at least one line and write at least ${MIN_REVIEW_COMMENT_CHARS} characters to submit`
+  const hasFindings = !validation.blockers.includes("no-findings")
+  const hasMinText = !validation.blockers.includes("too-little-text")
+  if (!hasFindings && !hasMinText) {
+    return `Flag at least one line and write at least ${MIN_REVIEW_TEXT_CHARS} characters to submit`
   }
-  if (!hasLines) {
+  if (!hasFindings) {
     return "Flag at least one line in the code viewer to submit"
   }
-  if (!hasMinComment) {
-    return `Write at least ${MIN_REVIEW_COMMENT_CHARS} characters explaining the defect (${remainingChars} more needed)`
+  if (!hasMinText) {
+    return `Write at least ${MIN_REVIEW_TEXT_CHARS} characters explaining the defect (${validation.remainingChars} more needed)`
   }
   return "Submit your review for automated scoring"
 }
 
-function formatDraftSummary(lineCount: number, charCount: number): string {
-  const lineSummary =
-    lineCount === 1 ? "1 line flagged" : `${lineCount} lines flagged`
+function formatDraftSummary(
+  findingCount: number,
+  charCount: number,
+  hasStructuredDraft: boolean
+): string {
+  const targetLabel = hasStructuredDraft
+    ? findingCount === 1
+      ? "1 finding"
+      : `${findingCount} findings`
+    : findingCount === 1
+      ? "1 line flagged"
+      : `${findingCount} lines flagged`
   const charSummary = `${charCount} ${charCount === 1 ? "char" : "chars"} written`
-  return `${lineSummary} • ${charSummary}`
+  return `${targetLabel} • ${charSummary}`
 }
 
 interface SubmitButtonProps {
@@ -108,6 +122,7 @@ function SubmitButton({
 }
 
 export function SubmissionBar({
+  reviewDraft,
   flaggedLines,
   comments,
   onResetDraft,
@@ -120,19 +135,36 @@ export function SubmissionBar({
   isSubmitting,
   className,
 }: SubmissionBarProps) {
-  const lineCount = flaggedLines.length
-  const charCount = comments.length
-  const summaryCount = formatDraftSummary(lineCount, charCount)
+  const effectiveDraft = React.useMemo<ReviewDraft>(() => {
+    if (reviewDraft) return reviewDraft
+    return {
+      findings: flaggedLines.map((line, idx) => {
+        const ref = toLineRef(line)
+        return {
+          id: asFindingId(`legacy-${idx}`),
+          anchor: { file: ref.file, start: ref.line, end: ref.line },
+          body: "",
+          severity: null,
+        }
+      }),
+      summaryNote: comments,
+    }
+  }, [reviewDraft, flaggedLines, comments])
 
-  const validation = validateReviewSubmission(flaggedLines, comments)
-  const { hasLines, hasMinComment, remainingChars, canSubmit } = validation
-  const isSubmitDisabled = !canSubmit || isSubmitting
-  const tooltipMessage = getSubmissionTooltip(
-    isSubmitting,
-    hasLines,
-    hasMinComment,
-    remainingChars
+  const validation = React.useMemo(
+    () => validateReview(effectiveDraft),
+    [effectiveDraft]
   )
+  const findingCount = effectiveDraft.findings.length
+  const summaryCount = formatDraftSummary(
+    findingCount,
+    validation.totalTextChars,
+    Boolean(reviewDraft)
+  )
+  const hasFindings = !validation.blockers.includes("no-findings")
+  const canSubmit = validation.valid
+  const isSubmitDisabled = !canSubmit || isSubmitting
+  const tooltipMessage = getSubmissionTooltip(isSubmitting, validation)
 
   const handleResetDraft = React.useCallback(() => {
     onResetDraft()
@@ -162,7 +194,7 @@ export function SubmissionBar({
           </span>
         </div>
 
-        {!hasLines && (
+        {!hasFindings && (
           <Button
             type="button"
             variant="ghost"
@@ -188,7 +220,11 @@ export function SubmissionBar({
           variant="ghost"
           size="sm"
           onClick={handleResetDraft}
-          disabled={lineCount === 0 && charCount === 0 && !isSubmitting}
+          disabled={
+            findingCount === 0 &&
+            validation.totalTextChars === 0 &&
+            !isSubmitting
+          }
           className="h-8 px-2.5 text-xs text-muted-foreground hover:text-foreground sm:h-9 sm:px-3"
         >
           <span>Reset Draft</span>

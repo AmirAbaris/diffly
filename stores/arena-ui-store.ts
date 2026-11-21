@@ -1,4 +1,5 @@
 import { create } from "zustand"
+import type { GradeReport } from "@/lib/review"
 import type { FlaggedLine, ReviewSubmissionResponse } from "@/types/challenge"
 
 export type ArenaMobileTab = "brief" | "code"
@@ -12,6 +13,7 @@ export interface ArenaUIState {
   mobileTab: ArenaMobileTab
   isSubmitting: boolean
   submissionResult: ReviewSubmissionResponse | null
+  gradeReport: GradeReport | null
   isResultModalOpen: boolean
   isHistoryOpen: boolean
   isFlagGuideOpen: boolean
@@ -20,6 +22,7 @@ export interface ArenaUIState {
   setMobileTab: (tab: ArenaMobileTab) => void
   setIsSubmitting: (isSubmitting: boolean) => void
   setSubmissionResult: (result: ReviewSubmissionResponse | null) => void
+  setGradeReport: (report: GradeReport | null) => void
   setIsResultModalOpen: (open: boolean) => void
   setIsHistoryOpen: (open: boolean) => void
   setIsFlagGuideOpen: (open: boolean) => void
@@ -36,6 +39,7 @@ export const useArenaUIStore = create<ArenaUIState>((set) => ({
   mobileTab: "brief",
   isSubmitting: false,
   submissionResult: null,
+  gradeReport: null,
   isResultModalOpen: false,
   isHistoryOpen: false,
   isFlagGuideOpen: false,
@@ -44,6 +48,7 @@ export const useArenaUIStore = create<ArenaUIState>((set) => ({
   setMobileTab: (mobileTab) => set({ mobileTab }),
   setIsSubmitting: (isSubmitting) => set({ isSubmitting }),
   setSubmissionResult: (submissionResult) => set({ submissionResult }),
+  setGradeReport: (gradeReport) => set({ gradeReport }),
   setIsResultModalOpen: (isResultModalOpen) => set({ isResultModalOpen }),
   setIsHistoryOpen: (isHistoryOpen) => set({ isHistoryOpen }),
   setIsFlagGuideOpen: (isFlagGuideOpen) => set({ isFlagGuideOpen }),
@@ -57,6 +62,7 @@ export const useArenaUIStore = create<ArenaUIState>((set) => ({
       mobileTab: "brief",
       isSubmitting: false,
       submissionResult: null,
+      gradeReport: null,
       isResultModalOpen: false,
       isHistoryOpen: false,
       isFlagGuideOpen: false,
