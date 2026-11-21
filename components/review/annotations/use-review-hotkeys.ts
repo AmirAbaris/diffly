@@ -91,6 +91,13 @@ function matchKeyAction(
   }
 }
 
+const REPEATABLE_ACTIONS = new Set<ReviewAction>([
+  "cursorDown",
+  "cursorUp",
+  "extendDown",
+  "extendUp",
+])
+
 export function useReviewHotkeys({
   enabled = true,
   onAction,
@@ -104,13 +111,14 @@ export function useReviewHotkeys({
     if (!enabled) return
 
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.defaultPrevented || event.repeat) {
+      if (event.defaultPrevented) {
         return
       }
 
       const scope = resolveHotkeyScope(event.target)
       const action = matchKeyAction(event, scope)
       if (!action) return
+      if (event.repeat && !REPEATABLE_ACTIONS.has(action)) return
 
       const handled = onActionRef.current(action, scope)
       if (handled !== false) {

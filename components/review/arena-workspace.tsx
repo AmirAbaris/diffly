@@ -94,7 +94,11 @@ export function ArenaWorkspace({ session }: ArenaWorkspaceProps) {
     })
 
   useReviewHotkeys({
-    enabled: !isResultModalOpen && !isHistoryOpen && !isFlagGuideOpen,
+    enabled:
+      !isResultModalOpen &&
+      !isHistoryOpen &&
+      !isFlagGuideOpen &&
+      !isShortcutOverlayOpen,
     onAction: (action) => {
       switch (action) {
         case "cursorDown":
