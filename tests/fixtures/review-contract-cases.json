@@ -1,0 +1,79 @@
+{
+  "constants": {
+    "max_anchor_span": 15,
+    "min_review_text_chars": 5
+  },
+  "validation_cases": [
+    {
+      "name": "empty_findings_with_summary",
+      "findings": [],
+      "summary_note": "This looks like an SQL injection bug.",
+      "valid": false,
+      "expected_blockers": ["no-findings"]
+    },
+    {
+      "name": "one_finding_too_little_total_text",
+      "findings": [
+        {
+          "id": "f1",
+          "file_path": null,
+          "start_line": 10,
+          "end_line": 10,
+          "body": "",
+          "severity": null
+        }
+      ],
+      "summary_note": "abcd",
+      "valid": false,
+      "expected_blockers": ["too-little-text"]
+    },
+    {
+      "name": "one_finding_with_inline_body_empty_summary",
+      "findings": [
+        {
+          "id": "f1",
+          "file_path": null,
+          "start_line": 10,
+          "end_line": 12,
+          "body": "SQL injection via unsanitized string interpolation",
+          "severity": "critical"
+        }
+      ],
+      "summary_note": "",
+      "valid": true,
+      "expected_blockers": []
+    },
+    {
+      "name": "one_finding_empty_body_valid_summary",
+      "findings": [
+        {
+          "id": "f1",
+          "file_path": "api/auth.py",
+          "start_line": 5,
+          "end_line": 5,
+          "body": "",
+          "severity": "medium"
+        }
+      ],
+      "summary_note": "Missing auth check",
+      "valid": true,
+      "expected_blockers": []
+    },
+    {
+      "name": "combined_short_body_and_short_summary_reaches_minimum",
+      "findings": [
+        {
+          "id": "f1",
+          "file_path": null,
+          "start_line": 3,
+          "end_line": 3,
+          "body": "XSS",
+          "severity": "high"
+        }
+      ],
+      "summary_note": "fix",
+      "valid": true,
+      "expected_blockers": []
+    }
+  ]
+}
