@@ -7,14 +7,21 @@ import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { MarkdownPreview } from "@/components/review/markdown-preview"
 import {
+  flaggedLineKey,
+  formatFlaggedLineBadge,
+  formatFlaggedLineLabel,
+  sortFlaggedLines,
+} from "@/lib/flagged-lines"
+import {
   MIN_REVIEW_COMMENT_CHARS,
   validateReviewSubmission,
 } from "@/lib/review-validation"
 import { cn } from "@/lib/utils"
+import type { FlaggedLine } from "@/types/challenge"
 
 export interface ReviewCommentEditorProps {
-  flaggedLines: number[]
-  onToggleLine: (line: number) => void
+  flaggedLines: FlaggedLine[]
+  onToggleLine: (line: FlaggedLine) => void
   onClearFlaggedLines?: () => void
   onOpenFlagGuide?: () => void
   comment: string
@@ -29,10 +36,10 @@ export interface ReviewCommentEditorProps {
 }
 
 interface FlaggedLinesStripProps {
-  sortedLines: number[]
+  sortedLines: FlaggedLine[]
   readOnly: boolean
   disabled: boolean
-  onToggleLine: (line: number) => void
+  onToggleLine: (line: FlaggedLine) => void
   onClearFlaggedLines?: () => void
   onOpenFlagGuide?: () => void
 }
@@ -54,27 +61,31 @@ function FlaggedLinesStrip({
         <span className="font-medium text-foreground">Flagged lines:</span>
 
         {sortedLines.length > 0 ? (
-          sortedLines.map((line) => (
-            <Badge
-              key={line}
-              variant="warning"
-              size="sm"
-              className="gap-1 pr-1 font-mono tabular-nums"
-            >
-              <span>L{line}</span>
-              {!readOnly && (
-                <button
-                  type="button"
-                  onClick={() => onToggleLine(line)}
-                  disabled={disabled}
-                  className="rounded-sm p-0.5 text-amber-700 transition-colors hover:bg-amber-500/20 hover:text-amber-900 dark:text-amber-400 dark:hover:text-amber-200"
-                  aria-label={`Unflag line ${line}`}
-                >
-                  <X className="size-3" />
-                </button>
-              )}
-            </Badge>
-          ))
+          sortedLines.map((line) => {
+            const label = formatFlaggedLineLabel(line)
+            return (
+              <Badge
+                key={flaggedLineKey(line)}
+                variant="warning"
+                size="sm"
+                title={label}
+                className="gap-1 pr-1 font-mono tabular-nums"
+              >
+                <span>{formatFlaggedLineBadge(line)}</span>
+                {!readOnly && (
+                  <button
+                    type="button"
+                    onClick={() => onToggleLine(line)}
+                    disabled={disabled}
+                    className="rounded-sm p-0.5 text-amber-700 transition-colors hover:bg-amber-500/20 hover:text-amber-900 dark:text-amber-400 dark:hover:text-amber-200"
+                    aria-label={`Unflag ${label.toLowerCase()}`}
+                  >
+                    <X aria-hidden="true" className="size-3" />
+                  </button>
+                )}
+              </Badge>
+            )
+          })
         ) : (
           <span className="inline-flex flex-wrap items-center gap-1.5 text-muted-foreground">
             <span>
@@ -254,7 +265,7 @@ export function ReviewCommentEditor({
   const [activeTab, setActiveTab] = React.useState<"write" | "preview">("write")
 
   const sortedLines = React.useMemo(() => {
-    return flaggedLines.slice().sort((a, b) => a - b)
+    return sortFlaggedLines(flaggedLines)
   }, [flaggedLines])
 
   const charCount = comment.length

@@ -11,7 +11,12 @@ from api.deps import ActorDep, SessionDep
 from api.routes.challenges import ShareTokenQuery, get_challenge_or_404
 from backend.core.guest_session import mint_guest_session, write_guest_cookie
 from backend.core.rate_limit import rate_limit
-from backend.models.challenge import FlaggedLines
+from backend.models.challenge import (
+    FlaggedLineItem,
+    FlaggedLineRef,
+    FlaggedLines,
+    validate_flagged_line_bounds,
+)
 from backend.models.submission import Submission
 from backend.services.evaluation_service import (
     MAX_BLIND_ATTEMPTS,
@@ -60,13 +65,13 @@ class ReviewSubmissionResponse(BaseModel):
     line_precision_score: float = 0.0
     concept_score: float = 0.0
     false_positive_penalty: float = 0.0
-    false_positive_lines: list[int] = Field(default_factory=list)
+    false_positive_lines: list[FlaggedLineItem] = Field(default_factory=list)
     summary: str = ""
     feedback: str
     detected_issues: list[dict[str, Any]] = Field(default_factory=list)
     missed_issues: list[dict[str, Any]] = Field(default_factory=list)
     created_at: datetime
-    flagged_lines: list[int] = Field(default_factory=list)
+    flagged_lines: list[FlaggedLineItem] = Field(default_factory=list)
     comments: str = ""
     session_id: str | None = None
 
@@ -78,13 +83,13 @@ class SubmissionHistoryResponse(BaseModel):
     id: int
     submission_id: int
     challenge_id: int
-    flagged_lines: list[int] = Field(default_factory=list)
+    flagged_lines: list[FlaggedLineItem] = Field(default_factory=list)
     comments: str
     score: int
     line_precision_score: float = 0.0
     concept_score: float = 0.0
     false_positive_penalty: float = 0.0
-    false_positive_lines: list[int] = Field(default_factory=list)
+    false_positive_lines: list[FlaggedLineItem] = Field(default_factory=list)
     summary: str = ""
     feedback: str
     detected_issues: list[dict[str, Any]] = Field(default_factory=list)
@@ -118,24 +123,18 @@ def submit_review(
         share_token=share_token,
     )
 
-    snippet_line_count = len(challenge.code_snippet.splitlines())
-    if snippet_line_count == 0:
-        if payload.flagged_lines:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail="Challenge has no code lines to flag",
-            )
-    else:
-        if not payload.flagged_lines:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail="At least one line must be flagged",
-            )
-        if any(line > snippet_line_count for line in payload.flagged_lines):
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail=f"Flagged lines must be between 1 and {snippet_line_count}",
-            )
+    try:
+        validate_flagged_line_bounds(
+            payload.flagged_lines,
+            code_snippet=challenge.code_snippet,
+            files=challenge.get_files(),
+            require_non_empty=True,
+        )
+    except ValueError as err:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(err),
+        ) from err
 
     if actor.user_id is None and actor.guest_session_id is None:
         guest = mint_guest_session()
@@ -162,18 +161,26 @@ def submit_review(
 
     detected_issues_data = [issue.model_dump() for issue in eval_result.detected_issues]
     missed_issues_data = [issue.model_dump() for issue in eval_result.missed_issues]
+    flagged_lines_data = [
+        item.model_dump() if isinstance(item, FlaggedLineRef) else item
+        for item in payload.flagged_lines
+    ]
+    false_positive_lines_data = [
+        item.model_dump() if isinstance(item, FlaggedLineRef) else item
+        for item in eval_result.false_positive_lines
+    ]
 
     submission = Submission(
         challenge_id=challenge.id,
         user_id=actor.user_id,
         session_id=actor.guest_session_id,
-        flagged_lines=payload.flagged_lines,
+        flagged_lines=flagged_lines_data,
         comments=payload.comments,
         score=eval_result.score,
         line_precision_score=eval_result.line_precision_score,
         concept_score=eval_result.concept_score,
         false_positive_penalty=eval_result.false_positive_penalty,
-        false_positive_lines=eval_result.false_positive_lines,
+        false_positive_lines=false_positive_lines_data,
         summary=eval_result.summary,
         feedback=eval_result.critique,
         detected_issues=detected_issues_data,

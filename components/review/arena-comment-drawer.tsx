@@ -5,10 +5,11 @@ import { ChevronDown, ChevronUp } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ReviewCommentEditor } from "@/components/review/review-comment-editor"
+import type { FlaggedLine } from "@/types/challenge"
 
 export interface ArenaCommentDrawerProps {
-  flaggedLines: number[]
-  onToggleLine: (line: number) => void
+  flaggedLines: FlaggedLine[]
+  onToggleLine: (line: FlaggedLine) => void
   onClearFlaggedLines: () => void
   onOpenFlagGuide?: () => void
   comment: string

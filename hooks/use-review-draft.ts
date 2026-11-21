@@ -7,12 +7,12 @@ import {
   defaultDraftState,
   type ChallengeDraftState,
 } from "@/stores/review-draft-store"
-import type { ReviewDraft } from "@/types/challenge"
+import type { FlaggedLine, ReviewDraft } from "@/types/challenge"
 
 export interface UseReviewDraftReturn {
-  flaggedLines: number[]
-  setFlaggedLines: React.Dispatch<React.SetStateAction<number[]>>
-  toggleFlaggedLine: (line: number) => void
+  flaggedLines: FlaggedLine[]
+  setFlaggedLines: React.Dispatch<React.SetStateAction<FlaggedLine[]>>
+  toggleFlaggedLine: (line: FlaggedLine) => void
   clearFlaggedLines: () => void
   comments: string
   setComments: React.Dispatch<React.SetStateAction<string>>
@@ -45,14 +45,14 @@ export function useReviewDraft(challengeSlug: string): UseReviewDraftReturn {
   const isRestored = draft.isRestored
 
   const setFlaggedLines = React.useCallback(
-    (action: React.SetStateAction<number[]>) => {
+    (action: React.SetStateAction<FlaggedLine[]>) => {
       setStoreFlaggedLines(challengeSlug, action)
     },
     [challengeSlug, setStoreFlaggedLines]
   )
 
   const toggleFlaggedLine = React.useCallback(
-    (line: number) => {
+    (line: FlaggedLine) => {
       toggleStoreFlaggedLine(challengeSlug, line)
     },
     [challengeSlug, toggleStoreFlaggedLine]

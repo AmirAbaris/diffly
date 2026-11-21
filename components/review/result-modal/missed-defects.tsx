@@ -1,5 +1,6 @@
 import * as React from "react"
 import { Badge } from "@/components/ui/badge"
+import { formatFlaggedLineList } from "@/lib/flagged-lines"
 import { keyByValue } from "@/lib/unique-keys"
 import type { MissedIssue } from "@/types/challenge"
 import { FormattedInlineText, SeverityBadge } from "./score-helpers"
@@ -38,10 +39,7 @@ export function MissedDefectsSection({ issues }: { issues: MissedIssue[] }) {
             issues,
             (issue) => issue.id || issue.title || "missed-issue"
           ).map(({ key: issueKey, item: issue }) => {
-            const expectedLinesStr =
-              issue.expected_lines && issue.expected_lines.length > 0
-                ? issue.expected_lines.join(", ")
-                : null
+            const expectedLinesStr = formatFlaggedLineList(issue.expected_lines)
 
             return (
               <div

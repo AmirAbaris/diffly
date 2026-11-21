@@ -1,5 +1,6 @@
 import * as React from "react"
 import { Badge } from "@/components/ui/badge"
+import { formatFlaggedLineList } from "@/lib/flagged-lines"
 import { keyByValue } from "@/lib/unique-keys"
 import type { DetectedIssue } from "@/types/challenge"
 import { FormattedInlineText, SeverityBadge } from "./score-helpers"
@@ -38,10 +39,7 @@ export function DetectedDefectsSection({
             issues,
             (issue) => issue.id || issue.title || "detected-issue"
           ).map(({ key: issueKey, item: issue }) => {
-            const matchedLinesStr =
-              issue.matched_lines && issue.matched_lines.length > 0
-                ? issue.matched_lines.join(", ")
-                : null
+            const matchedLinesStr = formatFlaggedLineList(issue.matched_lines)
 
             return (
               <div

@@ -3,6 +3,7 @@ import { ArrowRight } from "lucide-react"
 import { MarkdownPreview } from "@/components/review/markdown-preview"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { formatFlaggedLineList } from "@/lib/flagged-lines"
 import { keyByValue } from "@/lib/unique-keys"
 import { cn } from "@/lib/utils"
 import type { ChallengeSolutionResponse } from "@/types/challenge"
@@ -99,9 +100,15 @@ export function StaffReviewColumn({
                     {issue.title}
                   </span>
                   <div className="flex items-center gap-1.5">
-                    {issue.lines && issue.lines.length > 0 && (
+                    {((issue.matched_lines && issue.matched_lines.length > 0) ||
+                      (issue.lines && issue.lines.length > 0)) && (
                       <span className="font-mono text-xs text-muted-foreground tabular-nums">
-                        Lines: {issue.lines.join(", ")}
+                        {issue.file_path ? `${issue.file_path} · ` : ""}Lines:{" "}
+                        {formatFlaggedLineList(
+                          issue.matched_lines && issue.matched_lines.length > 0
+                            ? issue.matched_lines
+                            : issue.lines
+                        )}
                       </span>
                     )}
                     <Badge

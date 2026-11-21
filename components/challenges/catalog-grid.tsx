@@ -155,6 +155,12 @@ export function CatalogGrid({
           <CardFooter className="flex items-center justify-between gap-3 border-t border-border/60 pt-4">
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground tabular-nums">
               <span>{challenge.estimated_minutes}m</span>
+              {challenge.file_count && challenge.file_count > 1 && (
+                <>
+                  <span aria-hidden="true">·</span>
+                  <span>{challenge.file_count} files</span>
+                </>
+              )}
               <span aria-hidden="true">·</span>
               <span>{challenge.line_count} lines</span>
               <span aria-hidden="true">·</span>

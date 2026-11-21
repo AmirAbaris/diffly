@@ -25,16 +25,19 @@ from backend.models.challenge import (
     Category,
     Challenge,
     ChallengeDetail,
+    ChallengeFile,
     ChallengeSolutionResponse,
     ChallengeSummary,
     CustomChallengeResponse,
     CustomChallengesListResponse,
     DefectCriterion,
     Difficulty,
+    FlaggedLineItem,
     FlaggedLines,
     GenerateCustomChallengeRequest,
     HintResponse,
     Language,
+    validate_flagged_line_bounds,
 )
 from backend.models.submission import Submission
 from backend.services.analytics_service import (
@@ -214,6 +217,11 @@ class CustomEvaluationRequest(BaseModel):
         max_length=50000,
         description="Code snippet of the challenge",
     )
+    files: list[ChallengeFile] = Field(
+        default_factory=list,
+        max_length=25,
+        description="Optional multi-file PR entries for evaluation",
+    )
     flagged_lines: FlaggedLines = Field(
         default_factory=list,
         description="Line numbers flagged by reviewer as defective",
@@ -226,10 +234,13 @@ class CustomEvaluationRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_flagged_lines_bounds(self) -> "CustomEvaluationRequest":
-        if self.code_snippet and self.flagged_lines:
-            line_count = len(self.code_snippet.splitlines())
-            if any(line > line_count for line in self.flagged_lines):
-                raise ValueError(f"Flagged lines must be between 1 and {line_count}")
+        if self.flagged_lines and (self.code_snippet or self.files):
+            validate_flagged_line_bounds(
+                self.flagged_lines,
+                code_snippet=self.code_snippet,
+                files=self.files,
+                require_non_empty=False,
+            )
         return self
 
 
@@ -240,14 +251,14 @@ class CustomEvaluationResponse(BaseModel):
     line_precision_score: float = Field(default=0.0, ge=0.0, le=100.0)
     concept_score: float = Field(default=0.0, ge=0.0, le=100.0)
     false_positive_penalty: float = Field(default=0.0, ge=0.0)
-    false_positive_lines: list[int] = Field(default_factory=list)
+    false_positive_lines: list[FlaggedLineItem] = Field(default_factory=list)
     detected_issues: list[DetectedIssue] = Field(default_factory=list)
     missed_issues: list[MissedIssue] = Field(default_factory=list)
     summary: str = ""
     critique: str = ""
     feedback: str = ""
     execution_time_ms: float = 0.0
-    flagged_lines: list[int] = Field(default_factory=list)
+    flagged_lines: list[FlaggedLineItem] = Field(default_factory=list)
     comments: str = ""
 
 
@@ -601,6 +612,7 @@ def evaluate_custom_challenge_endpoint(
         challenge={
             "expected_issues": payload.expected_issues,
             "code_snippet": payload.code_snippet,
+            "files": payload.files,
         },
         flagged_lines=payload.flagged_lines,
         user_comments=payload.comments,

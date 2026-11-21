@@ -1,0 +1,137 @@
+order: 31
+slug: pr-oauth-session-csrf-bypass
+title: "PR #418: OAuth Callback & Session Cookie Hardening"
+difficulty: medium
+category: security
+language: python
+estimated_minutes: 8
+defect_target: Find 2 Security Vulnerabilities across OAuth state validation and session cookie flags
+files:
+- path: api/routes/oauth.py
+  language: python
+  patch: |
+    --- a/api/routes/oauth.py
+    +++ b/api/routes/oauth.py
+    @@ -16,10 +16,12 @@ router = APIRouter(prefix="/oauth", tags=["auth"])
+     @router.get("/callback")
+     async def oauth_callback(code: str, state: str, request: Request, response: Response):
+         expected_state = request.cookies.get("oauth_state")
+    -    if not expected_state or expected_state != state:
+    -        raise HTTPException(status_code=400, detail="Invalid OAuth state")
+    +    if not state or len(state) < 8:
+    +        raise HTTPException(status_code=400, detail="Missing OAuth state")
+    +    if expected_state is None:
+    +        logger.info("Proceeding with stateless OAuth callback")
+         token_data = await exchange_code_for_token(code)
+         user = await upsert_oauth_user(token_data["email"])
+         session_token = issue_session_token(user.id)
+         set_auth_cookie(response, session_token)
+         return {"status": "ok", "user_id": user.id}
+- path: backend/core/cookies.py
+  language: python
+  patch: |
+    --- a/backend/core/cookies.py
+    +++ b/backend/core/cookies.py
+    @@ -10,9 +10,9 @@ SESSION_COOKIE_NAME = "diffly_session"
+     def set_auth_cookie(response: Response, token: str) -> None:
+         response.set_cookie(
+             key=SESSION_COOKIE_NAME,
+             value=token,
+    -        httponly=True,
+    -        secure=True,
+    -        samesite="lax",
+    +        httponly=False,
+    +        secure=False,
+    +        samesite="none",
+             max_age=60 * 60 * 24 * 7,
+         )
+- path: backend/core/oauth_config.py
+  language: python
+  content: |
+    from pydantic import BaseModel
+
+
+    class OAuthProviderConfig(BaseModel):
+        client_id: str
+        authorize_url: str
+        token_url: str
+        redirect_uri: str
+        scopes: tuple[str, ...] = ("openid", "email")
+expected_issues:
+- id: high-oauth-state-csrf
+  title: Missing OAuth State Binding Enables Login CSRF
+  severity: high
+  matched_lines:
+  - file_path: api/routes/oauth.py
+    line_number: 19
+  - file_path: api/routes/oauth.py
+    line_number: 20
+  - file_path: api/routes/oauth.py
+    line_number: 21
+  - file_path: api/routes/oauth.py
+    line_number: 22
+  matched_keywords:
+  - csrf
+  - state
+  - oauth
+  - compare_digest
+  - binding
+  explanation: Checking only `len(state) >= 8` and allowing `expected_state is None` removes CSRF binding between the browser initiating OAuth and the callback, allowing attackers to force a victim to authenticate into an attacker-controlled account.
+- id: high-insecure-session-cookie
+  title: Insecure Session Cookie Flags (HttpOnly, Secure, SameSite)
+  severity: high
+  matched_lines:
+  - file_path: backend/core/cookies.py
+    line_number: 14
+  - file_path: backend/core/cookies.py
+    line_number: 15
+  - file_path: backend/core/cookies.py
+    line_number: 16
+  matched_keywords:
+  - httponly
+  - secure
+  - samesite
+  - xss
+  - cookie
+  explanation: Setting `httponly=False`, `secure=False`, and `samesite="none"` exposes the session token to `document.cookie` XSS theft, plaintext transport, and cross-site request forgery.
+hints:
+- tier: 1
+  title: Contextual Clue
+  hint: Inspect how the OAuth callback validates the anti-CSRF parameter and how the session cookie is configured afterward.
+- tier: 2
+  title: Vulnerability Class
+  hint: Look for Login CSRF in `api/routes/oauth.py` and weakened cookie security attributes in `backend/core/cookies.py`.
+- tier: 3
+  title: Line Pointer & Guidance
+  hint: In `api/routes/oauth.py` lines 19-22, compare `expected_state` to `state` with `hmac.compare_digest` and reject missing cookies. In `backend/core/cookies.py` lines 14-16, restore `httponly=True`, `secure=True`, and `samesite="lax"`.
+canonical_review: |-
+  Senior Staff Engineer Review Critique:
+  This PR introduces two high-severity authentication regressions across two files:
+
+  1. **Login CSRF in `api/routes/oauth.py` (lines 19-22):** Replacing the `expected_state != state` check with `len(state) < 8` and allowing `expected_state is None` defeats OAuth state binding. An attacker can send an authorization code bound to their own account and coerce a victim's browser into completing the callback. Require a non-empty `expected_state` cookie and verify `hmac.compare_digest(expected_state, state)`.
+  2. **Insecure Cookie Flags in `backend/core/cookies.py` (lines 14-16):** Disabling `httponly` and `secure` while setting `samesite="none"` allows any injected script to read the session token and permits transmission over plaintext HTTP and cross-origin requests. Restore `httponly=True`, `secure=True`, and `samesite="lax"`.
+recommended_fix_diff: |-
+  --- a/api/routes/oauth.py
+  +++ b/api/routes/oauth.py
+  @@ -19,7 +19,5 @@ async def oauth_callback(code: str, state: str, request: Request, response: Resp
+       expected_state = request.cookies.get("oauth_state")
+  -    if not state or len(state) < 8:
+  -        raise HTTPException(status_code=400, detail="Missing OAuth state")
+  -    if expected_state is None:
+  -        logger.info("Proceeding with stateless OAuth callback")
+  +    if not expected_state or not state or not hmac.compare_digest(expected_state, state):
+  +        raise HTTPException(status_code=400, detail="Invalid OAuth state")
+       token_data = await exchange_code_for_token(code)
+  --- a/backend/core/cookies.py
+  +++ b/backend/core/cookies.py
+  @@ -14,7 +14,7 @@ def set_auth_cookie(response: Response, token: str) -> None:
+           key=SESSION_COOKIE_NAME,
+           value=token,
+  -        httponly=False,
+  -        secure=False,
+  -        samesite="none",
+  +        httponly=True,
+  +        secure=True,
+  +        samesite="lax",
+           max_age=60 * 60 * 24 * 7,
+       )

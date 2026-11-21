@@ -8,13 +8,13 @@ import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { appendShareTokenQuery } from "@/lib/share-url"
 import { cn } from "@/lib/utils"
-import type { ChallengeSolutionResponse } from "@/types/challenge"
+import type { ChallengeSolutionResponse, FlaggedLine } from "@/types/challenge"
 
 export interface ComparisonViewProps {
   challengeId?: string | number
   challengeSlug?: string
   shareToken?: string | null
-  userFlaggedLines?: number[]
+  userFlaggedLines?: FlaggedLine[]
   userComments?: string
   canonicalSolution?: ChallengeSolutionResponse | null
   codeSnippet?: string
@@ -24,7 +24,7 @@ export interface ComparisonViewProps {
   onViewChange?: (view: "comparison" | "diff") => void
 }
 
-const DEFAULT_FLAGGED_LINES: number[] = []
+const DEFAULT_FLAGGED_LINES: FlaggedLine[] = []
 
 export function ComparisonView({
   challengeId,

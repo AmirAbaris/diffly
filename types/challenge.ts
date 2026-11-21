@@ -35,6 +35,20 @@ export function formatLanguageLabel(language: string): string {
   return LANGUAGE_LABEL_MAP[norm] ?? language
 }
 
+export interface ChallengeFile {
+  path: string
+  language: string
+  content?: string | null
+  patch?: string | null
+}
+
+export interface FlaggedLineRef {
+  file_path: string
+  line_number: number
+}
+
+export type FlaggedLine = number | FlaggedLineRef
+
 export interface ChallengeSummary {
   id: number
   slug: string
@@ -45,6 +59,7 @@ export interface ChallengeSummary {
   description: string
   estimated_minutes: number
   line_count: number
+  file_count?: number
   total_hints: number
   is_solved: boolean
   best_score: number | null
@@ -57,6 +72,7 @@ export interface ChallengeDetail extends ChallengeSummary {
   threat_model: string
   defect_target: string
   code_snippet: string
+  files?: ChallengeFile[]
   is_owner?: boolean
 }
 
@@ -83,13 +99,13 @@ export interface ChallengeFilters {
 }
 
 export interface ReviewDraft {
-  flaggedLines: number[]
+  flaggedLines: FlaggedLine[]
   comments: string
   updatedAt?: string
 }
 
 export interface ReviewSubmissionRequest {
-  flagged_lines: number[]
+  flagged_lines: FlaggedLine[]
   comments: string
 }
 
@@ -97,7 +113,7 @@ export interface DetectedIssue {
   id: string
   title: string
   severity: string
-  matched_lines?: number[]
+  matched_lines?: FlaggedLine[]
   matched_keywords?: string[]
   line_score?: number
   concept_score?: number
@@ -109,7 +125,7 @@ export interface MissedIssue {
   id: string
   title: string
   severity: string
-  expected_lines?: number[]
+  expected_lines?: FlaggedLine[]
   missing_keywords?: string[]
   explanation?: string
   [key: string]: unknown
@@ -122,13 +138,13 @@ export interface ReviewSubmissionResponse {
   line_precision_score?: number
   concept_score?: number
   false_positive_penalty?: number
-  false_positive_lines?: number[]
+  false_positive_lines?: FlaggedLine[]
   summary?: string
   feedback: string
   detected_issues: DetectedIssue[]
   missed_issues: MissedIssue[]
   created_at: string
-  flagged_lines?: number[]
+  flagged_lines?: FlaggedLine[]
   comments?: string
 }
 
@@ -137,13 +153,13 @@ export interface SubmissionHistoryItem {
   id: number
   submission_id: number
   challenge_id: number
-  flagged_lines: number[]
+  flagged_lines: FlaggedLine[]
   comments: string
   score: number
   line_precision_score?: number
   concept_score?: number
   false_positive_penalty?: number
-  false_positive_lines?: number[]
+  false_positive_lines?: FlaggedLine[]
   summary?: string
   feedback: string
   detected_issues: DetectedIssue[]
@@ -161,7 +177,9 @@ export interface ChallengeSolutionResponse {
     id: string
     title: string
     severity: string
-    lines: number[]
+    file_path?: string | null
+    lines: FlaggedLine[]
+    matched_lines?: FlaggedLine[]
     keywords: string[]
     explanation: string
   }>

@@ -6,7 +6,7 @@ from pydantic import ConfigDict, field_validator
 from sqlalchemy import CheckConstraint, Index
 from sqlmodel import Field, Relationship, SQLModel
 
-from backend.models.challenge import Challenge
+from backend.models.challenge import Challenge, FlaggedLineRef
 from backend.models.user import User
 
 
@@ -14,22 +14,36 @@ def get_utc_now() -> datetime:
     return datetime.now(UTC)
 
 
-def _validate_int_list_json(value: Any, field_name: str) -> str:
+def _normalize_flagged_line_entry(item: Any, field_name: str) -> int | dict[str, Any]:
+    if isinstance(item, FlaggedLineRef):
+        return item.model_dump()
+    if isinstance(item, dict):
+        return FlaggedLineRef.model_validate(item).model_dump()
+    if isinstance(item, (list, tuple)) and len(item) == 2:
+        return FlaggedLineRef.model_validate(item).model_dump()
+    if isinstance(item, bool) or not isinstance(item, int):
+        raise ValueError(
+            f"{field_name} items must be integers or file-scoped line references"
+        )
+    return item
+
+
+def _validate_flagged_lines_json(value: Any, field_name: str) -> str:
     if value is None or value == "":
         return "[]"
     if isinstance(value, list):
-        return json.dumps([int(x) for x in value])
+        normalized = [_normalize_flagged_line_entry(x, field_name) for x in value]
+        return json.dumps(normalized)
     if isinstance(value, str):
         try:
             parsed = json.loads(value)
-            if not isinstance(parsed, list) or not all(
-                isinstance(x, int) for x in parsed
-            ):
-                raise ValueError(f"{field_name} must be a JSON list of integers")
+            if not isinstance(parsed, list):
+                raise ValueError(f"{field_name} must be a JSON list")
+            [_normalize_flagged_line_entry(x, field_name) for x in parsed]
         except json.JSONDecodeError as err:
             raise ValueError(f"Invalid JSON for {field_name}: {err}") from err
         return value
-    raise ValueError(f"{field_name} must be a list of integers or JSON string")
+    raise ValueError(f"{field_name} must be a list or JSON string")
 
 
 class SubmissionBase(SQLModel):
@@ -62,12 +76,12 @@ class SubmissionBase(SQLModel):
     @field_validator("flagged_lines", mode="before")
     @classmethod
     def validate_flagged_lines(cls, value: Any) -> str:
-        return _validate_int_list_json(value, "flagged_lines")
+        return _validate_flagged_lines_json(value, "flagged_lines")
 
     @field_validator("false_positive_lines", mode="before")
     @classmethod
     def validate_false_positive_lines(cls, value: Any) -> str:
-        return _validate_int_list_json(value, "false_positive_lines")
+        return _validate_flagged_lines_json(value, "false_positive_lines")
 
     @field_validator("detected_issues", mode="before")
     @classmethod
@@ -127,12 +141,12 @@ class Submission(SubmissionBase, table=True):
         merged = {**data, **validated.model_dump(exclude_unset=True)}
         super().__init__(**merged)
 
-    def get_flagged_lines(self) -> list[int]:
+    def get_flagged_lines(self) -> list[int | dict[str, Any]]:
         if isinstance(self.flagged_lines, list):
             return self.flagged_lines
         return json.loads(self.flagged_lines or "[]")
 
-    def get_false_positive_lines(self) -> list[int]:
+    def get_false_positive_lines(self) -> list[int | dict[str, Any]]:
         if isinstance(self.false_positive_lines, list):
             return self.false_positive_lines
         return json.loads(self.false_positive_lines or "[]")

@@ -13,12 +13,19 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from backend.models.challenge import Challenge, DefectCriterion
+from backend.models.challenge import (
+    Challenge,
+    ChallengeFile,
+    DefectCriterion,
+    FlaggedLineItem,
+    FlaggedLineRef,
+)
 
 
 PASS_SCORE_THRESHOLD = 80
 MAX_BLIND_ATTEMPTS = 3
 OFF_BY_ONE_PROXIMITY_SCORE = 0.5
+ScopedLine = tuple[str | None, int]
 
 
 class EvaluationInput(BaseModel):
@@ -28,7 +35,7 @@ class EvaluationInput(BaseModel):
 
     challenge_id: int | None = None
     challenge_slug: str | None = None
-    flagged_lines: list[int] = Field(default_factory=list)
+    flagged_lines: list[FlaggedLineItem] = Field(default_factory=list)
     user_comments: str = Field(default="")
 
 
@@ -40,7 +47,7 @@ class DetectedIssue(BaseModel):
     id: str
     title: str
     severity: str
-    matched_lines: list[int] = Field(default_factory=list)
+    matched_lines: list[FlaggedLineItem] = Field(default_factory=list)
     matched_keywords: list[str] = Field(default_factory=list)
     line_score: float = Field(default=0.0, ge=0.0, le=1.0)
     concept_score: float = Field(default=0.0, ge=0.0, le=1.0)
@@ -55,7 +62,7 @@ class MissedIssue(BaseModel):
     id: str
     title: str
     severity: str
-    expected_lines: list[int] = Field(default_factory=list)
+    expected_lines: list[FlaggedLineItem] = Field(default_factory=list)
     missing_keywords: list[str] = Field(default_factory=list)
     explanation: str = ""
 
@@ -69,7 +76,7 @@ class EvaluationResult(BaseModel):
     line_precision_score: float = Field(default=0.0, ge=0.0, le=100.0)
     concept_score: float = Field(default=0.0, ge=0.0, le=100.0)
     false_positive_penalty: float = Field(default=0.0, ge=0.0)
-    false_positive_lines: list[int] = Field(default_factory=list)
+    false_positive_lines: list[FlaggedLineItem] = Field(default_factory=list)
     detected_issues: list[DetectedIssue] = Field(default_factory=list)
     missed_issues: list[MissedIssue] = Field(default_factory=list)
     summary: str = ""
@@ -194,6 +201,36 @@ def is_keyword_matched(keyword: str, text: str) -> bool:
     return kw.lower() in text.lower()
 
 
+def extract_challenge_files(
+    challenge: Challenge | dict[str, Any] | Any,
+) -> list[ChallengeFile]:
+    """Extract and validate ChallengeFile objects from a Challenge model or dict."""
+    if hasattr(challenge, "get_files"):
+        return challenge.get_files()
+
+    raw_files: Any = None
+    if isinstance(challenge, dict):
+        raw_files = challenge.get("files", [])
+    elif hasattr(challenge, "files"):
+        raw_files = challenge.files
+
+    if isinstance(raw_files, str):
+        try:
+            raw_files = json.loads(raw_files or "[]")
+        except json.JSONDecodeError:
+            return []
+
+    if isinstance(raw_files, list):
+        return [
+            item
+            if isinstance(item, ChallengeFile)
+            else ChallengeFile.model_validate(item)
+            for item in raw_files
+        ]
+
+    return []
+
+
 def extract_expected_issues(
     challenge: Challenge | dict[str, Any] | Any,
 ) -> list[DefectCriterion]:
@@ -235,43 +272,99 @@ def extract_expected_issues(
     return []
 
 
+def _parse_scoped_item(
+    item: Any,
+    default_file_path: str | None = None,
+) -> tuple[ScopedLine | None, bool]:
+    if isinstance(item, FlaggedLineRef):
+        return (item.file_path, item.line_number), True
+    if isinstance(item, dict):
+        ref = FlaggedLineRef.model_validate(item)
+        return (ref.file_path, ref.line_number), True
+    if isinstance(item, (list, tuple)) and len(item) == 2:
+        ref = FlaggedLineRef.model_validate(item)
+        return (ref.file_path, ref.line_number), True
+    if isinstance(item, bool):
+        return None, False
+    try:
+        return (default_file_path, int(item)), False
+    except (ValueError, TypeError):
+        return None, False
+
+
+def normalize_scoped_flagged_lines(
+    flagged_lines: Any,
+    default_file_path: str | None = None,
+) -> tuple[list[ScopedLine], bool]:
+    """Parse flagged lines into deduplicated sorted (file_path, line_number) tuples."""
+    if flagged_lines is None:
+        return [], False
+
+    parsed_items: Any = flagged_lines
+    if isinstance(flagged_lines, str):
+        trimmed = flagged_lines.strip()
+        if not trimmed or trimmed == "[]":
+            return [], False
+        try:
+            decoded = json.loads(trimmed)
+            if isinstance(decoded, list):
+                parsed_items = decoded
+            else:
+                tokens = re.findall(r"\b\d+\b", trimmed)
+                return sorted({(default_file_path, int(t)) for t in tokens}), False
+        except (json.JSONDecodeError, ValueError):
+            tokens = re.findall(r"\b\d+\b", trimmed)
+            return sorted({(default_file_path, int(t)) for t in tokens}), False
+
+    if isinstance(parsed_items, (list, tuple, set)):
+        result: set[ScopedLine] = set()
+        had_explicit_scope = False
+        for item in parsed_items:
+            scoped, is_explicit = _parse_scoped_item(
+                item, default_file_path=default_file_path
+            )
+            if scoped is not None:
+                result.add(scoped)
+                if is_explicit:
+                    had_explicit_scope = True
+        sorted_lines = sorted(result, key=lambda pair: (pair[0] or "", pair[1]))
+        return sorted_lines, had_explicit_scope
+
+    return [], False
+
+
 def normalize_flagged_lines(flagged_lines: Any) -> list[int]:
     """Parse and normalize flagged lines into a deduplicated sorted list of integers."""
-    if flagged_lines is None:
-        return []
-    if isinstance(flagged_lines, str):
-        flagged_lines = flagged_lines.strip()
-        if not flagged_lines or flagged_lines == "[]":
-            return []
-        try:
-            parsed = json.loads(flagged_lines)
-            if isinstance(parsed, list):
-                return sorted(
-                    {int(x) for x in parsed if str(x).isdigit() or isinstance(x, int)}
-                )
-        except (json.JSONDecodeError, ValueError):
-            pass
-        # Fallback to comma/whitespace separated numbers
-        tokens = re.findall(r"\b\d+\b", flagged_lines)
-        return sorted({int(t) for t in tokens})
+    scoped, _ = normalize_scoped_flagged_lines(flagged_lines)
+    return sorted({line_no for _, line_no in scoped})
 
-    if isinstance(flagged_lines, (list, tuple, set)):
-        result: set[int] = set()
-        for item in flagged_lines:
-            try:
-                result.add(int(item))
-            except (ValueError, TypeError):
-                continue
-        return sorted(result)
 
-    return []
+def _format_line_item_text(item: FlaggedLineItem) -> str:
+    if isinstance(item, FlaggedLineRef):
+        return f"{item.file_path}:{item.line_number}"
+    return str(item)
+
+
+def _format_output_lines(
+    lines: list[ScopedLine],
+    scoped_output: bool,
+) -> list[FlaggedLineItem]:
+    formatted: list[FlaggedLineItem] = []
+    for file_path, line_no in sorted(
+        set(lines), key=lambda pair: (pair[0] or "", pair[1])
+    ):
+        if scoped_output and file_path is not None:
+            formatted.append(FlaggedLineRef(file_path=file_path, line_number=line_no))
+        else:
+            formatted.append(line_no)
+    return formatted
 
 
 def generate_critique(
     score: int,
     detected_issues: list[DetectedIssue],
     missed_issues: list[MissedIssue],
-    false_positive_lines: list[int],
+    false_positive_lines: list[FlaggedLineItem],
     false_positive_penalty: float,
 ) -> tuple[str, str]:
     """Generate high-level summary phrase and actionable review critique."""
@@ -303,7 +396,7 @@ def generate_critique(
     parts: list[str] = [summary_phrase]
 
     if false_positive_lines:
-        lines_str = ", ".join(str(ln) for ln in false_positive_lines)
+        lines_str = ", ".join(_format_line_item_text(ln) for ln in false_positive_lines)
         deduction = int(round(false_positive_penalty))
         parts.append(
             f"Penalty Applied: Flagged {len(false_positive_lines)} clean/unrelated "
@@ -313,7 +406,9 @@ def generate_critique(
     if detected_issues:
         parts.append("Identified Defects:")
         for issue in detected_issues:
-            lines_str = ", ".join(str(ln) for ln in issue.matched_lines)
+            lines_str = ", ".join(
+                _format_line_item_text(ln) for ln in issue.matched_lines
+            )
             kws_str = (
                 ", ".join(issue.matched_keywords) if issue.matched_keywords else "none"
             )
@@ -326,7 +421,9 @@ def generate_critique(
         parts.append("Missed Defects:")
         for issue in missed_issues:
             if issue.expected_lines:
-                lines_str = ", ".join(str(ln) for ln in issue.expected_lines)
+                lines_str = ", ".join(
+                    _format_line_item_text(ln) for ln in issue.expected_lines
+                )
                 parts.append(
                     f"  ✗ {issue.title} [{issue.severity.upper()}] "
                     f"(Expected line(s): {lines_str})"
@@ -341,13 +438,13 @@ def generate_critique(
 
 
 def _match_lines_one_to_one(
-    candidate_lines: list[int],
+    candidate_lines: list[ScopedLine],
     defect_indices: list[int],
-    defect_exact: list[set[int]],
-    defect_tolerated: list[set[int]],
-    defect_proximity: list[set[int]],
+    defect_exact: list[set[ScopedLine]],
+    defect_tolerated: list[set[ScopedLine]],
+    defect_proximity: list[set[ScopedLine]],
     raw_concept_scores: list[float],
-) -> tuple[dict[int, int], dict[int, float]]:
+) -> tuple[dict[int, ScopedLine], dict[int, float]]:
     """Find a maximum-weight 1-to-1 matching between flagged lines and defects.
 
     Returns:
@@ -427,16 +524,16 @@ def _match_lines_one_to_one(
             adj[curr][rev_idx][1] += 1
             curr = p
 
-    assigned_line: dict[int, int] = {}
+    assigned_line: dict[int, ScopedLine] = {}
     assigned_score: dict[int, float] = {}
-    for u_pos, line_no in enumerate(candidate_lines):
+    for u_pos, line_key in enumerate(candidate_lines):
         u_node = 1 + u_pos
         for edge in adj[u_node]:
             v, cap, _, _ = edge
             if cap == 0 and 1 + num_u <= v < sink:
                 d_pos = v - (1 + num_u)
                 d_idx = defect_indices[d_pos]
-                assigned_line[d_idx] = line_no
+                assigned_line[d_idx] = line_key
                 assigned_score[d_idx] = edge_credits[(u_pos, d_pos)]
                 break
 
@@ -445,7 +542,7 @@ def _match_lines_one_to_one(
 
 def evaluate_review(
     challenge: Challenge | dict[str, Any] | Any,
-    flagged_lines: list[int] | set[int] | str | None = None,
+    flagged_lines: list[Any] | set[Any] | str | None = None,
     user_comments: str | list[str] | None = None,
     *,
     input_data: EvaluationInput | None = None,
@@ -491,7 +588,12 @@ def evaluate_review(
         if user_comments is None:
             user_comments = input_data.user_comments
 
-    user_lines = normalize_flagged_lines(flagged_lines)
+    challenge_files = extract_challenge_files(challenge)
+    default_file_path = challenge_files[0].path if len(challenge_files) == 1 else None
+    user_lines, had_explicit_user_scope = normalize_scoped_flagged_lines(
+        flagged_lines,
+        default_file_path=default_file_path,
+    )
 
     if user_comments is None:
         comments_str = ""
@@ -501,6 +603,14 @@ def evaluate_review(
         comments_str = str(user_comments).strip()
 
     expected_issues = extract_expected_issues(challenge)
+    has_explicit_defect_scope = any(
+        defect.file_path is not None
+        or any(isinstance(item, FlaggedLineRef) for item in defect.lines)
+        for defect in expected_issues
+    )
+    scoped_output = (
+        len(challenge_files) > 1 or had_explicit_user_scope or has_explicit_defect_scope
+    )
 
     # Edge case: No expected defects configured cannot award 100/100.
     if not expected_issues:
@@ -518,11 +628,12 @@ def evaluate_review(
             execution_time_ms=elapsed,
         )
 
-    # Precompute line sets and raw keyword matches per defect
-    defect_exact: list[set[int]] = []
-    defect_tolerated: list[set[int]] = []
-    defect_proximity: list[set[int]] = []
-    all_eligible_lines: set[int] = set()
+    # Precompute line sets and raw keyword matches per defect (scoped by file_path)
+    defect_exact: list[set[ScopedLine]] = []
+    defect_tolerated: list[set[ScopedLine]] = []
+    defect_proximity: list[set[ScopedLine]] = []
+    defect_scoped_lines: list[list[ScopedLine]] = []
+    all_eligible_lines: set[ScopedLine] = set()
     line_defect_indices: list[int] = []
 
     matched_keywords_by_defect: list[list[str]] = []
@@ -530,23 +641,40 @@ def evaluate_review(
     raw_concept_scores: list[float] = []
 
     for idx, defect in enumerate(expected_issues):
-        positive_lines = [ln for ln in defect.lines if ln > 0]
-        exact_set = set(positive_lines)
-        tolerated = get_tolerated_lines(
-            positive_lines,
-            tolerance=tolerance,
-            allow_single_line_tolerance=allow_single_line_tolerance,
-        )
-        proximity = get_proximity_lines(
-            positive_lines,
-            tolerance=tolerance,
-            allow_single_line_tolerance=allow_single_line_tolerance,
-        )
+        scoped_lines = defect.get_scoped_lines(default_file_path=default_file_path)
+        defect_scoped_lines.append(scoped_lines)
+
+        by_file: dict[str | None, list[int]] = {}
+        for fp, ln in scoped_lines:
+            by_file.setdefault(fp, []).append(ln)
+
+        exact_set: set[ScopedLine] = set()
+        tolerated_set: set[ScopedLine] = set()
+        proximity_set: set[ScopedLine] = set()
+        for fp, lines_in_file in by_file.items():
+            exact_set.update((fp, ln) for ln in lines_in_file)
+            tolerated_set.update(
+                (fp, ln)
+                for ln in get_tolerated_lines(
+                    lines_in_file,
+                    tolerance=tolerance,
+                    allow_single_line_tolerance=allow_single_line_tolerance,
+                )
+            )
+            proximity_set.update(
+                (fp, ln)
+                for ln in get_proximity_lines(
+                    lines_in_file,
+                    tolerance=tolerance,
+                    allow_single_line_tolerance=allow_single_line_tolerance,
+                )
+            )
+
         defect_exact.append(exact_set)
-        defect_tolerated.append(tolerated)
-        defect_proximity.append(proximity)
-        all_eligible_lines.update(tolerated)
-        all_eligible_lines.update(proximity)
+        defect_tolerated.append(tolerated_set)
+        defect_proximity.append(proximity_set)
+        all_eligible_lines.update(tolerated_set)
+        all_eligible_lines.update(proximity_set)
         if exact_set:
             line_defect_indices.append(idx)
 
@@ -569,13 +697,18 @@ def evaluate_review(
         raw_concept_scores.append(raw_concept)
 
     # Compute false positive lines (clean/unrelated lines flagged by user)
-    false_positive_lines = [
-        line_num for line_num in user_lines if line_num not in all_eligible_lines
+    false_positive_scoped = [
+        line_key for line_key in user_lines if line_key not in all_eligible_lines
     ]
-    false_positive_penalty = len(false_positive_lines) * false_positive_penalty_per_line
+    false_positive_lines = _format_output_lines(
+        false_positive_scoped, scoped_output=scoped_output
+    )
+    false_positive_penalty = (
+        len(false_positive_scoped) * false_positive_penalty_per_line
+    )
 
     candidate_lines = [
-        line_num for line_num in user_lines if line_num in all_eligible_lines
+        line_key for line_key in user_lines if line_key in all_eligible_lines
     ]
     assigned_line, assigned_line_score = _match_lines_one_to_one(
         candidate_lines=candidate_lines,
@@ -587,22 +720,22 @@ def evaluate_review(
     )
 
     # Group all non-FP lines under matched defects for display without double-counting.
-    matched_lines_by_defect: dict[int, list[int]] = {
-        d_idx: [line_no] for d_idx, line_no in assigned_line.items()
+    matched_lines_by_defect: dict[int, list[ScopedLine]] = {
+        d_idx: [line_key] for d_idx, line_key in assigned_line.items()
     }
     used_anchor_lines = set(assigned_line.values())
     matched_defect_ids = list(assigned_line.keys())
-    for line_no in candidate_lines:
-        if line_no in used_anchor_lines:
+    for line_key in candidate_lines:
+        if line_key in used_anchor_lines:
             continue
         best_defect: int | None = None
         best_rank = -1
         for d_idx in matched_defect_ids:
-            if line_no in defect_exact[d_idx]:
+            if line_key in defect_exact[d_idx]:
                 rank = 3
-            elif line_no in defect_tolerated[d_idx]:
+            elif line_key in defect_tolerated[d_idx]:
                 rank = 2
-            elif line_no in defect_proximity[d_idx]:
+            elif line_key in defect_proximity[d_idx]:
                 rank = 1
             else:
                 continue
@@ -610,7 +743,7 @@ def evaluate_review(
                 best_rank = rank
                 best_defect = d_idx
         if best_defect is not None:
-            matched_lines_by_defect[best_defect].append(line_no)
+            matched_lines_by_defect[best_defect].append(line_key)
 
     detected_issues: list[DetectedIssue] = []
     missed_issues: list[MissedIssue] = []
@@ -628,7 +761,10 @@ def evaluate_review(
             line_score = assigned_line_score.get(idx, 0.0)
             # Anchor concept credit to line proximity to block keyword stuffing.
             concept_score = raw_concept if line_score > 0.0 else 0.0
-            matched_lines = sorted(matched_lines_by_defect.get(idx, []))
+            matched_lines = _format_output_lines(
+                matched_lines_by_defect.get(idx, []),
+                scoped_output=scoped_output,
+            )
             is_detected = line_score > 0.0
         else:
             # Defects without configured lines are scored by concept matching so they
@@ -655,12 +791,19 @@ def evaluate_review(
                 )
             )
         else:
+            expected_lines = (
+                _format_output_lines(
+                    defect_scoped_lines[idx], scoped_output=scoped_output
+                )
+                if defect_scoped_lines[idx]
+                else defect.lines
+            )
             missed_issues.append(
                 MissedIssue(
                     id=defect.id,
                     title=defect.title or defect.id,
                     severity=defect.severity,
-                    expected_lines=defect.lines,
+                    expected_lines=expected_lines,
                     missing_keywords=missing_kws,
                     explanation=defect.explanation,
                 )

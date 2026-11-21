@@ -262,16 +262,6 @@ def test_content_as_code_bundle_structure():
         assert meta_file.is_file(), f"Missing meta.yaml in {slug}"
         assert desc_file.is_file(), f"Missing description.md in {slug}"
 
-        snippets = [
-            f
-            for f in bundle_path.iterdir()
-            if f.name.startswith("snippet.")
-            and f.suffix in [".py", ".ts", ".go", ".rs", ".java"]
-        ]
-        assert len(snippets) == 1, f"Expected 1 native snippet file in {slug}"
-        snippet_lines = snippets[0].read_text(encoding="utf-8").splitlines()
-        assert len(snippet_lines) > 0, f"Empty snippet file in {slug}"
-
         with open(meta_file, encoding="utf-8") as f:
             meta = yaml.safe_load(f)
         assert isinstance(meta, dict)
@@ -285,6 +275,26 @@ def test_content_as_code_bundle_structure():
         Category(meta["category"])
         Language(meta["language"])
 
+        raw_files = meta.get("files")
+        if raw_files:
+            from backend.models.challenge import ChallengeFile
+
+            assert isinstance(raw_files, list) and len(raw_files) >= 1
+            parsed_files = [ChallengeFile.model_validate(item) for item in raw_files]
+            valid_by_path = {f.path: f.valid_line_numbers() for f in parsed_files}
+            snippet_lines = []
+        else:
+            snippets = [
+                f
+                for f in bundle_path.iterdir()
+                if f.name.startswith("snippet.")
+                and f.suffix in [".py", ".ts", ".go", ".rs", ".java"]
+            ]
+            assert len(snippets) == 1, f"Expected 1 native snippet file in {slug}"
+            snippet_lines = snippets[0].read_text(encoding="utf-8").splitlines()
+            assert len(snippet_lines) > 0, f"Empty snippet file in {slug}"
+            valid_by_path = {}
+
         expected_issues = meta["expected_issues"]
         assert isinstance(expected_issues, list) and len(expected_issues) >= 1
         for issue in expected_issues:
@@ -296,12 +306,41 @@ def test_content_as_code_bundle_structure():
             assert isinstance(lines, list) and len(lines) >= 1, (
                 f"Expected non-empty lines in {slug} issue {issue.get('id')}"
             )
-            for line_num in lines:
-                assert (
-                    isinstance(line_num, int)
-                    and not isinstance(line_num, bool)
-                    and 1 <= line_num <= len(snippet_lines)
-                ), f"Line {line_num} out of bounds (1..{len(snippet_lines)}) in {slug}"
+            issue_file_path = issue.get("file_path")
+            for line_entry in lines:
+                if isinstance(line_entry, dict):
+                    fp = line_entry.get("file_path") or line_entry.get("path")
+                    ln = line_entry.get("line_number") or line_entry.get("line")
+                    assert isinstance(fp, str) and fp in valid_by_path, (
+                        f"Unknown file_path {fp!r} in {slug}"
+                    )
+                    assert (
+                        isinstance(ln, int)
+                        and not isinstance(ln, bool)
+                        and ln in valid_by_path[fp]
+                    ), f"Line {ln} out of bounds for {fp} in {slug}"
+                elif valid_by_path:
+                    assert (
+                        isinstance(issue_file_path, str)
+                        and issue_file_path in valid_by_path
+                    ), f"Multi-file issue missing valid file_path in {slug}"
+                    assert (
+                        isinstance(line_entry, int)
+                        and not isinstance(line_entry, bool)
+                        and line_entry in valid_by_path[issue_file_path]
+                    ), (
+                        f"Line {line_entry} out of bounds for "
+                        f"{issue_file_path} in {slug}"
+                    )
+                else:
+                    assert (
+                        isinstance(line_entry, int)
+                        and not isinstance(line_entry, bool)
+                        and 1 <= line_entry <= len(snippet_lines)
+                    ), (
+                        f"Line {line_entry} out of bounds "
+                        f"(1..{len(snippet_lines)}) in {slug}"
+                    )
 
         hints = meta.get("hints", [])
         assert isinstance(hints, list)

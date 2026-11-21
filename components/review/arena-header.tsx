@@ -65,7 +65,9 @@ export function ArenaHeader({
 
       <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
         {challenge.is_solved ? (
-          <Badge variant="success">Solved</Badge>
+          <Badge variant="success" className="hidden sm:inline-flex">
+            Solved
+          </Badge>
         ) : challenge.best_score !== null ? (
           <Badge variant="warning" className="tabular-nums">
             <span className="sm:hidden">{challenge.best_score}%</span>

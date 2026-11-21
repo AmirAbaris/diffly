@@ -1,8 +1,14 @@
 import * as React from "react"
 import { Badge } from "@/components/ui/badge"
+import {
+  flaggedLineKey,
+  formatFlaggedLineLabel,
+  sortFlaggedLines,
+} from "@/lib/flagged-lines"
+import type { FlaggedLine } from "@/types/challenge"
 
 export interface UserReviewColumnProps {
-  flaggedLines: number[]
+  flaggedLines: FlaggedLine[]
   comments: string
 }
 
@@ -40,20 +46,21 @@ export function UserReviewColumn({
 
         {flaggedLines.length > 0 ? (
           <div className="flex flex-wrap gap-1.5">
-            {flaggedLines
-              .slice()
-              .sort((a, b) => a - b)
-              .map((line) => (
-                <Badge
-                  key={line}
-                  variant="secondary"
-                  size="sm"
-                  data-testid={`user-flagged-line-${line}`}
-                  className="font-mono tabular-nums"
-                >
-                  Line {line}
-                </Badge>
-              ))}
+            {sortFlaggedLines(flaggedLines).map((line) => (
+              <Badge
+                key={flaggedLineKey(line)}
+                variant="secondary"
+                size="sm"
+                data-testid={
+                  typeof line === "number"
+                    ? `user-flagged-line-${line}`
+                    : `user-flagged-line-${line.file_path}-${line.line_number}`
+                }
+                className="font-mono tabular-nums"
+              >
+                {formatFlaggedLineLabel(line)}
+              </Badge>
+            ))}
           </div>
         ) : (
           <p className="rounded-lg border border-dashed border-border bg-muted/20 p-3 text-center text-xs text-muted-foreground">

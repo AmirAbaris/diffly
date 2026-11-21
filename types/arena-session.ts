@@ -1,6 +1,7 @@
 import type {
   ChallengeDetail,
   ChallengeHint,
+  FlaggedLine,
   ReviewSubmissionResponse,
   SubmissionHistoryItem,
 } from "@/types/challenge"
@@ -27,10 +28,10 @@ export type AsyncSlice<T> =
   | { status: "ready"; data: T }
 
 export interface ArenaDraftActions {
-  flaggedLines: number[]
+  flaggedLines: FlaggedLine[]
   comments: string
   setComments: (value: string) => void
-  toggleFlaggedLine: (line: number) => void
+  toggleFlaggedLine: (line: FlaggedLine) => void
   clearFlaggedLines: () => void
   resetDraft: () => void
 }
