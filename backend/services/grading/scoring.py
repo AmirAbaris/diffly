@@ -4,6 +4,7 @@ import functools
 import json
 import re
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -16,11 +17,13 @@ from backend.models.challenge import (
     FlaggedLineRef,
 )
 from backend.services.grading.matching import match_one_to_one
+from backend.services.grading.reveal import should_reveal
 from backend.services.grading.review import (
     ReviewSubmission,
     ScopedLine,
     extract_challenge_files,
 )
+from backend.services.grading.weights import defect_weights
 
 
 PASS_SCORE_THRESHOLD = 80
@@ -42,6 +45,7 @@ class GradingPolicy:
     allow_single_line_tolerance: bool = False
     pass_threshold: int = PASS_SCORE_THRESHOLD
     max_attempts: int = MAX_BLIND_ATTEMPTS
+    severity_weights: Mapping[str, float] | None = None
 
 
 class FindingVerdict(BaseModel):
@@ -68,6 +72,7 @@ class DetectedIssue(BaseModel):
     matched_keywords: list[str] = Field(default_factory=list)
     line_score: float = Field(default=0.0, ge=0.0, le=1.0)
     concept_score: float = Field(default=0.0, ge=0.0, le=1.0)
+    weight: float = 0.0
     explanation: str = ""
     finding_ids: list[str] = Field(default_factory=list)
 
@@ -82,6 +87,7 @@ class MissedIssue(BaseModel):
     severity: str
     expected_lines: list[FlaggedLineItem] = Field(default_factory=list)
     missing_keywords: list[str] = Field(default_factory=list)
+    weight: float = 0.0
     explanation: str = ""
 
 
@@ -172,6 +178,7 @@ def redact_missed_issues(missed_issues: list[MissedIssue]) -> list[MissedIssue]:
             severity=issue.severity,
             expected_lines=[],
             missing_keywords=[],
+            weight=issue.weight,
             explanation="",
         )
         for issue in missed_issues
@@ -394,6 +401,8 @@ def grade_review(
             finding_verdicts=[],
         )
 
+    weights = defect_weights(expected_issues, active_policy.severity_weights)
+
     defect_exact: list[set[ScopedLine]] = []
     defect_tolerated: list[set[ScopedLine]] = []
     defect_proximity: list[set[ScopedLine]] = []
@@ -489,7 +498,10 @@ def grade_review(
 
             kw_bonus = round(concept_fd * 100)
             match_weights[(f_idx, d_idx)] = (
-                line_fd + (0.001 if has_exact else 0.0) + kw_bonus * 1e-6
+                line_fd
+                + (0.001 if has_exact else 0.0)
+                + weights[d_idx] * 1e-4
+                + kw_bonus * 1e-6
             )
 
     assigned = match_one_to_one(
@@ -597,8 +609,8 @@ def grade_review(
 
     detected_issues: list[DetectedIssue] = []
     missed_issues: list[MissedIssue] = []
-    total_line_score = 0.0
-    total_concept_score = 0.0
+    weighted_line_score = 0.0
+    weighted_concept_score = 0.0
 
     for idx, defect in enumerate(expected_issues):
         has_lines = bool(defect_exact[idx])
@@ -638,8 +650,9 @@ def grade_review(
             concept_score = raw_concept if is_detected else 0.0
             matched_lines = []
 
-        total_line_score += line_score
-        total_concept_score += concept_score
+        defect_weight = weights[idx]
+        weighted_line_score += defect_weight * line_score
+        weighted_concept_score += defect_weight * concept_score
 
         if is_detected:
             detected_issues.append(
@@ -651,6 +664,7 @@ def grade_review(
                     matched_keywords=matched_kws,
                     line_score=line_score,
                     concept_score=concept_score,
+                    weight=round(defect_weight, 4),
                     explanation=defect.explanation,
                     finding_ids=finding_ids_by_defect.get(idx, []),
                 )
@@ -670,26 +684,20 @@ def grade_review(
                     severity=defect.severity,
                     expected_lines=expected_lines,
                     missing_keywords=missing_kws,
+                    weight=round(defect_weight, 4),
                     explanation=defect.explanation,
                 )
             )
 
-    num_defects = len(expected_issues)
-    avg_line_score = (total_line_score / num_defects) * 100.0
-    avg_concept_score = (total_concept_score / num_defects) * 100.0
+    avg_line_score = weighted_line_score * 100.0
+    avg_concept_score = weighted_concept_score * 100.0
     base_score = (avg_line_score * active_policy.line_weight) + (
         avg_concept_score * active_policy.concept_weight
     )
     raw_final_score = base_score - false_positive_penalty
     normalized_score = max(0, min(100, int(round(raw_final_score))))
 
-    reveal_missed_details = (
-        active_policy.reveal
-        or review.reveal
-        or normalized_score >= active_policy.pass_threshold
-        or active_policy.attempt_number >= active_policy.max_attempts
-    )
-    if not reveal_missed_details and missed_issues:
+    if not should_reveal(active_policy, review, normalized_score) and missed_issues:
         missed_issues = redact_missed_issues(missed_issues)
 
     summary_phrase, critique = generate_critique(
@@ -704,8 +712,8 @@ def grade_review(
 
     return GradeReport(
         score=normalized_score,
-        line_precision_score=round(avg_line_score, 2),
-        concept_score=round(avg_concept_score, 2),
+        line_precision_score=min(100.0, round(avg_line_score, 2)),
+        concept_score=min(100.0, round(avg_concept_score, 2)),
         false_positive_penalty=round(false_positive_penalty, 2),
         false_positive_lines=false_positive_lines,
         detected_issues=detected_issues,

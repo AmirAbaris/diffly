@@ -1,6 +1,7 @@
 """Public API for v2 inline review grading."""
 
 from backend.services.grading.matching import match_one_to_one
+from backend.services.grading.reveal import should_reveal
 from backend.services.grading.review import (
     MAX_ANCHOR_SPAN,
     MIN_REVIEW_TEXT_CHARS,
@@ -8,7 +9,6 @@ from backend.services.grading.review import (
     Finding,
     ReviewSubmission,
     ScopedLine,
-    Severity,
     extract_challenge_files,
     normalize_scoped_flagged_lines,
     validate_review_bounds,
@@ -32,6 +32,12 @@ from backend.services.grading.scoring import (
     is_keyword_matched,
     redact_missed_issues,
 )
+from backend.services.grading.weights import (
+    SEVERITY_WEIGHTS,
+    Severity,
+    coerce_severity,
+    defect_weights,
+)
 
 
 __all__ = [
@@ -40,6 +46,7 @@ __all__ = [
     "MIN_REVIEW_TEXT_CHARS",
     "OFF_BY_ONE_PROXIMITY_SCORE",
     "PASS_SCORE_THRESHOLD",
+    "SEVERITY_WEIGHTS",
     "Anchor",
     "DetectedIssue",
     "Finding",
@@ -50,6 +57,8 @@ __all__ = [
     "ReviewSubmission",
     "ScopedLine",
     "Severity",
+    "coerce_severity",
+    "defect_weights",
     "extract_challenge_files",
     "extract_expected_issues",
     "find_contiguous_blocks",
@@ -61,6 +70,7 @@ __all__ = [
     "match_one_to_one",
     "normalize_scoped_flagged_lines",
     "redact_missed_issues",
+    "should_reveal",
     "validate_review_bounds",
     "validate_review_text",
 ]

@@ -2,7 +2,7 @@
 
 import json
 import re
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import (
     AliasChoices,
@@ -14,9 +14,9 @@ from pydantic import (
 )
 
 from backend.models.challenge import Challenge, ChallengeFile, FlaggedLineRef
+from backend.services.grading.weights import Severity as Severity
 
 
-Severity = Literal["critical", "high", "medium", "low"]
 MAX_ANCHOR_SPAN = 15
 MIN_REVIEW_TEXT_CHARS = 5
 ScopedLine = tuple[str | None, int]
