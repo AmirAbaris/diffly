@@ -24,6 +24,7 @@ from backend.services.grading.concepts import (
 from backend.services.grading.concepts import (
     is_keyword_matched as is_keyword_matched,
 )
+from backend.services.grading.judge.models import JudgeOutcome
 from backend.services.grading.matching import match_one_to_one
 from backend.services.grading.reveal import should_reveal
 from backend.services.grading.review import (
@@ -122,6 +123,35 @@ class GradeReport(BaseModel):
     execution_time_ms: float = 0.0
     finding_verdicts: list[FindingVerdict] = Field(default_factory=list)
     borderline_defect_ids: list[str] = Field(default_factory=list)
+    judge: JudgeOutcome | None = None
+
+
+def aggregate_scores(
+    line_scores: Sequence[float],
+    concept_scores: Sequence[float],
+    weights: Sequence[float],
+    false_positive_penalty: float,
+    policy: GradingPolicy,
+) -> tuple[float, float, int]:
+    """Compute weighted (line_precision_score, concept_score, normalized_score)."""
+    if not weights:
+        clamped = max(0, min(100, int(round(-false_positive_penalty))))
+        return 0.0, 0.0, clamped
+
+    weighted_line = sum(w * ln for w, ln in zip(weights, line_scores, strict=True))
+    weighted_concept = sum(w * c for w, c in zip(weights, concept_scores, strict=True))
+    avg_line_score = weighted_line * 100.0
+    avg_concept_score = weighted_concept * 100.0
+    base_score = (avg_line_score * policy.line_weight) + (
+        avg_concept_score * policy.concept_weight
+    )
+    raw_final_score = base_score - false_positive_penalty
+    normalized_score = max(0, min(100, int(round(raw_final_score))))
+    return (
+        min(100.0, round(avg_line_score, 2)),
+        min(100.0, round(avg_concept_score, 2)),
+        normalized_score,
+    )
 
 
 def find_contiguous_blocks(lines: list[int]) -> list[tuple[int, int]]:
@@ -665,8 +695,8 @@ def grade_review(
     detected_issues: list[DetectedIssue] = []
     missed_issues: list[MissedIssue] = []
     borderline_defect_ids: list[str] = []
-    weighted_line_score = 0.0
-    weighted_concept_score = 0.0
+    defect_line_scores: list[float] = []
+    defect_concept_scores: list[float] = []
 
     for idx, defect in enumerate(expected_issues):
         has_lines = bool(defect_exact[idx])
@@ -739,8 +769,8 @@ def grade_review(
                 borderline_defect_ids.append(defect.id)
 
         defect_weight = weights[idx]
-        weighted_line_score += defect_weight * line_score
-        weighted_concept_score += defect_weight * concept_score
+        defect_line_scores.append(line_score)
+        defect_concept_scores.append(concept_score)
 
         if is_detected:
             detected_issues.append(
@@ -781,13 +811,13 @@ def grade_review(
                 )
             )
 
-    avg_line_score = weighted_line_score * 100.0
-    avg_concept_score = weighted_concept_score * 100.0
-    base_score = (avg_line_score * active_policy.line_weight) + (
-        avg_concept_score * active_policy.concept_weight
+    line_precision_pct, concept_score_pct, normalized_score = aggregate_scores(
+        defect_line_scores,
+        defect_concept_scores,
+        weights,
+        false_positive_penalty,
+        active_policy,
     )
-    raw_final_score = base_score - false_positive_penalty
-    normalized_score = max(0, min(100, int(round(raw_final_score))))
 
     if not should_reveal(active_policy, review, normalized_score) and missed_issues:
         missed_issues = redact_missed_issues(missed_issues)
@@ -804,8 +834,8 @@ def grade_review(
 
     return GradeReport(
         score=normalized_score,
-        line_precision_score=min(100.0, round(avg_line_score, 2)),
-        concept_score=min(100.0, round(avg_concept_score, 2)),
+        line_precision_score=line_precision_pct,
+        concept_score=concept_score_pct,
         false_positive_penalty=round(false_positive_penalty, 2),
         false_positive_lines=false_positive_lines,
         detected_issues=detected_issues,

@@ -2,8 +2,8 @@ import json
 from datetime import UTC, datetime
 from typing import Any
 
-from pydantic import ConfigDict, field_validator
-from sqlalchemy import CheckConstraint, Index
+from pydantic import BaseModel, ConfigDict, field_validator
+from sqlalchemy import CheckConstraint, Index, Text
 from sqlmodel import Field, Relationship, SQLModel
 
 from backend.models.challenge import Challenge, FlaggedLineRef
@@ -45,6 +45,29 @@ def _validate_flagged_lines_json(value: Any, field_name: str) -> str:
             raise ValueError(f"Invalid JSON for {field_name}: {err}") from err
         return value
     raise ValueError(f"{field_name} must be a list or JSON string")
+
+
+def _validate_judge_outcome_json(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, BaseModel):
+        return json.dumps(value.model_dump())
+    if isinstance(value, dict):
+        return json.dumps(value)
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped or stripped == "null":
+            return None
+        try:
+            parsed = json.loads(stripped)
+        except json.JSONDecodeError as err:
+            raise ValueError(f"Invalid JSON for judge_outcome: {err}") from err
+        if parsed is None:
+            return None
+        if not isinstance(parsed, dict):
+            raise ValueError("judge_outcome must be a JSON object or null")
+        return stripped
+    raise ValueError("judge_outcome must be a dict, JSON string, or None")
 
 
 def _validate_json_array(value: Any, field_name: str) -> str:
@@ -91,6 +114,7 @@ class SubmissionBase(SQLModel):
     feedback: str = Field(default="")
     detected_issues: str = Field(default="[]")
     missed_issues: str = Field(default="[]")
+    judge_outcome: str | None = Field(default=None, sa_type=Text)
 
     @field_validator("flagged_lines", mode="before")
     @classmethod
@@ -121,6 +145,11 @@ class SubmissionBase(SQLModel):
     @classmethod
     def validate_missed_issues(cls, value: Any) -> str:
         return _validate_json_array(value, "missed_issues")
+
+    @field_validator("judge_outcome", mode="before")
+    @classmethod
+    def validate_judge_outcome(cls, value: Any) -> str | None:
+        return _validate_judge_outcome_json(value)
 
 
 class Submission(SubmissionBase, table=True):
@@ -191,6 +220,17 @@ class Submission(SubmissionBase, table=True):
             return self.finding_verdicts
         return json.loads(self.finding_verdicts or "[]")
 
+    def get_judge_outcome(self) -> dict[str, Any] | None:
+        if self.judge_outcome is None:
+            return None
+        if isinstance(self.judge_outcome, dict):
+            return self.judge_outcome
+        stripped = self.judge_outcome.strip()
+        if not stripped or stripped == "null":
+            return None
+        parsed = json.loads(stripped)
+        return parsed if isinstance(parsed, dict) else None
+
     @classmethod
     def record(
         cls,
@@ -235,4 +275,9 @@ class Submission(SubmissionBase, table=True):
             feedback=report.critique,
             detected_issues=[issue.model_dump() for issue in report.detected_issues],
             missed_issues=[issue.model_dump() for issue in report.missed_issues],
+            judge_outcome=(
+                report.judge.model_dump()
+                if getattr(report, "judge", None) is not None
+                else None
+            ),
         )

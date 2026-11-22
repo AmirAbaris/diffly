@@ -5,7 +5,7 @@ import re
 from typing import Any
 from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
 
-from pydantic import field_validator, model_validator
+from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -95,6 +95,29 @@ class Settings(BaseSettings):
     DB_POOL_PRE_PING: bool = True
     DB_CONNECT_TIMEOUT: int = 10
     VERCEL: str | None = None
+    gemini_judge_api_key: str = Field(
+        default="",
+        validation_alias=AliasChoices(
+            "GEMINI_JUDGE_API_KEY",
+            "GEMINI_API_KEY",
+            "gemini_judge_api_key",
+        ),
+    )
+    gemini_judge_model: str = Field(
+        default="gemini-3.1-flash-lite",
+        validation_alias=AliasChoices(
+            "GEMINI_JUDGE_MODEL",
+            "gemini_judge_model",
+        ),
+    )
+    gemini_judge_timeout_s: float = Field(
+        default=8.0,
+        gt=0.0,
+        validation_alias=AliasChoices(
+            "GEMINI_JUDGE_TIMEOUT_S",
+            "gemini_judge_timeout_s",
+        ),
+    )
 
     @field_validator("DATABASE_URL", mode="before")
     @classmethod

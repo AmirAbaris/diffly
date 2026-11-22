@@ -20,6 +20,7 @@ from sqlmodel import Session, func, or_, select
 from sqlmodel.sql.expression import SelectOfScalar
 
 from api.deps import ActorDep, OwnerActorDep, SessionDep
+from backend.core.config import settings
 from backend.core.rate_limit import rate_limit
 from backend.models.challenge import (
     Category,
@@ -46,11 +47,6 @@ from backend.services.analytics_service import (
     compute_review_schedule,
     fetch_actor_public_submissions,
 )
-from backend.services.evaluation_service import (
-    DetectedIssue,
-    MissedIssue,
-    evaluate_review,
-)
 from backend.services.gemini_generator import (
     GeminiAPIError,
     GeminiAuthError,
@@ -59,11 +55,15 @@ from backend.services.gemini_generator import (
     generate_custom_challenge,
 )
 from backend.services.grading import (
+    DetectedIssue,
     Finding,
     FindingVerdict,
     GradingPolicy,
+    JudgeRequest,
+    MissedIssue,
     ReviewSubmission,
     grade_review,
+    refine_with_judge,
     validate_review_bounds,
     validate_review_text,
 )
@@ -251,6 +251,15 @@ class CustomEvaluationRequest(BaseModel):
         max_length=20000,
         description="Optional v2 summary note alias for comments",
     )
+    canonical_review: str = Field(
+        default="",
+        max_length=20000,
+        description="Optional canonical review reference for semantic judge",
+    )
+    semantic_judge: bool = Field(
+        default=False,
+        description="Opt in to optional async semantic judge for borderline concepts",
+    )
 
     @model_validator(mode="after")
     def validate_flagged_lines_bounds(self) -> "CustomEvaluationRequest":
@@ -293,6 +302,7 @@ class CustomEvaluationResponse(BaseModel):
     findings: list[dict[str, Any]] = Field(default_factory=list)
     finding_verdicts: list[FindingVerdict] = Field(default_factory=list)
     comments: str = ""
+    judge: dict[str, Any] | None = None
 
 
 @router.post(
@@ -637,27 +647,57 @@ def toggle_custom_challenge_share(
     status_code=status.HTTP_200_OK,
     dependencies=[Depends(rate_limit("evaluate-custom", 30, 60))],
 )
-def evaluate_custom_challenge_endpoint(
+async def evaluate_custom_challenge_endpoint(
     payload: CustomEvaluationRequest,
+    x_gemini_key: Annotated[
+        str | None,
+        Header(
+            alias="X-Gemini-Key",
+            description="Optional BYOK Gemini API key for semantic judge",
+        ),
+    ] = None,
 ) -> CustomEvaluationResponse:
     """Statelessly evaluate a review submission against custom challenge metadata."""
     challenge_payload = {
         "expected_issues": payload.expected_issues,
         "code_snippet": payload.code_snippet,
         "files": payload.files,
+        "canonical_review": payload.canonical_review,
     }
+    note = (
+        payload.summary_note if payload.summary_note is not None else payload.comments
+    ).strip()
     if payload.findings is not None:
-        note = (
-            payload.summary_note
-            if payload.summary_note is not None
-            else payload.comments
-        ).strip()
         review = ReviewSubmission(findings=payload.findings, summary_note=note)
-        report = grade_review(
-            challenge=challenge_payload,
-            review=review,
-            policy=GradingPolicy(),
+    else:
+        review = ReviewSubmission.model_validate(
+            {
+                "flagged_lines": payload.flagged_lines,
+                "summary_note": note,
+            }
         )
+
+    policy = GradingPolicy()
+    report = grade_review(
+        challenge=challenge_payload,
+        review=review,
+        policy=policy,
+    )
+    judge_req = JudgeRequest.from_headers(
+        byok_key=x_gemini_key,
+        opt_in=payload.semantic_judge,
+        settings=settings,
+    )
+    if judge_req is not None:
+        report = await refine_with_judge(
+            challenge_payload,
+            review,
+            report,
+            judge_req,
+            policy,
+        )
+
+    if payload.findings is not None:
         derived_lines: list[FlaggedLineItem] = []
         seen_lines: set[tuple[str | None, int]] = set()
         for finding in review.findings:
@@ -670,44 +710,33 @@ def evaluate_custom_challenge_endpoint(
                     derived_lines.append(FlaggedLineRef(file_path=fp, line_number=ln))
                 else:
                     derived_lines.append(ln)
-        return CustomEvaluationResponse(
-            score=report.score,
-            line_precision_score=report.line_precision_score,
-            concept_score=report.concept_score,
-            false_positive_penalty=report.false_positive_penalty,
-            false_positive_lines=report.false_positive_lines,
-            detected_issues=report.detected_issues,
-            missed_issues=report.missed_issues,
-            summary=report.summary,
-            critique=report.critique,
-            feedback=report.critique,
-            execution_time_ms=report.execution_time_ms,
-            flagged_lines=derived_lines,
-            findings=[f.model_dump() for f in review.findings],
-            finding_verdicts=report.finding_verdicts,
-            comments=note,
-        )
-
-    eval_result = evaluate_review(
-        challenge=challenge_payload,
-        flagged_lines=payload.flagged_lines,
-        user_comments=payload.comments,
-    )
+        out_flagged_lines = derived_lines
+        out_findings = [f.model_dump() for f in review.findings]
+        out_verdicts = report.finding_verdicts
+        out_comments = note
+    else:
+        out_flagged_lines = payload.flagged_lines
+        out_findings = []
+        out_verdicts = []
+        out_comments = payload.comments
 
     return CustomEvaluationResponse(
-        score=eval_result.score,
-        line_precision_score=eval_result.line_precision_score,
-        concept_score=eval_result.concept_score,
-        false_positive_penalty=eval_result.false_positive_penalty,
-        false_positive_lines=eval_result.false_positive_lines,
-        detected_issues=eval_result.detected_issues,
-        missed_issues=eval_result.missed_issues,
-        summary=eval_result.summary,
-        critique=eval_result.critique,
-        feedback=eval_result.critique,
-        execution_time_ms=eval_result.execution_time_ms,
-        flagged_lines=payload.flagged_lines,
-        comments=payload.comments,
+        score=report.score,
+        line_precision_score=report.line_precision_score,
+        concept_score=report.concept_score,
+        false_positive_penalty=report.false_positive_penalty,
+        false_positive_lines=report.false_positive_lines,
+        detected_issues=report.detected_issues,
+        missed_issues=report.missed_issues,
+        summary=report.summary,
+        critique=report.critique,
+        feedback=report.critique,
+        execution_time_ms=report.execution_time_ms,
+        flagged_lines=out_flagged_lines,
+        findings=out_findings,
+        finding_verdicts=out_verdicts,
+        comments=out_comments,
+        judge=report.judge.model_dump() if report.judge is not None else None,
     )
 
 

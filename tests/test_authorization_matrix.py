@@ -1479,3 +1479,193 @@ def test_github_oauth_cross_actor_state_and_inactive_isolation(
     assert cb_inactive.status_code == 302
     assert "auth_error=account_inactive" in cb_inactive.headers["location"]
     assert settings.AUTH_COOKIE_NAME not in cb_inactive.cookies
+
+
+@patch("backend.services.grading.judge.service.HttpxGeminiClient.generate_json")
+def test_semantic_judge_review_and_submissions_authorization_matrix(
+    mock_generate: AsyncMock,
+    session: Session,
+    client_factory: Callable[[], TestClient],
+    register_user: Callable[..., dict[str, Any]],
+    login_as: Callable[..., TestClient],
+    as_guest: Callable[[TestClient, str | None], str],
+):
+    """Semantic judge POST /review and GET /submissions isolate across all roles."""
+    actors, meta = _make_actors(
+        session, client_factory, register_user, login_as, as_guest
+    )
+    public_ch, user_a_private, guest_a_private = _seed_matrix_resources(
+        session, meta["user_a"]["id"], meta["guest_a_sid"]
+    )
+    byok_key = "AIzaSyMatrixJudgeIsolationKey"
+    mock_generate.return_value = {
+        "verdicts": [
+            {
+                "defect_id": "pub-eval",
+                "concept_credit": 1.0,
+                "rubric": {"root_cause": True, "impact": True, "fix": True},
+                "feedback": "Private judge feedback.",
+            }
+        ]
+    }
+
+    # Private challenges reject non-owners with 404 before calling Gemini.
+    for target_key, ch_obj, owner_name, defect_id in (
+        ("user_a_private", user_a_private, "user_a", "ua-idor"),
+        ("guest_a_private", guest_a_private, "guest_a", "ga-sqli"),
+    ):
+        mock_generate.reset_mock()
+        mock_generate.return_value = {
+            "verdicts": [
+                {
+                    "defect_id": defect_id,
+                    "concept_credit": 1.0,
+                    "rubric": {"root_cause": True, "impact": True, "fix": True},
+                    "feedback": f"Owner {owner_name} judge feedback.",
+                }
+            ]
+        }
+        for actor_name, expected in MATRIX[
+            ("POST", "/api/challenges/{identifier}/review")
+        ][target_key].items():
+            if actor_name == owner_name:
+                continue
+            ac, headers = actors[actor_name]
+            res = ac.post(
+                f"/api/challenges/{ch_obj.slug}/review",
+                json={
+                    "findings": [
+                        {
+                            "id": "f1",
+                            "start_line": 1,
+                            "end_line": 1,
+                            "body": "Unauthorized review attempt with semantic judge.",
+                        }
+                    ],
+                    "semantic_judge": True,
+                },
+                headers={**headers, "X-Gemini-Key": byok_key},
+            )
+            assert res.status_code == expected, f"{target_key} judge <- {actor_name}"
+            if actor_name == "anonymous":
+                assert settings.GUEST_COOKIE_NAME not in res.cookies
+
+        assert mock_generate.call_count == 0
+
+        owner_client, owner_headers = actors[owner_name]
+        owner_res = owner_client.post(
+            f"/api/challenges/{ch_obj.slug}/review",
+            json={
+                "findings": [
+                    {
+                        "id": "f1",
+                        "start_line": 1,
+                        "end_line": 1,
+                        "body": "Suspicious unsafe call on line one.",
+                    }
+                ],
+                "semantic_judge": True,
+            },
+            headers={**owner_headers, "X-Gemini-Key": byok_key},
+        )
+        assert owner_res.status_code == 200
+        assert byok_key not in owner_res.text
+        assert owner_res.json()["judge"]["status"] == "applied"
+        assert mock_generate.call_count == 1
+
+        for actor_name, expected in MATRIX[
+            ("GET", "/api/challenges/{identifier}/submissions")
+        ][target_key].items():
+            ac, headers = actors[actor_name]
+            sub_res = ac.get(
+                f"/api/challenges/{ch_obj.slug}/submissions",
+                headers=headers,
+            )
+            assert sub_res.status_code == expected, f"{target_key} subs <- {actor_name}"
+            if expected == 200:
+                judges = [item["judge"] for item in sub_res.json() if item["judge"]]
+                assert len(judges) == 1
+                assert judges[0]["status"] == "applied"
+
+    # Public challenge isolates each actor's judge_outcome on GET /submissions.
+    mock_generate.reset_mock()
+    mock_generate.return_value = {
+        "verdicts": [
+            {
+                "defect_id": "pub-eval",
+                "concept_credit": 1.0,
+                "rubric": {"root_cause": True, "impact": True, "fix": True},
+                "feedback": "Public judge feedback.",
+            }
+        ]
+    }
+    for actor_name in ("user_a", "guest_a", "user_b"):
+        ac, headers = actors[actor_name]
+        res = ac.post(
+            f"/api/challenges/{public_ch.slug}/review",
+            json={
+                "findings": [
+                    {
+                        "id": "f1",
+                        "start_line": 1,
+                        "end_line": 1,
+                        "body": f"{actor_name} found arbitrary execution risk.",
+                    }
+                ],
+                "semantic_judge": True,
+            },
+            headers={**headers, "X-Gemini-Key": byok_key},
+        )
+        assert res.status_code == 200
+        assert byok_key not in res.text
+        assert res.json()["judge"]["status"] == "applied"
+
+    for actor_name in MATRIX[("GET", "/api/challenges/{identifier}/submissions")][
+        "public"
+    ]:
+        ac, headers = actors[actor_name]
+        hist_res = ac.get(
+            f"/api/challenges/{public_ch.slug}/submissions",
+            headers=headers,
+        )
+        assert hist_res.status_code == 200
+        items = hist_res.json()
+        if actor_name in ("user_a", "guest_a"):
+            assert len(items) == 2
+            assert items[0]["comments"] == ""
+            assert items[0]["findings"][0]["body"].startswith(actor_name)
+            assert items[0]["judge"]["status"] == "applied"
+            assert items[1]["judge"] is None
+        elif actor_name == "user_b":
+            assert len(items) == 1
+            assert items[0]["findings"][0]["body"].startswith("user_b")
+            assert items[0]["judge"]["status"] == "applied"
+        else:
+            assert items == []
+
+    # Anonymous caller can submit to public challenge and gets isolated guest cookie.
+    anon_client, _ = actors["anonymous"]
+    anon_res = anon_client.post(
+        f"/api/challenges/{public_ch.slug}/review",
+        json={
+            "findings": [
+                {
+                    "id": "f1",
+                    "start_line": 1,
+                    "end_line": 1,
+                    "body": "Anonymous caller spotted unsafe code.",
+                }
+            ],
+            "semantic_judge": True,
+        },
+        headers={"X-Gemini-Key": byok_key},
+    )
+    assert anon_res.status_code == 200
+    assert settings.GUEST_COOKIE_NAME in anon_res.cookies
+    assert anon_res.json()["judge"]["status"] == "applied"
+    anon_subs = anon_client.get(f"/api/challenges/{public_ch.slug}/submissions")
+    user_b_subs = actors["user_b"][0].get(
+        f"/api/challenges/{public_ch.slug}/submissions"
+    )
+    assert len(anon_subs.json()) == 1
+    assert len(user_b_subs.json()) == 1

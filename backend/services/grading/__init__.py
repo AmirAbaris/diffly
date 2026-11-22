@@ -8,6 +8,13 @@ from backend.services.grading.concepts import (
     is_keyword_matched,
     match_concepts,
 )
+from backend.services.grading.judge import (
+    JudgeDefectVerdict,
+    JudgeOutcome,
+    JudgeRequest,
+    RubricCheck,
+    refine_with_judge,
+)
 from backend.services.grading.matching import match_one_to_one
 from backend.services.grading.reveal import should_reveal
 from backend.services.grading.review import (
@@ -31,6 +38,7 @@ from backend.services.grading.scoring import (
     GradeReport,
     GradingPolicy,
     MissedIssue,
+    aggregate_scores,
     extract_expected_issues,
     find_contiguous_blocks,
     generate_critique,
@@ -71,14 +79,19 @@ __all__ = [
     "FindingVerdict",
     "GradeReport",
     "GradingPolicy",
+    "JudgeDefectVerdict",
+    "JudgeOutcome",
+    "JudgeRequest",
     "MissedIssue",
     "NormalizedText",
     "Polarity",
     "ReviewSubmission",
+    "RubricCheck",
     "ScopedLine",
     "Sentence",
     "Severity",
     "Token",
+    "aggregate_scores",
     "bind_evidence",
     "coerce_severity",
     "defect_weights",
@@ -96,6 +109,7 @@ __all__ = [
     "normalize_scoped_flagged_lines",
     "normalize_text",
     "redact_missed_issues",
+    "refine_with_judge",
     "should_reveal",
     "validate_review_bounds",
     "validate_review_text",
