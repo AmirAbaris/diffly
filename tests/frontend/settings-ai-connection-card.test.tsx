@@ -36,6 +36,70 @@ describe("SettingsAIConnectionCard", () => {
     )
   })
 
+  it("renders all 4 provider logo cards, updates default model when switching providers, and displays the security trust explanation", async () => {
+    const user = userEvent.setup()
+    const fetcher = vi.fn(async () => ({ connected: false }))
+
+    render(
+      <SWRConfig
+        value={{
+          provider: () => new Map(),
+          dedupingInterval: 0,
+          fetcher,
+        }}
+      >
+        <SettingsAIConnectionCard />
+      </SWRConfig>
+    )
+
+    const radios = screen.getAllByRole("radio")
+    expect(radios).toHaveLength(4)
+    expect(screen.getByTestId("ai-provider-logo-google")).toBeInTheDocument()
+    expect(screen.getByTestId("ai-provider-logo-openai")).toBeInTheDocument()
+    expect(screen.getByTestId("ai-provider-logo-anthropic")).toBeInTheDocument()
+    expect(
+      screen.getByTestId("ai-provider-logo-openai-compatible")
+    ).toBeInTheDocument()
+
+    expect(screen.getByTestId("ai-provider-option-google")).toHaveAttribute(
+      "aria-checked",
+      "true"
+    )
+    expect(screen.getByTestId("ai-model-input")).toHaveValue("gemini-3.8-flash")
+
+    await user.click(screen.getByTestId("ai-provider-option-openai"))
+    expect(screen.getByTestId("ai-provider-option-openai")).toHaveAttribute(
+      "aria-checked",
+      "true"
+    )
+    expect(screen.getByTestId("ai-model-input")).toHaveValue("gpt-6.2-sol")
+
+    await user.click(screen.getByTestId("ai-provider-option-anthropic"))
+    expect(screen.getByTestId("ai-provider-option-anthropic")).toHaveAttribute(
+      "aria-checked",
+      "true"
+    )
+    expect(screen.getByTestId("ai-model-input")).toHaveValue(
+      "claude-sonnet-5-5"
+    )
+
+    await user.click(screen.getByTestId("ai-provider-option-openai-compatible"))
+    expect(
+      screen.getByTestId("ai-provider-option-openai-compatible")
+    ).toHaveAttribute("aria-checked", "true")
+    expect(screen.getByTestId("ai-model-input")).toHaveValue("deepseek-chat")
+
+    expect(screen.getByTestId("ai-api-key-encrypted-badge")).toHaveTextContent(
+      "Encrypted"
+    )
+    const trustBox = screen.getByTestId("ai-privacy-notice")
+    expect(trustBox).toHaveTextContent(
+      "Your API key is encrypted and never stored in our database"
+    )
+    expect(trustBox).toHaveTextContent(/AES-256-GCM/i)
+    expect(trustBox).toHaveTextContent(/Never written to PostgreSQL/i)
+  })
+
   it("restores saved model and baseUrl when re-selecting the active connected provider", async () => {
     const user = userEvent.setup()
     const fetcher = vi.fn(async (key: string) => {
@@ -72,18 +136,17 @@ describe("SettingsAIConnectionCard", () => {
     expect(screen.getByTestId("ai-base-url-input")).toHaveValue(
       "https://api.groq.com/openai/v1"
     )
+    expect(
+      screen.getByTestId("ai-provider-connected-dot-openai-compatible")
+    ).toBeInTheDocument()
 
-    await user.click(screen.getByTestId("ai-provider-select"))
-    await user.click(await screen.findByRole("option", { name: "Anthropic" }))
+    await user.click(screen.getByTestId("ai-provider-option-anthropic"))
     expect(screen.getByTestId("ai-model-input")).toHaveValue(
-      "claude-sonnet-4-5"
+      "claude-sonnet-5-5"
     )
     expect(screen.getByTestId("ai-base-url-input")).toHaveValue("")
 
-    await user.click(screen.getByTestId("ai-provider-select"))
-    await user.click(
-      await screen.findByRole("option", { name: "OpenAI-compatible" })
-    )
+    await user.click(screen.getByTestId("ai-provider-option-openai-compatible"))
     expect(screen.getByTestId("ai-model-input")).toHaveValue(
       "llama-3.3-70b-versatile"
     )
@@ -114,22 +177,23 @@ describe("SettingsAIConnectionCard", () => {
       </SWRConfig>
     )
 
-    await user.click(screen.getByTestId("ai-suggested-model-gemini-2.5-pro"))
-    expect(screen.getByTestId("ai-model-input")).toHaveValue("gemini-2.5-pro")
+    await user.click(screen.getByTestId("ai-suggested-model-gemini-4-argon"))
+    expect(screen.getByTestId("ai-model-input")).toHaveValue("gemini-4-argon")
 
     resolveFetch({
       connected: true,
       provider: "openai",
-      model: "gpt-4.1-mini",
+      model: "gpt-6.2-sol",
       maskedKey: "sk-p••••9999",
     })
 
     expect(
       await screen.findByTestId("ai-connection-status-badge")
-    ).toHaveTextContent("Connected: OpenAI (gpt-4.1-mini)")
-    expect(screen.getByTestId("ai-provider-select")).toHaveTextContent(
-      "Google Gemini"
+    ).toHaveTextContent("Connected: OpenAI (gpt-6.2-sol)")
+    expect(screen.getByTestId("ai-provider-option-google")).toHaveAttribute(
+      "aria-checked",
+      "true"
     )
-    expect(screen.getByTestId("ai-model-input")).toHaveValue("gemini-2.5-pro")
+    expect(screen.getByTestId("ai-model-input")).toHaveValue("gemini-4-argon")
   })
 })

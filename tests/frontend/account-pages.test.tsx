@@ -256,7 +256,7 @@ describe("Account pages (/stats, /profile, /settings)", () => {
       data: {
         connected: true,
         provider: "google",
-        model: "gemini-2.5-pro",
+        model: "gemini-4-argon",
         maskedKey: "AIza••••3456",
       },
     })
@@ -287,11 +287,11 @@ describe("Account pages (/stats, /profile, /settings)", () => {
       "Not connected"
     )
     expect(screen.getByTestId("ai-privacy-notice")).toHaveTextContent(
-      /HttpOnly.*Path=\/api.*never stored in our database/i
+      /never stored in our database.*AES-256-GCM.*HttpOnly.*Path=\/api/i
     )
 
-    await user.click(screen.getByTestId("ai-suggested-model-gemini-2.5-pro"))
-    expect(screen.getByTestId("ai-model-input")).toHaveValue("gemini-2.5-pro")
+    await user.click(screen.getByTestId("ai-suggested-model-gemini-4-argon"))
+    expect(screen.getByTestId("ai-model-input")).toHaveValue("gemini-4-argon")
 
     await user.type(screen.getByTestId("ai-api-key-input"), "AIzaSyLiveKey3456")
     await user.click(screen.getByTestId("ai-test-save-button"))
@@ -301,7 +301,7 @@ describe("Account pages (/stats, /profile, /settings)", () => {
         "/api/ai/connection",
         {
           provider: "google",
-          model: "gemini-2.5-pro",
+          model: "gemini-4-argon",
           apiKey: "AIzaSyLiveKey3456",
           baseUrl: undefined,
         },
@@ -310,7 +310,7 @@ describe("Account pages (/stats, /profile, /settings)", () => {
       expect(
         screen.getByTestId("ai-connection-status-badge")
       ).toHaveTextContent(
-        "Connected: Google Gemini (gemini-2.5-pro) · AIza••••3456"
+        "Connected: Google Gemini (gemini-4-argon) · AIza••••3456"
       )
     })
 
@@ -341,7 +341,7 @@ describe("Account pages (/stats, /profile, /settings)", () => {
         return {
           connected: true,
           provider: "openai",
-          model: "gpt-4.1-mini",
+          model: "gpt-6.2-sol",
           maskedKey: "sk-p••••9999",
         }
       }
@@ -365,7 +365,7 @@ describe("Account pages (/stats, /profile, /settings)", () => {
     ).toBeInTheDocument()
     expect(
       await screen.findByTestId("ai-connection-status-badge")
-    ).toHaveTextContent("Connected: OpenAI (gpt-4.1-mini) · sk-p••••9999")
+    ).toHaveTextContent("Connected: OpenAI (gpt-6.2-sol) · sk-p••••9999")
     expect(screen.getByTestId("timezone-select-trigger")).toBeInTheDocument()
     expect(screen.getByTestId("account-auth-empty")).toBeInTheDocument()
     expect(

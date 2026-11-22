@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { Key } from "lucide-react"
+import { AIProviderSelector } from "@/components/account/ai-provider-logos"
 import {
   resolveAIConnectionDraft,
   toAIConnectionErrorMessage,
@@ -20,21 +21,9 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import { useAIConnection } from "@/hooks/use-ai-connection"
 import { toast } from "@/hooks/use-toast"
-import {
-  AI_PROVIDER_CATALOG,
-  AI_PROVIDERS,
-  type AIProviderId,
-} from "@/lib/ai/catalog"
+import { AI_PROVIDER_CATALOG, type AIProviderId } from "@/lib/ai/catalog"
 
 export function SettingsAIConnectionCard() {
   const conn = useAIConnection()
@@ -63,8 +52,7 @@ export function SettingsAIConnectionCard() {
     setDraftBaseUrl(null)
   }
 
-  const handleProviderChange = (value: string) => {
-    const next = value as AIProviderId
+  const handleProviderChange = (next: AIProviderId) => {
     setFormError(null)
     if (conn.isConnected && next === conn.provider) {
       resetDraft()
@@ -149,61 +137,41 @@ export function SettingsAIConnectionCard() {
         ) : null}
 
         <form onSubmit={handleSave} className="flex flex-col gap-4">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="ai-provider-select" className="font-medium">
-                Provider
-              </label>
-              <Select
-                value={activeProvider}
-                onValueChange={handleProviderChange}
-                disabled={isBusy}
-              >
-                <SelectTrigger
-                  id="ai-provider-select"
-                  aria-label="AI Provider"
-                  data-testid="ai-provider-select"
-                >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    {AI_PROVIDERS.map((id) => (
-                      <SelectItem key={id} value={id}>
-                        {AI_PROVIDER_CATALOG[id].label}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            </div>
+          <div className="flex flex-col gap-1.5">
+            <span className="font-medium text-foreground">Provider</span>
+            <AIProviderSelector
+              value={activeProvider}
+              connectedProvider={conn.isConnected ? conn.provider : null}
+              disabled={isBusy}
+              onChange={handleProviderChange}
+            />
+          </div>
 
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="ai-model-input" className="font-medium">
-                Model
-              </label>
-              <Input
-                id="ai-model-input"
-                value={modelValue}
-                onChange={(e) => handleModelChange(e.target.value)}
-                placeholder={entry.defaultModel}
-                disabled={isBusy}
-                data-testid="ai-model-input"
-              />
-              <div className="flex flex-wrap items-center gap-1 pt-0.5">
-                {entry.suggestedModels.map((s) => (
-                  <button
-                    key={s}
-                    type="button"
-                    disabled={isBusy}
-                    onClick={() => handleModelChange(s)}
-                    data-testid={`ai-suggested-model-${s}`}
-                    className="rounded-md border border-border bg-muted/30 px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50"
-                  >
-                    {s}
-                  </button>
-                ))}
-              </div>
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="ai-model-input" className="font-medium">
+              Model
+            </label>
+            <Input
+              id="ai-model-input"
+              value={modelValue}
+              onChange={(e) => handleModelChange(e.target.value)}
+              placeholder={entry.defaultModel}
+              disabled={isBusy}
+              data-testid="ai-model-input"
+            />
+            <div className="flex flex-wrap items-center gap-1 pt-0.5">
+              {entry.suggestedModels.map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  disabled={isBusy}
+                  onClick={() => handleModelChange(s)}
+                  data-testid={`ai-suggested-model-${s}`}
+                  className="rounded-md border border-border bg-muted/30 px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50"
+                >
+                  {s}
+                </button>
+              ))}
             </div>
           </div>
 

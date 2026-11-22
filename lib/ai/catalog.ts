@@ -11,6 +11,7 @@ export interface AIProviderCatalogEntry {
   readonly id: AIProviderId
   readonly label: string
   readonly shortLabel: string
+  readonly subtitle: string
   readonly defaultModel: string
   readonly suggestedModels: readonly string[]
   readonly baseUrlRequired: boolean
@@ -27,11 +28,13 @@ export const AI_PROVIDER_CATALOG: Readonly<
     id: "google",
     label: "Google Gemini",
     shortLabel: "Gemini",
-    defaultModel: "gemini-2.5-flash",
+    subtitle: "Gemini 3.8 & 4",
+    defaultModel: "gemini-3.8-flash",
     suggestedModels: [
-      "gemini-2.5-flash",
-      "gemini-2.5-pro",
-      "gemini-2.5-flash-lite",
+      "gemini-3.8-flash",
+      "gemini-3.5-flash-lite",
+      "gemini-4-argon",
+      "gemini-flash-latest",
     ],
     baseUrlRequired: false,
     baseUrlPlaceholder: "https://generativelanguage.googleapis.com/v1beta",
@@ -43,8 +46,14 @@ export const AI_PROVIDER_CATALOG: Readonly<
     id: "openai",
     label: "OpenAI",
     shortLabel: "OpenAI",
-    defaultModel: "gpt-4.1-mini",
-    suggestedModels: ["gpt-4.1-mini", "gpt-4.1", "gpt-4o-mini", "o4-mini"],
+    subtitle: "GPT-6 family",
+    defaultModel: "gpt-6.2-sol",
+    suggestedModels: [
+      "gpt-6.2-sol",
+      "gpt-6.1-terra",
+      "gpt-6-luna",
+      "gpt-6.2-astra",
+    ],
     baseUrlRequired: false,
     baseUrlPlaceholder: "https://api.openai.com/v1",
     apiKeyPlaceholder: "sk-...",
@@ -55,11 +64,13 @@ export const AI_PROVIDER_CATALOG: Readonly<
     id: "anthropic",
     label: "Anthropic",
     shortLabel: "Anthropic",
-    defaultModel: "claude-sonnet-4-5",
+    subtitle: "Claude 5.5 family",
+    defaultModel: "claude-sonnet-5-5",
     suggestedModels: [
-      "claude-sonnet-4-5",
-      "claude-haiku-4-5",
-      "claude-opus-4-5",
+      "claude-sonnet-5-5",
+      "claude-haiku-5-5",
+      "claude-opus-5-5",
+      "claude-fable-5-2",
     ],
     baseUrlRequired: false,
     baseUrlPlaceholder: "https://api.anthropic.com/v1",
@@ -71,11 +82,12 @@ export const AI_PROVIDER_CATALOG: Readonly<
     id: "openai-compatible",
     label: "OpenAI-compatible",
     shortLabel: "OpenAI-compatible",
-    defaultModel: "llama-3.3-70b-instruct",
+    subtitle: "Custom endpoint",
+    defaultModel: "deepseek-chat",
     suggestedModels: [
+      "deepseek-chat",
       "llama-3.3-70b-instruct",
       "qwen-2.5-coder-32b-instruct",
-      "deepseek-chat",
     ],
     baseUrlRequired: true,
     baseUrlPlaceholder: "https://api.together.xyz/v1",

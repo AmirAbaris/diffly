@@ -35,7 +35,7 @@ describe("GeneratorForm Component", () => {
     mockConnectionState = {
       isConnected: true,
       provider: "anthropic",
-      model: "claude-sonnet-4-5",
+      model: "claude-sonnet-5-5",
       baseUrl: null,
       maskedKey: "sk-a••••1234",
       isLoading: false,
@@ -78,7 +78,7 @@ describe("GeneratorForm Component", () => {
     ).not.toBeInTheDocument()
 
     expect(screen.getByTestId("generator-ai-status-pill")).toHaveTextContent(
-      "Connected: Anthropic (claude-sonnet-4-5)"
+      "Connected: Anthropic (claude-sonnet-5-5)"
     )
 
     const manageLink = screen.getByTestId("generator-manage-settings-link")

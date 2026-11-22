@@ -34,7 +34,7 @@ describe("useAIConnection", () => {
       data: {
         connected: true,
         provider: "anthropic",
-        model: "claude-sonnet-4-5",
+        model: "claude-sonnet-5-5",
         maskedKey: "sk-a••••9876",
       },
     })
@@ -51,7 +51,7 @@ describe("useAIConnection", () => {
 
     expect(getSpy).toHaveBeenCalledWith(AI_CONNECTION_SWR_KEY)
     expect(result.current.provider).toBe("anthropic")
-    expect(result.current.model).toBe("claude-sonnet-4-5")
+    expect(result.current.model).toBe("claude-sonnet-5-5")
     expect(result.current.baseUrl).toBeNull()
     expect(result.current.maskedKey).toBe("sk-a••••9876")
   })
@@ -65,7 +65,7 @@ describe("useAIConnection", () => {
       data: {
         connected: true,
         provider: "openai",
-        model: "gpt-4.1-mini",
+        model: "gpt-6.2-sol",
         maskedKey: "sk-p••••4321",
       },
     })
@@ -84,7 +84,7 @@ describe("useAIConnection", () => {
     await act(async () => {
       await result.current.saveConnection({
         provider: "openai",
-        model: "gpt-4.1-mini",
+        model: "gpt-6.2-sol",
         apiKey: "sk-proj-secret-4321",
       })
     })
@@ -93,14 +93,14 @@ describe("useAIConnection", () => {
       AI_CONNECTION_SWR_KEY,
       {
         provider: "openai",
-        model: "gpt-4.1-mini",
+        model: "gpt-6.2-sol",
         apiKey: "sk-proj-secret-4321",
       },
       { timeout: AI_CONNECTION_VERIFY_TIMEOUT_MS }
     )
     expect(result.current.isConnected).toBe(true)
     expect(result.current.provider).toBe("openai")
-    expect(result.current.model).toBe("gpt-4.1-mini")
+    expect(result.current.model).toBe("gpt-6.2-sol")
     expect(result.current.maskedKey).toBe("sk-p••••4321")
     expect(window.localStorage.getItem(LEGACY_GEMINI_STORAGE_KEY)).toBeNull()
   })
@@ -139,7 +139,7 @@ describe("useAIConnection", () => {
       await expect(
         result.current.saveConnection({
           provider: "google",
-          model: "gemini-2.5-flash",
+          model: "gemini-3.8-flash",
           apiKey: "invalid-key",
         })
       ).rejects.toThrow(
@@ -158,7 +158,7 @@ describe("useAIConnection", () => {
       data: {
         connected: true,
         provider: "google",
-        model: "gemini-2.5-flash",
+        model: "gemini-3.8-flash",
         maskedKey: "AIza••••1234",
       },
     })

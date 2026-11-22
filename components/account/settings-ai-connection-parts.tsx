@@ -1,7 +1,14 @@
 "use client"
 
 import * as React from "react"
-import { AlertCircle, ExternalLink, Eye, EyeOff, Trash2 } from "lucide-react"
+import {
+  AlertCircle,
+  ExternalLink,
+  Eye,
+  EyeOff,
+  ShieldCheck,
+  Trash2,
+} from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -11,6 +18,12 @@ import {
   InputGroupButton,
   InputGroupInput,
 } from "@/components/ui/input-group"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import type { UseAIConnectionResult } from "@/hooks/use-ai-connection"
 import {
   formatAIConnectionSummary,
@@ -80,25 +93,39 @@ export function AIConnectionCredentialFields(props: {
   onBaseUrlChange: (value: string) => void
   onToggleShowKey: () => void
 }) {
-  const {
-    entry,
-    apiKeyInput,
-    baseUrlValue,
-    showKey,
-    isBusy,
-    onApiKeyChange,
-    onBaseUrlChange,
-    onToggleShowKey,
-  } = props
+  const { entry, apiKeyInput, baseUrlValue, showKey, isBusy } = props
   const KeyIcon = showKey ? EyeOff : Eye
 
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
       <div className="flex flex-col gap-1.5">
-        <div className="flex items-center justify-between">
-          <label htmlFor="ai-api-key-input" className="font-medium">
-            API Key
-          </label>
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5">
+            <label htmlFor="ai-api-key-input" className="font-medium">
+              API Key
+            </label>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span
+                    tabIndex={0}
+                    data-testid="ai-api-key-encrypted-badge"
+                    className="inline-flex cursor-help items-center gap-1 rounded-md border border-border/70 bg-muted/40 px-1.5 py-0.5 text-[11px] font-normal text-muted-foreground"
+                  >
+                    <ShieldCheck
+                      aria-hidden="true"
+                      className="size-3 text-emerald-600 dark:text-emerald-400"
+                    />
+                    <span>Encrypted</span>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>
+                  Sealed with AES-256-GCM in an HttpOnly cookie. Unreadable by
+                  browser JavaScript.
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
           {entry.keyPortalUrl ? (
             <a
               href={entry.keyPortalUrl}
@@ -117,7 +144,7 @@ export function AIConnectionCredentialFields(props: {
             id="ai-api-key-input"
             type={showKey ? "text" : "password"}
             value={apiKeyInput}
-            onChange={(e) => onApiKeyChange(e.target.value)}
+            onChange={(e) => props.onApiKeyChange(e.target.value)}
             placeholder={entry.apiKeyPlaceholder}
             aria-label="API Key"
             disabled={isBusy}
@@ -127,7 +154,7 @@ export function AIConnectionCredentialFields(props: {
             <InputGroupButton
               size="icon-xs"
               disabled={isBusy}
-              onClick={onToggleShowKey}
+              onClick={props.onToggleShowKey}
               aria-label={showKey ? "Hide API key" : "Show API key"}
               data-testid="ai-api-key-visibility-toggle"
             >
@@ -151,7 +178,7 @@ export function AIConnectionCredentialFields(props: {
           id="ai-base-url-input"
           type="url"
           value={baseUrlValue}
-          onChange={(e) => onBaseUrlChange(e.target.value)}
+          onChange={(e) => props.onBaseUrlChange(e.target.value)}
           placeholder={entry.baseUrlPlaceholder}
           required={entry.baseUrlRequired}
           disabled={isBusy}
@@ -166,28 +193,50 @@ export function AIConnectionPrivacyFooter(props: {
   canSubmit: boolean
   isSaving: boolean
 }) {
-  const { canSubmit, isSaving } = props
-
   return (
-    <div className="flex flex-col justify-between gap-3 border-t border-border/70 pt-3 sm:flex-row sm:items-center">
-      <p
+    <div className="flex flex-col gap-3 border-t border-border/70 pt-3">
+      <div
         data-testid="ai-privacy-notice"
-        className="leading-relaxed text-muted-foreground"
+        className="space-y-2 rounded-lg border border-border/70 bg-muted/25 p-3.5"
       >
-        Your API key is verified once and sealed in an{" "}
-        <code className="font-mono text-foreground">HttpOnly</code> cookie (
-        <code className="font-mono text-foreground">Path=/api</code>). It is
-        never stored in our database and is unreadable by browser JavaScript.
-      </p>
-      <Button
-        type="submit"
-        size="sm"
-        disabled={!canSubmit}
-        className="shrink-0"
-        data-testid="ai-test-save-button"
-      >
-        {isSaving ? "Testing & Saving…" : "Test & Save"}
-      </Button>
+        <div className="flex items-center gap-2 font-medium text-foreground">
+          <ShieldCheck
+            aria-hidden="true"
+            className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400"
+          />
+          <span>
+            Your API key is encrypted and never stored in our database
+          </span>
+        </div>
+        <ul className="list-disc space-y-1 pl-4 leading-relaxed text-muted-foreground [&_code]:font-mono [&_code]:text-foreground">
+          <li>
+            Sealed server-side with AES-256-GCM inside an <code>HttpOnly</code>,{" "}
+            <code>SameSite=Lax</code> cookie (<code>Path=/api</code>) so browser
+            JavaScript cannot read it.
+          </li>
+          <li>
+            Never written to PostgreSQL, logs, or <code>localStorage</code>, and
+            stripped before backend challenge persistence.
+          </li>
+          <li>
+            Used only to call your chosen provider from Diffly&apos;s server
+            route. Click{" "}
+            <strong className="font-medium text-foreground">Disconnect</strong>{" "}
+            anytime to clear it immediately.
+          </li>
+        </ul>
+      </div>
+      <div className="flex justify-end">
+        <Button
+          type="submit"
+          size="sm"
+          disabled={!props.canSubmit}
+          className="shrink-0"
+          data-testid="ai-test-save-button"
+        >
+          {props.isSaving ? "Testing & Saving…" : "Test & Save"}
+        </Button>
+      </div>
     </div>
   )
 }
