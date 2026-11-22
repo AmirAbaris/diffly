@@ -190,7 +190,8 @@ describe("LandingPage & Sandbox Engine", () => {
 
     try {
       const ssrHtml = renderToString(<LandingPage />)
-      expect(ssrHtml).toContain("vgpu · Booting")
+      expect(ssrHtml).toContain('data-shader-status="initializing"')
+      expect(ssrHtml).not.toContain("vgpu ·")
       container.innerHTML = ssrHtml
 
       await act(async () => {

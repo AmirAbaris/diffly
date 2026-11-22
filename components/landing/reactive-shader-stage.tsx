@@ -6,10 +6,7 @@ import { ArrowRight, Sparkles, Terminal } from "lucide-react"
 import { useTheme } from "next-themes"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import {
-  useReactiveDiffShader,
-  type WebGpuRuntimeStatus,
-} from "@/hooks/use-reactive-diff-shader"
+import { useReactiveDiffShader } from "@/hooks/use-reactive-diff-shader"
 import type { SandboxEvaluationReadout } from "@/lib/landing/sandbox-engine"
 import type {
   ShaderMachinePhase,
@@ -29,13 +26,6 @@ const PHASE_LABELS: Readonly<Record<ShaderMachinePhase, string>> = {
   "defect-pulse": "ANOMALY_HIT // SIGNAL_LOCKED",
   "false-alarm": "FALSE_POSITIVE // NOISE_SPIKE",
   "idle-scan": "IDLE_SCAN // LATTICE_READY",
-}
-
-const RUNTIME_BADGES: Readonly<Record<WebGpuRuntimeStatus, string>> = {
-  running: "vgpu · 60fps",
-  "reduced-motion": "vgpu · Static",
-  fallback: "Lattice · SVG",
-  initializing: "vgpu · Booting",
 }
 
 export function ReactiveShaderStage({
@@ -117,10 +107,6 @@ export function ReactiveShaderStage({
             />
             {PHASE_LABELS[activePhase]}
           </Badge>
-
-          <span className="rounded-md border border-border bg-background/80 px-2 py-0.5 font-mono text-[11px] text-muted-foreground tabular-nums">
-            {RUNTIME_BADGES[status]}
-          </span>
         </div>
 
         <div className="flex flex-col gap-3 pt-2">
