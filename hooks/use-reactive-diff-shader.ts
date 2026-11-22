@@ -10,7 +10,7 @@ import {
 } from "@/lib/landing/shader-signal-bridge"
 
 export type WebGpuRuntimeStatus =
-  "initializing" | "running" | "paused" | "reduced-motion" | "fallback"
+  "initializing" | "running" | "reduced-motion" | "fallback"
 
 export interface UseReactiveDiffShaderOptions {
   readonly bridge: ShaderSignalBridge
@@ -21,8 +21,6 @@ export interface UseReactiveDiffShaderOptions {
 export interface UseReactiveDiffShaderReturn {
   readonly canvasRef: React.RefObject<HTMLCanvasElement | null>
   readonly status: WebGpuRuntimeStatus
-  readonly isPaused: boolean
-  readonly togglePause: () => void
   readonly triggerSingleFrame: () => void
 }
 
@@ -75,7 +73,6 @@ export function useReactiveDiffShader(
 
   const [gpuReady, setGpuReady] = React.useState(false)
   const [gpuFailed, setGpuFailed] = React.useState(false)
-  const [userPaused, setUserPaused] = React.useState(false)
   const prefersReducedMotion = React.useSyncExternalStore(
     subscribeReducedMotion,
     getReducedMotionSnapshot,
@@ -221,19 +218,19 @@ export function useReactiveDiffShader(
       return
     }
 
-    if (prefersReducedMotion || userPaused) {
+    if (prefersReducedMotion) {
       stopLoopRef.current?.()
       renderOnceRef.current?.()
     } else {
       startLoopRef.current?.()
     }
-  }, [gpuFailed, gpuReady, prefersReducedMotion, userPaused])
+  }, [gpuFailed, gpuReady, prefersReducedMotion])
 
   React.useEffect(() => {
     if (
       !gpuReady ||
       gpuFailed ||
-      (!prefersReducedMotion && !userPaused) ||
+      !prefersReducedMotion ||
       typeof window === "undefined"
     ) {
       return
@@ -248,11 +245,7 @@ export function useReactiveDiffShader(
     return () => {
       window.removeEventListener("resize", handleWindowResize)
     }
-  }, [gpuFailed, gpuReady, prefersReducedMotion, userPaused])
-
-  const togglePause = React.useCallback(() => {
-    setUserPaused((prev) => !prev)
-  }, [])
+  }, [gpuFailed, gpuReady, prefersReducedMotion])
 
   const triggerSingleFrame = React.useCallback(() => {
     if (!isLoopActiveRef.current) {
@@ -265,20 +258,12 @@ export function useReactiveDiffShader(
   if (gpuFailed) {
     status = "fallback"
   } else if (gpuReady) {
-    if (prefersReducedMotion) {
-      status = "reduced-motion"
-    } else if (userPaused) {
-      status = "paused"
-    } else {
-      status = "running"
-    }
+    status = prefersReducedMotion ? "reduced-motion" : "running"
   }
 
   return {
     canvasRef,
     status,
-    isPaused: userPaused || prefersReducedMotion,
-    togglePause,
     triggerSingleFrame,
   }
 }

@@ -126,7 +126,7 @@ export function LandingPage({
         className="border-b border-border"
       >
         <div className="mx-auto grid max-w-6xl grid-cols-1 border-x border-border lg:grid-cols-12">
-          <div className="lg:col-span-6">
+          <div className="h-full lg:col-span-5">
             <ReactiveShaderStage
               bridge={bridge}
               readout={readout}
@@ -134,7 +134,7 @@ export function LandingPage({
             />
           </div>
 
-          <div className="lg:col-span-6">
+          <div className="h-full lg:col-span-7">
             <InteractiveDiffSandbox
               scenarios={scenarios}
               activeScenario={activeScenario}
