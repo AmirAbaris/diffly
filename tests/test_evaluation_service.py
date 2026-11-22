@@ -1,5 +1,7 @@
 """Regression tests for evaluation exploits, scoring smoothing, and edge cases."""
 
+import pytest
+
 from backend.models.challenge import Category, Challenge, Difficulty, Language
 from backend.services.evaluation_service import evaluate_review
 
@@ -71,7 +73,7 @@ def test_missed_issues_revealed_when_threshold_passed():
         ]
     )
 
-    # 1 of 2 defects earns 50/100 (< 80), so pass_threshold=50 tests unlock.
+    # Critical (4) vs high (3) earns 4/7 (~57/100 < 80), so pass_threshold=50 unlocks.
     result = evaluate_review(
         challenge=challenge,
         flagged_lines=[10],
@@ -80,7 +82,7 @@ def test_missed_issues_revealed_when_threshold_passed():
         pass_threshold=50,
     )
 
-    assert result.score == 50
+    assert result.score == 57
     assert len(result.missed_issues) == 1
     missed = result.missed_issues[0]
     assert missed.expected_lines == [20, 21]
@@ -185,9 +187,9 @@ def test_keyword_stuffing_on_missed_defect_in_multi_defect_challenge():
         user_comments="auth bypass sql injection",
     )
 
-    assert result.score == 50
-    assert result.line_precision_score == 50.0
-    assert result.concept_score == 50.0
+    assert result.score == 57
+    assert result.line_precision_score == pytest.approx(57.14)
+    assert result.concept_score == pytest.approx(57.14)
     assert [issue.id for issue in result.detected_issues] == ["d1"]
     assert [issue.id for issue in result.missed_issues] == ["d2"]
 
@@ -262,17 +264,17 @@ def test_overlapping_defects_enforces_one_to_one_matching():
         ]
     )
 
-    # Line 11 is in d1 exact and d2 tolerated (12 - 1), must only match ONE defect.
+    # Line 11 is exact for d1 (high, 3/7) and tolerated for d2 (critical), so d1 wins.
     res_single = evaluate_review(
         challenge=challenge,
         flagged_lines=[11],
         user_comments="auth session sql query",
     )
-    assert len(res_single.detected_issues) == 1
-    assert len(res_single.missed_issues) == 1
-    assert res_single.line_precision_score == 50.0
-    assert res_single.concept_score == 50.0
-    assert res_single.score == 50
+    assert [issue.id for issue in res_single.detected_issues] == ["d1"]
+    assert [issue.id for issue in res_single.missed_issues] == ["d2"]
+    assert res_single.line_precision_score == pytest.approx(42.86)
+    assert res_single.concept_score == pytest.approx(42.86)
+    assert res_single.score == 43
     assert res_single.false_positive_lines == []
 
     # Flagging [10, 12] matches both defects 1-to-1 even though 12 is in d1's tolerance.
@@ -314,9 +316,9 @@ def test_identical_line_defects_cannot_double_count_single_flag():
         flagged_lines=[15],
         user_comments="xss and csrf",
     )
-    assert len(res.detected_issues) == 1
-    assert len(res.missed_issues) == 1
-    assert res.score == 50
+    assert [issue.id for issue in res.detected_issues] == ["d1"]
+    assert [issue.id for issue in res.missed_issues] == ["d2"]
+    assert res.score == 60
 
 
 def test_empty_expected_issues_returns_zero():

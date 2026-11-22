@@ -2,7 +2,8 @@
 
 import json
 import re
-from typing import Any, Literal
+from collections.abc import Sequence
+from typing import Any
 
 from pydantic import (
     AliasChoices,
@@ -13,10 +14,15 @@ from pydantic import (
     model_validator,
 )
 
-from backend.models.challenge import Challenge, ChallengeFile, FlaggedLineRef
+from backend.models.challenge import (
+    Challenge,
+    ChallengeFile,
+    FlaggedLineItem,
+    FlaggedLineRef,
+)
+from backend.services.grading.weights import Severity as Severity
 
 
-Severity = Literal["critical", "high", "medium", "low"]
 MAX_ANCHOR_SPAN = 15
 MIN_REVIEW_TEXT_CHARS = 5
 ScopedLine = tuple[str | None, int]
@@ -241,6 +247,24 @@ class ReviewSubmission(BaseModel):
                     f"Overlapping anchors between findings '{prev.id}' and '{curr.id}'"
                 )
         return self
+
+
+def findings_to_flagged_lines(findings: Sequence[Finding]) -> list[FlaggedLineItem]:
+    """Derive deduplicated legacy flagged_lines entries from ordered findings."""
+    derived: list[FlaggedLineItem] = []
+    seen: set[tuple[str | None, int]] = set()
+    for finding in findings:
+        fp = finding.anchor.file_path
+        for ln in finding.anchor.lines():
+            key = (fp, ln)
+            if key in seen:
+                continue
+            seen.add(key)
+            if fp is not None:
+                derived.append(FlaggedLineRef(file_path=fp, line_number=ln))
+            else:
+                derived.append(ln)
+    return derived
 
 
 def validate_review_text(

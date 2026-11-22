@@ -5,7 +5,7 @@ import re
 from typing import Any
 from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
 
-from pydantic import field_validator, model_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -95,6 +95,9 @@ class Settings(BaseSettings):
     DB_POOL_PRE_PING: bool = True
     DB_CONNECT_TIMEOUT: int = 10
     VERCEL: str | None = None
+    GEMINI_JUDGE_API_KEY: SecretStr | None = None
+    GEMINI_JUDGE_MODEL: str = "gemini-3.1-flash-lite"
+    GEMINI_JUDGE_TIMEOUT_S: float = Field(default=8.0, gt=0.0)
 
     @field_validator("DATABASE_URL", mode="before")
     @classmethod

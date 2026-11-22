@@ -185,10 +185,10 @@ def test_evaluate_review_partial_score_multi_defect(
         user_comments="Token signature bypass allows broken authentication.",
     )
 
-    # 1 of 2 defects found with full line & concept -> 50% total
-    assert result.score == 50
-    assert result.line_precision_score == 50.0
-    assert result.concept_score == 50.0
+    # Detecting critical (4) and missing high (3) earns 4/7 (~57%)
+    assert result.score == 57
+    assert result.line_precision_score == pytest.approx(57.14)
+    assert result.concept_score == pytest.approx(57.14)
     assert len(result.detected_issues) == 1
     assert result.detected_issues[0].id == "defect-auth-bypass"
     assert len(result.missed_issues) == 1

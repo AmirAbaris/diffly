@@ -1,13 +1,12 @@
 """v2 grading engine: per-finding line tightness, concept attribution, and verdicts."""
 
-import functools
 import json
-import re
 import time
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 from backend.models.challenge import (
     Challenge,
@@ -15,12 +14,26 @@ from backend.models.challenge import (
     FlaggedLineItem,
     FlaggedLineRef,
 )
+from backend.services.grading.concepts import (
+    ConceptMatch,
+    Evidence,
+    EvidenceSource,
+    bind_evidence,
+    match_concepts,
+)
+from backend.services.grading.concepts import (
+    is_keyword_matched as is_keyword_matched,
+)
+from backend.services.grading.judge.models import JudgeOutcome
 from backend.services.grading.matching import match_one_to_one
+from backend.services.grading.reveal import should_reveal
 from backend.services.grading.review import (
     ReviewSubmission,
     ScopedLine,
     extract_challenge_files,
 )
+from backend.services.grading.text.normalize import normalize_text
+from backend.services.grading.weights import defect_weights
 
 
 PASS_SCORE_THRESHOLD = 80
@@ -42,6 +55,8 @@ class GradingPolicy:
     allow_single_line_tolerance: bool = False
     pass_threshold: int = PASS_SCORE_THRESHOLD
     max_attempts: int = MAX_BLIND_ATTEMPTS
+    severity_weights: Mapping[str, float] | None = None
+    shared_summary_weight: float = 0.5
 
 
 class FindingVerdict(BaseModel):
@@ -66,10 +81,15 @@ class DetectedIssue(BaseModel):
     severity: str
     matched_lines: list[FlaggedLineItem] = Field(default_factory=list)
     matched_keywords: list[str] = Field(default_factory=list)
+    denied_keywords: list[str] = Field(default_factory=list)
+    evidence: list[EvidenceSource] = Field(default_factory=list)
+    concept_source: Literal["keywords", "judge"] = "keywords"
     line_score: float = Field(default=0.0, ge=0.0, le=1.0)
     concept_score: float = Field(default=0.0, ge=0.0, le=1.0)
+    weight: float = 0.0
     explanation: str = ""
     finding_ids: list[str] = Field(default_factory=list)
+    _defect_index: int | None = PrivateAttr(default=None)
 
 
 class MissedIssue(BaseModel):
@@ -82,7 +102,10 @@ class MissedIssue(BaseModel):
     severity: str
     expected_lines: list[FlaggedLineItem] = Field(default_factory=list)
     missing_keywords: list[str] = Field(default_factory=list)
+    denied_keywords: list[str] = Field(default_factory=list)
+    weight: float = 0.0
     explanation: str = ""
+    _defect_index: int | None = PrivateAttr(default=None)
 
 
 class GradeReport(BaseModel):
@@ -101,6 +124,37 @@ class GradeReport(BaseModel):
     critique: str = ""
     execution_time_ms: float = 0.0
     finding_verdicts: list[FindingVerdict] = Field(default_factory=list)
+    borderline_defect_ids: list[str] = Field(default_factory=list)
+    judge: JudgeOutcome | None = None
+    _raw_missed_issues: list[MissedIssue] | None = PrivateAttr(default=None)
+
+
+def aggregate_scores(
+    line_scores: Sequence[float],
+    concept_scores: Sequence[float],
+    weights: Sequence[float],
+    false_positive_penalty: float,
+    policy: GradingPolicy,
+) -> tuple[float, float, int]:
+    """Compute weighted (line_precision_score, concept_score, normalized_score)."""
+    if not weights:
+        clamped = max(0, min(100, int(round(-false_positive_penalty))))
+        return 0.0, 0.0, clamped
+
+    weighted_line = sum(w * ln for w, ln in zip(weights, line_scores, strict=True))
+    weighted_concept = sum(w * c for w, c in zip(weights, concept_scores, strict=True))
+    avg_line_score = weighted_line * 100.0
+    avg_concept_score = weighted_concept * 100.0
+    base_score = (avg_line_score * policy.line_weight) + (
+        avg_concept_score * policy.concept_weight
+    )
+    raw_final_score = base_score - false_positive_penalty
+    normalized_score = max(0, min(100, int(round(raw_final_score))))
+    return (
+        min(100.0, round(avg_line_score, 2)),
+        min(100.0, round(avg_concept_score, 2)),
+        normalized_score,
+    )
 
 
 def find_contiguous_blocks(lines: list[int]) -> list[tuple[int, int]]:
@@ -172,36 +226,12 @@ def redact_missed_issues(missed_issues: list[MissedIssue]) -> list[MissedIssue]:
             severity=issue.severity,
             expected_lines=[],
             missing_keywords=[],
+            denied_keywords=[],
+            weight=issue.weight,
             explanation="",
         )
         for issue in missed_issues
     ]
-
-
-@functools.lru_cache(maxsize=1024)
-def _compile_word_pattern(kw: str) -> re.Pattern[str]:
-    return re.compile(rf"\b{re.escape(kw)}\b", re.IGNORECASE)
-
-
-@functools.lru_cache(maxsize=1024)
-def _compile_compound_pattern(kw: str) -> re.Pattern[str]:
-    return re.compile(rf"(?:\b|^){re.escape(kw)}(?:\b|$)", re.IGNORECASE)
-
-
-def is_keyword_matched(keyword: str, text: str) -> bool:
-    """Check case-insensitively whether a keyword appears in the review text."""
-    if not keyword or not text:
-        return False
-    kw = keyword.strip()
-    if not kw:
-        return False
-
-    if re.fullmatch(r"[\w]+", kw):
-        return bool(_compile_word_pattern(kw).search(text))
-
-    if _compile_compound_pattern(kw).search(text):
-        return True
-    return kw.lower() in text.lower()
 
 
 def extract_expected_issues(
@@ -304,9 +334,12 @@ def generate_critique(
             lines_str = ", ".join(
                 _format_line_item_text(ln) for ln in issue.matched_lines
             )
-            kws_str = (
-                ", ".join(issue.matched_keywords) if issue.matched_keywords else "none"
-            )
+            if issue.matched_keywords:
+                kws_str = ", ".join(issue.matched_keywords)
+            elif issue.concept_source == "judge":
+                kws_str = "semantic judge"
+            else:
+                kws_str = "none"
             parts.append(
                 f"  ✓ {issue.title} [{issue.severity.upper()}] "
                 f"(Line(s): {lines_str} | Concepts: {kws_str})"
@@ -332,25 +365,43 @@ def generate_critique(
     return summary_phrase, critique
 
 
-def _score_defect_keywords(
-    defect: DefectCriterion,
-    text: str,
-    *,
-    has_lines: bool,
-    target_keyword_matches: int,
-) -> tuple[list[str], list[str], float]:
-    matched_kws = [kw for kw in defect.keywords if is_keyword_matched(kw, text)]
-    missing_kws = [kw for kw in defect.keywords if kw not in matched_kws]
-    if not defect.keywords:
-        raw_concept = 1.0 if (has_lines and text.strip()) else 0.0
-    else:
-        required_target = min(target_keyword_matches, len(defect.keywords))
-        raw_concept = (
-            1.0
-            if required_target == 0
-            else min(1.0, len(matched_kws) / required_target)
-        )
-    return matched_kws, missing_kws, raw_concept
+def _sorted_evidence_sources(
+    sources: frozenset[EvidenceSource],
+) -> list[EvidenceSource]:
+    return [src for src in EvidenceSource if src in sources]
+
+
+def _has_non_empty_evidence(evidence: Sequence[Evidence]) -> bool:
+    return any(sent.raw.strip() for ev in evidence for sent in ev.sentences)
+
+
+def _join_finding_evidence(
+    bound_indices: Sequence[int],
+    finding_evidence: Sequence[tuple[Evidence, ...]],
+    findings: Sequence[Any],
+    shared_summary_weight: float,
+) -> tuple[Evidence, ...]:
+    if len(bound_indices) == 1:
+        return finding_evidence[bound_indices[0]]
+    has_any_inline_body = any(findings[fi].body.strip() for fi in bound_indices)
+    joined: list[Evidence] = []
+    for fi in bound_indices:
+        for ev in finding_evidence[fi]:
+            if (
+                has_any_inline_body
+                and ev.source == EvidenceSource.SUMMARY_SHARED
+                and ev.weight > shared_summary_weight
+            ):
+                joined.append(
+                    Evidence(
+                        sentences=ev.sentences,
+                        source=ev.source,
+                        weight=shared_summary_weight,
+                    )
+                )
+            else:
+                joined.append(ev)
+    return tuple(joined)
 
 
 def grade_review(
@@ -392,7 +443,10 @@ def grade_review(
             critique="No expected defects configured for this challenge.",
             execution_time_ms=elapsed,
             finding_verdicts=[],
+            borderline_defect_ids=[],
         )
+
+    weights = defect_weights(expected_issues, active_policy.severity_weights)
 
     defect_exact: list[set[ScopedLine]] = []
     defect_tolerated: list[set[ScopedLine]] = []
@@ -440,23 +494,55 @@ def grade_review(
             line_defect_indices.append(idx)
 
     finding_scoped_lines: list[list[ScopedLine]] = []
+    exact_lines_by_file: dict[str | None, set[int]] = {}
     for finding in review.findings:
         fp = (
             finding.anchor.file_path
             if finding.anchor.file_path is not None
             else default_file_path
         )
-        finding_scoped_lines.append([(fp, ln) for ln in finding.anchor.lines()])
-
-    pair_line_scores: dict[tuple[int, int], float] = {}
-    pair_concept_scores: dict[tuple[int, int], float] = {}
-    pair_keywords: dict[tuple[int, int], tuple[list[str], list[str]]] = {}
-    match_weights: dict[tuple[int, int], float] = {}
+        lines_list = [(fp, ln) for ln in finding.anchor.lines()]
+        finding_scoped_lines.append(lines_list)
+        exact_lines_by_file.setdefault(fp, set()).update(finding.anchor.lines())
 
     summary_note = review.summary_note.strip()
-    for f_idx, finding in enumerate(review.findings):
+    summary_norm = normalize_text(summary_note)
+    all_bodies_empty = all(not f.body.strip() for f in review.findings)
+    all_finding_ids = frozenset(f.id for f in review.findings)
+    finding_evidence: list[tuple[Evidence, ...]] = []
+    for finding in review.findings:
+        fp = (
+            finding.anchor.file_path
+            if finding.anchor.file_path is not None
+            else default_file_path
+        )
+        own_lines = set(finding.anchor.lines())
+        other_exact = exact_lines_by_file.get(fp, set()) - own_lines
+        tol = max(0, active_policy.tolerance)
+        anchor_lines = frozenset(
+            ln
+            for raw_ln in own_lines
+            for ln in range(max(1, raw_ln - tol), raw_ln + tol + 1)
+            if ln in own_lines or ln not in other_exact
+        )
+        finding_evidence.append(
+            bind_evidence(
+                finding,
+                summary_norm,
+                anchor_lines,
+                active_policy,
+                all_bodies_empty=all_bodies_empty,
+                other_finding_ids=all_finding_ids - {finding.id},
+            )
+        )
+
+    pair_line_scores: dict[tuple[int, int], float] = {}
+    pair_concept_matches: dict[tuple[int, int], ConceptMatch] = {}
+    match_weights: dict[tuple[int, int], float] = {}
+
+    for f_idx, _finding in enumerate(review.findings):
         f_lines = finding_scoped_lines[f_idx]
-        f_text = f"{finding.body}\n{summary_note}".strip()
+        f_evidence = finding_evidence[f_idx]
         for d_idx in line_defect_indices:
             best_rank = 0.0
             has_exact = False
@@ -476,20 +562,22 @@ def grade_review(
                 (len(defect_exact[d_idx]) + 2 * active_policy.tolerance) / len(f_lines),
             )
             line_fd = best_rank * tightness
-            matched_kws, missing_kws, concept_fd = _score_defect_keywords(
+            concept_match = match_concepts(
                 expected_issues[d_idx],
-                f_text,
+                f_evidence,
                 has_lines=True,
-                target_keyword_matches=active_policy.target_keyword_matches,
+                target=active_policy.target_keyword_matches,
             )
 
             pair_line_scores[(f_idx, d_idx)] = line_fd
-            pair_concept_scores[(f_idx, d_idx)] = concept_fd
-            pair_keywords[(f_idx, d_idx)] = (matched_kws, missing_kws)
+            pair_concept_matches[(f_idx, d_idx)] = concept_match
 
-            kw_bonus = round(concept_fd * 100)
+            kw_bonus = round(concept_match.score * 100)
             match_weights[(f_idx, d_idx)] = (
-                line_fd + (0.001 if has_exact else 0.0) + kw_bonus * 1e-6
+                line_fd
+                + (0.001 if has_exact else 0.0)
+                + weights[d_idx] * 1e-4
+                + kw_bonus * 1e-8
             )
 
     assigned = match_one_to_one(
@@ -506,6 +594,9 @@ def grade_review(
     }
     finding_ids_by_defect: dict[int, list[str]] = {
         d_idx: [review.findings[f_idx].id] for d_idx, f_idx in assigned.items()
+    }
+    finding_indices_by_defect: dict[int, list[int]] = {
+        d_idx: [f_idx] for d_idx, f_idx in assigned.items()
     }
 
     matched_defect_ids = list(assigned.keys())
@@ -556,6 +647,7 @@ def grade_review(
                     lk for lk in f_lines if lk in all_eligible_lines
                 )
                 finding_ids_by_defect[best_defect].append(finding.id)
+                finding_indices_by_defect[best_defect].append(f_idx)
             finding_verdicts.append(
                 FindingVerdict(
                     finding_id=finding.id,
@@ -589,16 +681,37 @@ def grade_review(
         fp_finding_count * active_policy.false_positive_penalty_per_line
     )
 
-    all_findings_text = "\n".join(
-        part
-        for part in [summary_note, *(f.body.strip() for f in review.findings)]
-        if part
-    )
+    has_lineless_defect = any(not defect_exact[i] for i in range(len(expected_issues)))
+    lineless_evidence: tuple[Evidence, ...] = ()
+    if has_lineless_defect:
+        lineless_items: list[Evidence] = []
+        if summary_norm.sentences:
+            lineless_items.append(
+                Evidence(
+                    sentences=summary_norm.sentences,
+                    source=EvidenceSource.SUMMARY_SHARED,
+                    weight=1.0,
+                )
+            )
+        for finding in review.findings:
+            body_stripped = finding.body.strip()
+            if body_stripped:
+                body_norm = normalize_text(body_stripped)
+                if body_norm.sentences:
+                    lineless_items.append(
+                        Evidence(
+                            sentences=body_norm.sentences,
+                            source=EvidenceSource.INLINE,
+                            weight=1.0,
+                        )
+                    )
+        lineless_evidence = tuple(lineless_items)
 
     detected_issues: list[DetectedIssue] = []
     missed_issues: list[MissedIssue] = []
-    total_line_score = 0.0
-    total_concept_score = 0.0
+    borderline_defect_ids: list[str] = []
+    defect_line_scores: list[float] = []
+    defect_concept_scores: list[float] = []
 
     for idx, defect in enumerate(expected_issues):
         has_lines = bool(defect_exact[idx])
@@ -606,55 +719,92 @@ def grade_review(
             if idx in assigned:
                 f_idx = assigned[idx]
                 line_score = pair_line_scores[(f_idx, idx)]
-                concept_score = (
-                    pair_concept_scores[(f_idx, idx)] if line_score > 0.0 else 0.0
+                bound_indices = finding_indices_by_defect[idx]
+                defect_evidence = _join_finding_evidence(
+                    bound_indices,
+                    finding_evidence,
+                    review.findings,
+                    active_policy.shared_summary_weight,
                 )
-                matched_kws, missing_kws = pair_keywords[(f_idx, idx)]
+                if len(bound_indices) == 1:
+                    concept_match = pair_concept_matches[(f_idx, idx)]
+                else:
+                    concept_match = match_concepts(
+                        defect,
+                        defect_evidence,
+                        has_lines=True,
+                        target=active_policy.target_keyword_matches,
+                    )
+                concept_score = concept_match.score if line_score > 0.0 else 0.0
+                matched_kws = list(concept_match.matched)
+                missing_kws = list(concept_match.missing)
+                denied_kws = list(concept_match.denied)
+                evidence_sources = _sorted_evidence_sources(concept_match.sources)
                 matched_lines = _format_output_lines(
                     matched_lines_by_defect.get(idx, []),
                     scoped_output=scoped_output,
                 )
                 is_detected = line_score > 0.0
+                if (
+                    is_detected
+                    and line_score >= 0.5
+                    and concept_score < 1.0
+                    and _has_non_empty_evidence(defect_evidence)
+                ):
+                    borderline_defect_ids.append(defect.id)
             else:
                 line_score = 0.0
                 concept_score = 0.0
-                matched_kws, missing_kws, _ = _score_defect_keywords(
-                    defect,
-                    all_findings_text,
-                    has_lines=True,
-                    target_keyword_matches=active_policy.target_keyword_matches,
-                )
+                matched_kws = []
+                missing_kws = list(defect.keywords)
+                denied_kws = []
+                evidence_sources = []
                 matched_lines = []
                 is_detected = False
         else:
-            matched_kws, missing_kws, raw_concept = _score_defect_keywords(
+            concept_match = match_concepts(
                 defect,
-                all_findings_text,
+                lineless_evidence,
                 has_lines=False,
-                target_keyword_matches=active_policy.target_keyword_matches,
+                target=active_policy.target_keyword_matches,
             )
-            is_detected = bool(defect.keywords) and raw_concept > 0.0
+            is_detected = bool(defect.keywords) and concept_match.score > 0.0
             line_score = 1.0 if is_detected else 0.0
-            concept_score = raw_concept if is_detected else 0.0
+            concept_score = concept_match.score if is_detected else 0.0
+            matched_kws = list(concept_match.matched)
+            missing_kws = list(concept_match.missing)
+            denied_kws = list(concept_match.denied)
+            evidence_sources = _sorted_evidence_sources(concept_match.sources)
             matched_lines = []
+            if (
+                bool(concept_match.matched)
+                and concept_score < 1.0
+                and _has_non_empty_evidence(lineless_evidence)
+            ):
+                borderline_defect_ids.append(defect.id)
 
-        total_line_score += line_score
-        total_concept_score += concept_score
+        defect_weight = weights[idx]
+        defect_line_scores.append(line_score)
+        defect_concept_scores.append(concept_score)
 
         if is_detected:
-            detected_issues.append(
-                DetectedIssue(
-                    id=defect.id,
-                    title=defect.title or defect.id,
-                    severity=defect.severity,
-                    matched_lines=matched_lines,
-                    matched_keywords=matched_kws,
-                    line_score=line_score,
-                    concept_score=concept_score,
-                    explanation=defect.explanation,
-                    finding_ids=finding_ids_by_defect.get(idx, []),
-                )
+            detected_issue = DetectedIssue(
+                id=defect.id,
+                title=defect.title or defect.id,
+                severity=defect.severity,
+                matched_lines=matched_lines,
+                matched_keywords=matched_kws,
+                denied_keywords=denied_kws,
+                evidence=evidence_sources,
+                concept_source="keywords",
+                line_score=line_score,
+                concept_score=concept_score,
+                weight=round(defect_weight, 4),
+                explanation=defect.explanation,
+                finding_ids=finding_ids_by_defect.get(idx, []),
             )
+            detected_issue._defect_index = idx
+            detected_issues.append(detected_issue)
         else:
             expected_lines = (
                 _format_output_lines(
@@ -663,33 +813,30 @@ def grade_review(
                 if defect_scoped_lines[idx]
                 else defect.lines
             )
-            missed_issues.append(
-                MissedIssue(
-                    id=defect.id,
-                    title=defect.title or defect.id,
-                    severity=defect.severity,
-                    expected_lines=expected_lines,
-                    missing_keywords=missing_kws,
-                    explanation=defect.explanation,
-                )
+            missed_issue = MissedIssue(
+                id=defect.id,
+                title=defect.title or defect.id,
+                severity=defect.severity,
+                expected_lines=expected_lines,
+                missing_keywords=missing_kws,
+                denied_keywords=denied_kws,
+                weight=round(defect_weight, 4),
+                explanation=defect.explanation,
             )
+            missed_issue._defect_index = idx
+            missed_issues.append(missed_issue)
 
-    num_defects = len(expected_issues)
-    avg_line_score = (total_line_score / num_defects) * 100.0
-    avg_concept_score = (total_concept_score / num_defects) * 100.0
-    base_score = (avg_line_score * active_policy.line_weight) + (
-        avg_concept_score * active_policy.concept_weight
+    line_precision_pct, concept_score_pct, normalized_score = aggregate_scores(
+        defect_line_scores,
+        defect_concept_scores,
+        weights,
+        false_positive_penalty,
+        active_policy,
     )
-    raw_final_score = base_score - false_positive_penalty
-    normalized_score = max(0, min(100, int(round(raw_final_score))))
 
-    reveal_missed_details = (
-        active_policy.reveal
-        or review.reveal
-        or normalized_score >= active_policy.pass_threshold
-        or active_policy.attempt_number >= active_policy.max_attempts
-    )
-    if not reveal_missed_details and missed_issues:
+    raw_missed_issues: list[MissedIssue] | None = None
+    if not should_reveal(active_policy, review, normalized_score) and missed_issues:
+        raw_missed_issues = list(missed_issues)
         missed_issues = redact_missed_issues(missed_issues)
 
     summary_phrase, critique = generate_critique(
@@ -702,10 +849,10 @@ def grade_review(
 
     elapsed_ms = round((time.perf_counter() - start_time) * 1000, 2)
 
-    return GradeReport(
+    report = GradeReport(
         score=normalized_score,
-        line_precision_score=round(avg_line_score, 2),
-        concept_score=round(avg_concept_score, 2),
+        line_precision_score=line_precision_pct,
+        concept_score=concept_score_pct,
         false_positive_penalty=round(false_positive_penalty, 2),
         false_positive_lines=false_positive_lines,
         detected_issues=detected_issues,
@@ -714,4 +861,7 @@ def grade_review(
         critique=critique,
         execution_time_ms=elapsed_ms,
         finding_verdicts=finding_verdicts,
+        borderline_defect_ids=borderline_defect_ids,
     )
+    report._raw_missed_issues = raw_missed_issues
+    return report

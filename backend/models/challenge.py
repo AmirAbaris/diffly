@@ -3,7 +3,16 @@ import re
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Any, Optional
+from typing import (
+    TYPE_CHECKING,
+    Annotated,
+    Any,
+    Final,
+    Literal,
+    Optional,
+    cast,
+    get_args,
+)
 
 from pydantic import (
     AfterValidator,
@@ -20,6 +29,19 @@ from sqlmodel import Field, Relationship, SQLModel
 if TYPE_CHECKING:
     from backend.models.submission import Submission
     from backend.models.user import User
+
+
+Severity = Literal["critical", "high", "medium", "low"]
+_VALID_SEVERITIES: Final[frozenset[str]] = frozenset(get_args(Severity))
+
+
+def coerce_severity(raw: object) -> Severity:
+    """Normalize an arbitrary severity value to a valid Severity literal."""
+    if isinstance(raw, str):
+        normalized = raw.strip().lower()
+        if normalized in _VALID_SEVERITIES:
+            return cast(Severity, normalized)
+    return "medium"
 
 
 def get_utc_now() -> datetime:
@@ -325,13 +347,21 @@ def _coerce_positive_int(raw: Any) -> int:
 class DefectCriterion(BaseModel):
     id: str = ""
     title: str = ""
-    severity: str = "medium"
+    severity: Severity = "medium"
     file_path: str | None = None
     lines: list[FlaggedLineItem] = Field(default_factory=list)
     keywords: list[str] = Field(default_factory=list)
+    keyword_polarity: dict[str, Literal["hazard", "safeguard"]] = Field(
+        default_factory=dict
+    )
     explanation: str = ""
 
     model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    @field_validator("severity", mode="before")
+    @classmethod
+    def _coerce_severity(cls, value: Any) -> Severity:
+        return coerce_severity(value)
 
     @computed_field
     @property
@@ -377,6 +407,8 @@ class DefectCriterion(BaseModel):
                 d["lines"] = []
             if "keywords" in d and d["keywords"] is None:
                 d["keywords"] = []
+            if "keyword_polarity" in d and d["keyword_polarity"] is None:
+                d["keyword_polarity"] = {}
             if d.get("defect") is not None:
                 if not d.get("title"):
                     d["title"] = str(d["defect"])
