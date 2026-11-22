@@ -54,7 +54,7 @@ export function buildApiRewrites(
 
   return [
     {
-      source: "/api/:path*",
+      source: "/api/:path((?!ai(?:/|$)|coach(?:/|$)).*)",
       destination: `${backendUrl}/api/:path*`,
     },
   ]
