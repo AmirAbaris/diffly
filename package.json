@@ -89,7 +89,7 @@
     "oxlint": "^1.92.0",
     "prettier": "^3.9.10",
     "prettier-plugin-tailwindcss": "^0.8.1",
-    "react-doctor": "^0.9.22",
+    "react-doctor": "^0.9.23",
     "tailwindcss": "^4",
     "typescript": "^5",
     "vite-tsconfig-paths": "^6.1.1",
