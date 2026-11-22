@@ -16,7 +16,11 @@ from backend.services.grading.judge import (
     refine_with_judge,
 )
 from backend.services.grading.matching import match_one_to_one
-from backend.services.grading.reveal import should_reveal
+from backend.services.grading.reveal import (
+    redact_judge_outcome,
+    redact_missed_issue_dicts,
+    should_reveal,
+)
 from backend.services.grading.review import (
     MAX_ANCHOR_SPAN,
     MIN_REVIEW_TEXT_CHARS,
@@ -25,6 +29,7 @@ from backend.services.grading.review import (
     ReviewSubmission,
     ScopedLine,
     extract_challenge_files,
+    findings_to_flagged_lines,
     normalize_scoped_flagged_lines,
     validate_review_bounds,
     validate_review_text,
@@ -98,6 +103,7 @@ __all__ = [
     "extract_challenge_files",
     "extract_expected_issues",
     "find_contiguous_blocks",
+    "findings_to_flagged_lines",
     "generate_critique",
     "get_proximity_lines",
     "get_tolerated_lines",
@@ -108,6 +114,8 @@ __all__ = [
     "normalize_phrase",
     "normalize_scoped_flagged_lines",
     "normalize_text",
+    "redact_judge_outcome",
+    "redact_missed_issue_dicts",
     "redact_missed_issues",
     "refine_with_judge",
     "should_reveal",

@@ -22,12 +22,106 @@ _COMMA_SPLIT_RE = re.compile(r",+")
 _TOKEN_RE = re.compile(r"[A-Za-z0-9'\u2019]+")
 
 _LINE_WORD_RE = re.compile(
-    r"\blines?\s*#?(\d+)(?:\s*[-–—]\s*#?(\d+)|(?:\s+(?:and|&)\s+#?(\d+)))?\b",
+    r"\b(?:lines\s*#?\d+(?:\s*[-–—]\s*#?\d+)?"
+    r"(?:\s*(?:,\s*(?:(?:and|&)\s+)?|\s+(?:and|&)\s+)#?\d+(?:\s*[-–—]\s*#?\d+)?)*"
+    r"|line\s*#?\d+(?:\s*[-–—]\s*#?\d+|"
+    r"(?:\s*(?:,\s*(?:and|&)\s+|,\s*#|\s+(?:and|&)\s+)#?\d+(?:\s*[-–—]\s*#?\d+)?)*))\b",
     re.IGNORECASE,
 )
+_LINE_RANGE_PART_RE = re.compile(r"#?(\d+)\s*[-–—]\s*#?(\d+)")
+_LINE_SINGLE_PART_RE = re.compile(r"#?(\d+)")
 _LINE_SHORT_RE = re.compile(r"(?<![A-Za-z0-9_])L(\d+)(?:\s*[-–—]\s*L?(\d+))?\b")
 _FILE_LINE_RE = re.compile(
-    r"(?:[A-Za-z0-9_.-]+/)*[A-Za-z0-9_-]+\.[A-Za-z][A-Za-z0-9]{0,9}:(\d+)(?:\s*[-–—]\s*(\d+))?\b"
+    r"((?:[A-Za-z0-9_.-]+/)*[A-Za-z0-9_-]+\.[A-Za-z][A-Za-z0-9]{0,9}):(\d+)(?:\s*[-–—]\s*(\d+))?\b"
+)
+
+_MAX_ENUM_CONTINUATION_TOKENS = 6
+_CLAUSE_BREAK_STARTERS: frozenset[str] = CONTRASTIVE_PIVOTS | frozenset(
+    {
+        "so",
+        "therefore",
+        "thus",
+        "hence",
+        "then",
+        "meaning",
+        "which",
+        "that",
+        "because",
+        "since",
+        "while",
+        "where",
+        "instead",
+        "rather",
+        "otherwise",
+        "actually",
+        "wait",
+        "except",
+        "unless",
+        "until",
+        "when",
+        "if",
+        "only",
+        "allow",
+        "enable",
+        "cause",
+        "expose",
+        "lead",
+        "result",
+        "trigger",
+    }
+)
+_CLAUSE_PREDICATE_BREAKERS: frozenset[str] = frozenset(
+    {
+        "is",
+        "are",
+        "was",
+        "were",
+        "be",
+        "been",
+        "being",
+        "has",
+        "have",
+        "had",
+        "do",
+        "does",
+        "did",
+        "can",
+        "could",
+        "will",
+        "would",
+        "shall",
+        "should",
+        "may",
+        "might",
+        "must",
+        "it",
+        "they",
+        "we",
+        "you",
+        "he",
+        "she",
+        "there",
+        "allow",
+        "enable",
+        "cause",
+        "expose",
+        "result",
+        "exist",
+        "exists",
+        "occur",
+        "occurs",
+        "introduce",
+        "seem",
+        "seems",
+        "appear",
+        "contain",
+        "include",
+        "require",
+        "need",
+        "needs",
+        "happen",
+        "happens",
+    }
 )
 
 _PROTECTED_TOKENS: frozenset[str] = DENIAL_CUES | CONTRASTIVE_PIVOTS
@@ -59,6 +153,7 @@ class Sentence:
     line_refs: frozenset[int]
     raw: str
     offset: int = field(default=0, repr=False, compare=False)
+    file_line_refs: frozenset[tuple[str, int]] = frozenset()
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,37 +211,68 @@ def _lemmatize_token(tok: str) -> str:
     return tok
 
 
-def _add_line_or_range(refs: set[int], start_s: str, end_s: str | None = None) -> None:
+def _add_line_or_range(
+    refs: set[int],
+    start_s: str,
+    end_s: str | None = None,
+    *,
+    file_refs: set[tuple[str, int]] | None = None,
+    file_path: str | None = None,
+) -> None:
     start_val = int(start_s)
     if start_val <= 0:
         return
     if end_s is None:
         refs.add(start_val)
+        if file_refs is not None and file_path is not None:
+            file_refs.add((file_path, start_val))
         return
     end_val = int(end_s)
     if end_val <= 0:
         refs.add(start_val)
+        if file_refs is not None and file_path is not None:
+            file_refs.add((file_path, start_val))
         return
     lo, hi = (start_val, end_val) if start_val <= end_val else (end_val, start_val)
     capped_hi = min(hi, lo + _MAX_LINE_RANGE_SPAN)
-    refs.update(range(lo, capped_hi + 1))
+    for ln in range(lo, capped_hi + 1):
+        refs.add(ln)
+        if file_refs is not None and file_path is not None:
+            file_refs.add((file_path, ln))
 
 
-def _extract_line_refs(raw: str) -> frozenset[int]:
+def _extract_line_refs_and_files(
+    raw: str,
+) -> tuple[frozenset[int], frozenset[tuple[str, int]]]:
     refs: set[int] = set()
+    file_refs: set[tuple[str, int]] = set()
     for match in _LINE_WORD_RE.finditer(raw):
-        g1, g2, g3 = match.group(1), match.group(2), match.group(3)
-        if g2 is not None:
-            _add_line_or_range(refs, g1, g2)
-        else:
-            _add_line_or_range(refs, g1)
-            if g3 is not None:
-                _add_line_or_range(refs, g3)
+        matched_text = match.group(0)
+
+        def _collect_range(range_match: re.Match[str]) -> str:
+            _add_line_or_range(refs, range_match.group(1), range_match.group(2))
+            return " "
+
+        remainder = _LINE_RANGE_PART_RE.sub(_collect_range, matched_text)
+        for num_str in _LINE_SINGLE_PART_RE.findall(remainder):
+            _add_line_or_range(refs, num_str)
+
     for match in _LINE_SHORT_RE.finditer(raw):
         _add_line_or_range(refs, match.group(1), match.group(2))
     for match in _FILE_LINE_RE.finditer(raw):
-        _add_line_or_range(refs, match.group(1), match.group(2))
-    return frozenset(refs)
+        _add_line_or_range(
+            refs,
+            match.group(2),
+            match.group(3),
+            file_refs=file_refs,
+            file_path=match.group(1).lower(),
+        )
+    return frozenset(refs), frozenset(file_refs)
+
+
+def _extract_line_refs(raw: str) -> frozenset[int]:
+    refs, _ = _extract_line_refs_and_files(raw)
+    return refs
 
 
 def _extract_raw_tokens(text: str, start: int, end: int) -> list[tuple[str, int, int]]:
@@ -167,45 +293,54 @@ def _extract_raw_tokens(text: str, start: int, end: int) -> list[tuple[str, int,
     return raw_tokens
 
 
-def _apply_phrase_rewrites(
-    tokens: list[tuple[str, int, int]],
-) -> list[tuple[str, int, int]]:
-    rewritten: list[tuple[str, int, int]] = []
+def _apply_phrase_rewrites(tokens: list[Token]) -> tuple[Token, ...]:
+    rewritten: list[Token] = []
     n = len(tokens)
     i = 0
     while i < n:
-        tok_text, tok_start, tok_end = tokens[i]
+        tok = tokens[i]
         matched_len = 0
         replacement: tuple[str, ...] | None = None
-        if tok_text in _REWRITE_FIRST_WORDS:
+        if tok.canon in _REWRITE_FIRST_WORDS:
             max_span = min(_MAX_REWRITE_LEN, n - i)
             for span_len in range(max_span, 0, -1):
-                candidate = tuple(tokens[j][0] for j in range(i, i + span_len))
+                candidate = tuple(tokens[j].canon for j in range(i, i + span_len))
                 if candidate in PHRASE_REWRITES:
                     matched_len = span_len
                     replacement = PHRASE_REWRITES[candidate]
                     break
         if replacement is not None:
-            span_end = tokens[i + matched_len - 1][2]
+            span = tokens[i : i + matched_len]
+            span_end = span[-1].end
+            span_denied = any(t.denied for t in span)
+            span_dismissed = any(t.dismissed for t in span)
             for canon in replacement:
-                rewritten.append((canon, tok_start, span_end))
+                rewritten.append(
+                    Token(
+                        canon=canon,
+                        start=tok.start,
+                        end=span_end,
+                        denied=span_denied,
+                        dismissed=span_dismissed,
+                    )
+                )
             i += matched_len
         else:
-            rewritten.append((tok_text, tok_start, tok_end))
+            rewritten.append(tok)
             i += 1
-    return rewritten
+    return tuple(rewritten)
 
 
 def _annotate_negation(
     tokens: list[tuple[str, int, int]],
     *,
-    carry_dismiss: bool = False,
-) -> tuple[tuple[Token, ...], bool]:
+    initial_deny_rem: int = 0,
+    initial_dismiss_rem: int = 0,
+) -> tuple[list[Token], int, int]:
     annotated: list[Token] = []
-    deny_rem = 0
-    dismiss_rem = _NEGATION_SCOPE_TOKENS if carry_dismiss else 0
+    deny_rem = initial_deny_rem
+    dismiss_rem = initial_dismiss_rem
     dismiss_cue_end = -1
-    saw_dismissal = carry_dismiss
     n = len(tokens)
 
     for i, (canon, start, end) in enumerate(tokens):
@@ -217,7 +352,6 @@ def _annotate_negation(
                 if candidate in _DISMISSAL_SET:
                     is_dismiss_start = True
                     dismiss_cue_end = i + span_len - 1
-                    saw_dismissal = True
                     break
 
         is_denial_cue = canon in DENIAL_CUES
@@ -247,17 +381,26 @@ def _annotate_negation(
             dismiss_rem = _NEGATION_SCOPE_TOKENS
             deny_rem = max(deny_rem, _NEGATION_SCOPE_TOKENS)
 
-    return tuple(annotated), saw_dismissal
+    return annotated, deny_rem, dismiss_rem
 
 
 def _split_spans(
-    text: str, pattern: re.Pattern[str], start: int = 0, end: int | None = None
+    text: str,
+    pattern: re.Pattern[str],
+    start: int = 0,
+    end: int | None = None,
+    *,
+    protected_spans: list[tuple[int, int]] | None = None,
 ) -> list[tuple[int, int]]:
     limit = len(text) if end is None else end
     spans: list[tuple[int, int]] = []
     prev_end = start
     for sep in pattern.finditer(text, start, limit):
         sep_start, sep_end = sep.span()
+        if protected_spans and any(
+            p_start <= sep_start < p_end for p_start, p_end in protected_spans
+        ):
+            continue
         if sep_start > prev_end:
             spans.append((prev_end, sep_start))
         prev_end = sep_end
@@ -266,41 +409,51 @@ def _split_spans(
     return spans
 
 
+def _is_enumeration_continuation(lemmatized: list[tuple[str, int, int]]) -> bool:
+    if not lemmatized or len(lemmatized) > _MAX_ENUM_CONTINUATION_TOKENS:
+        return False
+    if lemmatized[0][0] in _CLAUSE_BREAK_STARTERS:
+        return False
+    return not any(tok in _CLAUSE_PREDICATE_BREAKERS for tok, _, _ in lemmatized)
+
+
 def _build_clause_sentence(
     text: str,
     clause_start: int,
     clause_end: int,
-    raw_tokens: list[tuple[str, int, int]],
+    lemmatized: list[tuple[str, int, int]],
     *,
-    carry_dismiss: bool = False,
-) -> tuple[Sentence | None, bool]:
+    line_refs: frozenset[int],
+    file_line_refs: frozenset[tuple[str, int]],
+    initial_deny_rem: int = 0,
+    initial_dismiss_rem: int = 0,
+) -> tuple[Sentence | None, int, int]:
     raw_slice = text[clause_start:clause_end]
     stripped = raw_slice.strip()
     if not stripped:
-        return None, False
+        return None, 0, 0
     leading_ws = len(raw_slice) - len(raw_slice.lstrip())
     sent_offset = clause_start + leading_ws
 
-    lemmatized = [
-        (_lemmatize_token(tok), tok_s, tok_e) for tok, tok_s, tok_e in raw_tokens
-    ]
-    rewritten = _apply_phrase_rewrites(lemmatized)
-    annotated, saw_dismissal = _annotate_negation(
-        rewritten, carry_dismiss=carry_dismiss
+    annotated, next_deny_rem, next_dismiss_rem = _annotate_negation(
+        lemmatized,
+        initial_deny_rem=initial_deny_rem,
+        initial_dismiss_rem=initial_dismiss_rem,
     )
-    line_refs = _extract_line_refs(stripped)
+    rewritten = _apply_phrase_rewrites(annotated)
     return (
         Sentence(
-            tokens=annotated,
+            tokens=rewritten,
             line_refs=line_refs,
             raw=stripped,
             offset=sent_offset,
+            file_line_refs=file_line_refs,
         ),
-        saw_dismissal,
+        next_deny_rem,
+        next_dismiss_rem,
     )
 
 
-@lru_cache(maxsize=1024)
 def normalize_text(text: str) -> NormalizedText:
     """Normalize review text into clause-split canonical tokens with negation flags."""
     if not text:
@@ -308,43 +461,94 @@ def normalize_text(text: str) -> NormalizedText:
 
     sentences: list[Sentence] = []
     for sent_start, sent_end in _split_spans(text, _SENTENCE_SPLIT_RE):
-        carry_dismiss = False
+        sent_raw = text[sent_start:sent_end]
+        major_refs, major_file_refs = _extract_line_refs_and_files(sent_raw)
+        protected_spans = [
+            match.span() for match in _LINE_WORD_RE.finditer(text, sent_start, sent_end)
+        ]
+
+        active_refs: frozenset[int] = frozenset()
+        active_file_refs: frozenset[tuple[str, int]] = frozenset()
+        carry_deny_rem = 0
+        carry_dismiss_rem = 0
+
         for chunk_start, chunk_end in _split_spans(
-            text, _COMMA_SPLIT_RE, sent_start, sent_end
+            text,
+            _COMMA_SPLIT_RE,
+            sent_start,
+            sent_end,
+            protected_spans=protected_spans,
         ):
             raw_tokens = _extract_raw_tokens(text, chunk_start, chunk_end)
+            sub_clauses: list[tuple[int, int, list[tuple[str, int, int]], bool]] = []
             clause_start = chunk_start
             clause_tokens: list[tuple[str, int, int]] = []
+            after_pivot = False
 
             for tok, tok_s, tok_e in raw_tokens:
-                if tok in CONTRASTIVE_PIVOTS and clause_tokens:
-                    built, _ = _build_clause_sentence(
-                        text,
-                        clause_start,
-                        tok_s,
-                        clause_tokens,
-                        carry_dismiss=carry_dismiss,
-                    )
-                    if built is not None:
-                        sentences.append(built)
-                    carry_dismiss = False
+                if tok in CONTRASTIVE_PIVOTS:
+                    if clause_tokens:
+                        sub_clauses.append(
+                            (clause_start, tok_s, clause_tokens, after_pivot)
+                        )
                     clause_start = tok_s
                     clause_tokens = [(tok, tok_s, tok_e)]
+                    after_pivot = True
                 else:
-                    if not clause_tokens and tok in CONTRASTIVE_PIVOTS:
-                        carry_dismiss = False
                     clause_tokens.append((tok, tok_s, tok_e))
 
-            built, saw_dismissal = _build_clause_sentence(
-                text,
-                clause_start,
-                chunk_end,
-                clause_tokens,
-                carry_dismiss=carry_dismiss,
-            )
-            if built is not None:
-                sentences.append(built)
-            carry_dismiss = saw_dismissal
+            sub_clauses.append((clause_start, chunk_end, clause_tokens, after_pivot))
+
+            for sub_start, sub_end, sub_tokens, is_pivot_clause in sub_clauses:
+                sub_stripped = text[sub_start:sub_end].strip()
+                if not sub_stripped:
+                    continue
+
+                lemmatized = [
+                    (_lemmatize_token(tok), tok_s, tok_e)
+                    for tok, tok_s, tok_e in sub_tokens
+                ]
+                sub_refs, sub_file_refs = _extract_line_refs_and_files(sub_stripped)
+                distinct_line_ref = bool(
+                    sub_refs and active_refs and sub_refs != active_refs
+                )
+
+                if sub_refs:
+                    clause_refs = sub_refs
+                    clause_file_refs = sub_file_refs
+                    active_refs = sub_refs
+                    active_file_refs = sub_file_refs
+                elif active_refs:
+                    clause_refs = active_refs
+                    clause_file_refs = active_file_refs
+                else:
+                    clause_refs = major_refs
+                    clause_file_refs = major_file_refs
+
+                if is_pivot_clause or distinct_line_ref:
+                    init_deny_rem = 0
+                    init_dismiss_rem = 0
+                else:
+                    init_dismiss_rem = carry_dismiss_rem
+                    init_deny_rem = (
+                        max(carry_deny_rem, _NEGATION_SCOPE_TOKENS)
+                        if carry_deny_rem > 0
+                        and _is_enumeration_continuation(lemmatized)
+                        else 0
+                    )
+
+                built, carry_deny_rem, carry_dismiss_rem = _build_clause_sentence(
+                    text,
+                    sub_start,
+                    sub_end,
+                    lemmatized,
+                    line_refs=clause_refs,
+                    file_line_refs=clause_file_refs,
+                    initial_deny_rem=init_deny_rem,
+                    initial_dismiss_rem=init_dismiss_rem,
+                )
+                if built is not None:
+                    sentences.append(built)
 
     return NormalizedText(raw=text, sentences=tuple(sentences))
 
@@ -356,7 +560,8 @@ def normalize_phrase(keyword: str) -> tuple[str, ...]:
         return ()
     raw_tokens = _extract_raw_tokens(keyword, 0, len(keyword))
     lemmatized = [
-        (_lemmatize_token(tok), tok_s, tok_e) for tok, tok_s, tok_e in raw_tokens
+        Token(canon=_lemmatize_token(tok), start=tok_s, end=tok_e)
+        for tok, tok_s, tok_e in raw_tokens
     ]
     rewritten = _apply_phrase_rewrites(lemmatized)
-    return tuple(canon for canon, _, _ in rewritten)
+    return tuple(tok.canon for tok in rewritten)

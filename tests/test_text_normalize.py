@@ -1,10 +1,15 @@
 """Tests for deterministic text normalization, lexicon rewrites, and negation scopes."""
 
 from backend.services.grading.text import (
+    DENIAL_CUES,
+    DISMISSAL_CUES,
+    LEMMA_EXCEPTIONS,
     PHRASE_REWRITES,
+    TERM_POLARITY,
     normalize_phrase,
     normalize_text,
 )
+from backend.services.grading.text.normalize import _lemmatize_token
 
 
 def test_synonym_phrase_rewrites_and_separator_normalization():
@@ -15,14 +20,15 @@ def test_synonym_phrase_rewrites_and_separator_normalization():
     assert normalize_phrase("SQL Injection") == ("sql", "injection")
 
     assert normalize_phrase("authz") == ("authorization",)
-    assert normalize_phrase("unauthorized") == ("authorization",)
+    assert normalize_phrase("unauthorized") == ("unauthorized",)
+    assert normalize_phrase("unauthorised") == ("unauthorized",)
     assert normalize_phrase("authorisation") == ("authorization",)
     assert normalize_phrase("access control") == ("authorization",)
     assert normalize_phrase("permission check") == ("authorization",)
     assert normalize_phrase("privilege check") == ("authorization",)
 
     assert normalize_phrase("authn") == ("authentication",)
-    assert normalize_phrase("unauthenticated") == ("authentication",)
+    assert normalize_phrase("unauthenticated") == ("unauthenticated",)
 
     assert normalize_phrase("toctou") == ("race", "condition")
     assert normalize_phrase("data race") == ("race", "condition")
@@ -158,3 +164,81 @@ def test_quoted_tokens_and_contractions():
     assert norm.raw[eval_tok.start : eval_tok.end] == "eval"
     assert eval_tok.denied is True
     assert eval_tok.dismissed is True
+
+
+def test_sentence_level_line_refs_comma_lists_and_negation_boundaries():
+    """Line refs attach to comma clauses; denial persists in lists only."""
+    comma_ref = normalize_text("Line 20, missing parameterized query.")
+    assert len(comma_ref.sentences) == 2
+    assert all(s.line_refs == frozenset({20}) for s in comma_ref.sentences)
+
+    multi_line_list = normalize_text("Lines 10, 11, and 12 have sql injection.")
+    assert len(multi_line_list.sentences) == 1
+    assert multi_line_list.sentences[0].line_refs == frozenset({10, 11, 12})
+
+    denied_list = normalize_text("There is no xss, csrf, or sql injection.")
+    denied_canons = {
+        tok.canon: tok.denied for sent in denied_list.sentences for tok in sent.tokens
+    }
+    expected_denied = (
+        "cross",
+        "site",
+        "scripting",
+        "request",
+        "forgery",
+        "sql",
+        "injection",
+    )
+    for term in expected_denied:
+        assert denied_canons[term] is True
+
+    causal_comma = normalize_text("not sanitized, so sql injection")
+    assert len(causal_comma.sentences) == 2
+    assert causal_comma.sentences[0].tokens[1].canon == "sanitize"
+    assert causal_comma.sentences[0].tokens[1].denied is True
+    assert all(not tok.denied for tok in causal_comma.sentences[1].tokens)
+
+    expanded_scope = normalize_text("There is no idor and also sqli.")
+    sqli_tokens = [
+        tok
+        for tok in expanded_scope.sentences[0].tokens
+        if tok.canon in {"sql", "injection"}
+    ]
+    assert len(sqli_tokens) == 2
+    assert all(tok.denied is True for tok in sqli_tokens)
+
+    dismissal_decay = normalize_text(
+        "Not a bug, looks clean, handles errors well, has sql injection."
+    )
+    sqli_after_decay = [
+        tok
+        for sent in dismissal_decay.sentences
+        for tok in sent.tokens
+        if tok.canon in {"sql", "injection"}
+    ]
+    assert len(sqli_after_decay) == 2
+    assert all(not tok.dismissed and not tok.denied for tok in sqli_after_decay)
+
+
+def test_lexicon_invariants_and_no_normalize_text_cache():
+    """Lexicon tables stay consistent with lemmatization; normalize_text is uncached."""
+    assert not hasattr(normalize_text, "cache_info")
+    assert hasattr(normalize_phrase, "cache_info")
+    assert hasattr(_lemmatize_token, "cache_info")
+
+    for val in LEMMA_EXCEPTIONS.values():
+        assert _lemmatize_token(val) == val
+
+    for key_tokens in PHRASE_REWRITES:
+        assert not any(tok in DENIAL_CUES for tok in key_tokens)
+        assert not any(
+            key_tokens[i : i + len(cue)] == cue
+            for cue in DISMISSAL_CUES
+            for i in range(max(0, len(key_tokens) - len(cue) + 1))
+        )
+
+    assert ("cross", "site", "request", "forgery") in TERM_POLARITY
+    assert ("check", "then", "act") in TERM_POLARITY
+    assert ("out", "of", "bound") in TERM_POLARITY
+    assert ("check",) not in TERM_POLARITY
+    assert ("bound",) not in TERM_POLARITY

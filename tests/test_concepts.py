@@ -265,3 +265,173 @@ def test_denied_keyword_tracking_borderline_and_redaction():
     )
     d2_missed = next(m for m in revealed.missed_issues if m.id == "d2")
     assert d2_missed.denied_keywords == ["memory leak"]
+
+
+def test_csrf_check_then_act_oob_and_unauthorized_polarity():
+    """Hazards deny on negation; unauthorized/unauthenticated respect own polarity."""
+    assert not is_keyword_matched("csrf", "There is NO CSRF vulnerability")
+    assert not is_keyword_matched("xsrf", "There is no xsrf flaw")
+    assert is_keyword_matched("csrf", "Login CSRF on OAuth callback")
+
+    assert not is_keyword_matched("check-then-act", "There is NO check-then-act bug")
+    assert is_keyword_matched("check-then-act", "Non-atomic check-then-act sequence")
+
+    assert not is_keyword_matched("out of bounds", "There is NO out of bounds write")
+    assert is_keyword_matched("bounds check", "missing bounds check")
+    assert is_keyword_matched("permission check", "missing permission check")
+    assert is_keyword_matched("freshness check", "no freshness check")
+
+    assert is_keyword_matched("authorization", "unauthorized access to admin panel")
+    assert not is_keyword_matched("authorization", "no unauthorized access possible")
+    assert is_keyword_matched("authorization", "missing authorization check")
+    assert is_keyword_matched("authorization", "authorizes caller without check")
+    assert is_keyword_matched("authorization", "authorises caller without check")
+    assert not is_keyword_matched("unauthorized", "no unauthorized access")
+    assert is_keyword_matched("unauthorized", "missing authorization")
+
+    assert is_keyword_matched("authentication", "unauthenticated endpoint")
+    assert not is_keyword_matched("authentication", "no unauthenticated access")
+    assert is_keyword_matched("authentication", "authenticates without checking token")
+
+
+def test_lemmatized_consequence_connectors_and_comma_negations():
+    """Lemmatized causal connectors rescue hazards; comma lists deny all items."""
+    assert is_keyword_matched(
+        "sql injection", "missing validation causing sql injection"
+    )
+    assert is_keyword_matched(
+        "sql injection", "without sanitization leading to sql injection"
+    )
+    assert is_keyword_matched("race condition", "no mutex enabling race condition")
+    assert is_keyword_matched("xss", "no validation resulting in xss")
+    assert is_keyword_matched("deadlock", "missing lock triggering deadlock")
+
+    assert not is_keyword_matched("xss", "There is no xss, csrf, or sql injection")
+    assert not is_keyword_matched("csrf", "There is no xss, csrf, or sql injection")
+    assert not is_keyword_matched(
+        "sql injection", "There is no xss, csrf, or sql injection"
+    )
+    assert not is_keyword_matched("sqli", "There is no idor and also sqli")
+
+
+def test_finding_id_hijack_file_pairing_and_empty_body_loophole():
+    """Synthetic/plain ids cannot hijack foreign lines; partial empty body keeps cap."""
+    summary = normalize_text(
+        "L1 looks fine. Line 20 has the sql bug. Line 25: Finding f1 has rce."
+    )
+    f_l1 = Finding(id="l1", anchor=Anchor(start_line=5, end_line=5), body="bug")
+    ev_l1 = bind_evidence(f_l1, summary, frozenset({5}), GradingPolicy())
+    bound_l1 = [ev for ev in ev_l1 if ev.source == EvidenceSource.SUMMARY_BOUND]
+    assert bound_l1 == []
+
+    f_word = Finding(id="the", anchor=Anchor(start_line=5, end_line=5), body="bug")
+    ev_word = bind_evidence(f_word, summary, frozenset({5}), GradingPolicy())
+    assert [ev for ev in ev_word if ev.source == EvidenceSource.SUMMARY_BOUND] == []
+
+    f_f1 = Finding(id="f1", anchor=Anchor(start_line=5, end_line=5), body="bug")
+    ev_f1 = bind_evidence(f_f1, summary, frozenset({5}), GradingPolicy())
+    assert [ev for ev in ev_f1 if ev.source == EvidenceSource.SUMMARY_BOUND] == []
+
+    hash_summary = normalize_text("Note on #f1: missing bound parameters.")
+    ev_hash = bind_evidence(f_f1, hash_summary, frozenset({5}), GradingPolicy())
+    assert len([ev for ev in ev_hash if ev.source == EvidenceSource.SUMMARY_BOUND]) == 1
+
+    multi_summary = normalize_text(
+        "auth.py:10 and billing.py:20 have issues. src/billing/handler.py:30 leaks."
+    )
+    f_auth20 = Finding(
+        id="fa",
+        anchor=Anchor(file_path="src/auth/handler.py", start_line=20, end_line=20),
+        body="bug",
+    )
+    ev_auth20 = bind_evidence(f_auth20, multi_summary, frozenset({20}), GradingPolicy())
+    assert [ev for ev in ev_auth20 if ev.source == EvidenceSource.SUMMARY_BOUND] == []
+
+    f_auth30 = Finding(
+        id="fb",
+        anchor=Anchor(file_path="src/auth/handler.py", start_line=30, end_line=30),
+        body="bug",
+    )
+    ev_auth30 = bind_evidence(f_auth30, multi_summary, frozenset({30}), GradingPolicy())
+    assert [ev for ev in ev_auth30 if ev.source == EvidenceSource.SUMMARY_BOUND] == []
+
+    challenge = {
+        "expected_issues": [
+            {
+                "id": "d1",
+                "title": "Auth",
+                "severity": "critical",
+                "lines": [5],
+                "keywords": ["authorization", "token"],
+            },
+            {
+                "id": "d2",
+                "title": "SQLi",
+                "severity": "critical",
+                "lines": [20],
+                "keywords": ["sql injection", "parameterized"],
+            },
+        ]
+    }
+    mixed_empty_review = ReviewSubmission.model_validate(
+        {
+            "findings": [
+                {"id": "f1", "start_line": 5, "end_line": 5, "body": ""},
+                {
+                    "id": "f2",
+                    "start_line": 20,
+                    "end_line": 20,
+                    "body": "sql injection needs parameterized query",
+                },
+            ],
+            "summary_note": "Generic note about authorization and token.",
+        }
+    )
+    report = grade_review(challenge, mixed_empty_review, GradingPolicy())
+    by_id = {d.id: d for d in report.detected_issues}
+    assert by_id["d1"].concept_score == 0.5
+    assert by_id["d2"].concept_score == 1.0
+
+    comma_line_summary = ReviewSubmission.model_validate(
+        {
+            "findings": [
+                {"id": "f1", "start_line": 20, "end_line": 20, "body": "bug"},
+            ],
+            "summary_note": (
+                "Line 20, missing parameterized query, causing sql injection."
+            ),
+        }
+    )
+    comma_report = grade_review(
+        {"expected_issues": [challenge["expected_issues"][1]]},
+        comma_line_summary,
+        GradingPolicy(),
+    )
+    assert comma_report.detected_issues[0].concept_score == 1.0
+    assert EvidenceSource.SUMMARY_BOUND in comma_report.detected_issues[0].evidence
+
+    multi_line_summary = ReviewSubmission.model_validate(
+        {
+            "findings": [
+                {"id": "f1", "start_line": 12, "end_line": 12, "body": "bug"},
+            ],
+            "summary_note": "Lines 10, 11, and 12 have sql injection.",
+        }
+    )
+    multi_line_report = grade_review(
+        {
+            "expected_issues": [
+                {
+                    "id": "d-multi",
+                    "title": "SQLi",
+                    "severity": "critical",
+                    "lines": [12],
+                    "keywords": ["sql injection"],
+                }
+            ]
+        },
+        multi_line_summary,
+        GradingPolicy(),
+    )
+    assert multi_line_report.detected_issues[0].concept_score == 1.0
+    assert EvidenceSource.SUMMARY_BOUND in multi_line_report.detected_issues[0].evidence

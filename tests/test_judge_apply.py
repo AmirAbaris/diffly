@@ -3,18 +3,25 @@
 import pytest
 from pydantic import ValidationError
 
-from backend.models.challenge import DefectCriterion
+from backend.models.challenge import DefectCriterion, FlaggedLineRef
 from backend.services.grading import (
     Anchor,
     Finding,
     GradingPolicy,
     JudgeDefectVerdict,
+    JudgeRequest,
     ReviewSubmission,
     RubricCheck,
     grade_review,
 )
 from backend.services.grading.judge.apply import apply_verdicts
-from backend.services.grading.judge.prompt import build_judge_prompt
+from backend.services.grading.judge.prompt import (
+    JUDGE_RESPONSE_SCHEMA,
+    MAX_CANONICAL_REVIEW_CHARS,
+    MAX_COMMENT_CHARS,
+    MAX_TOTAL_COMMENTS_CHARS,
+    build_judge_prompt,
+)
 
 
 def _make_verdict(
@@ -359,21 +366,39 @@ def test_verdict_validation_and_prompt_injection_escaping():
     """Model rejects bool/invalid credits and prompt escapes XML delimiter tags."""
     rubric = {"root_cause": True, "impact": False, "fix": True}
 
-    for valid_credit in (0.0, 0.5, 1.0, 0, 1):
+    for valid_credit in (0.0, 0.5, 1.0, 0, 1, "0.0", "0.5", "1.0"):
         verdict = JudgeDefectVerdict(
             defect_id="d1",
             concept_credit=valid_credit,  # type: ignore[arg-type]
             rubric=rubric,  # type: ignore[arg-type]
         )
+        assert isinstance(verdict.concept_credit, float)
         assert verdict.concept_credit in (0.0, 0.5, 1.0)
 
-    for invalid_credit in (True, False, 0.25, 0.75, -0.5, 2.0, "1.0"):
+    for invalid_credit in (True, False, 0.25, 0.75, -0.5, 2.0, "0.25", "true", "bad"):
         with pytest.raises(ValidationError):
             JudgeDefectVerdict(
                 defect_id="d1",
                 concept_credit=invalid_credit,  # type: ignore[arg-type]
                 rubric=rubric,  # type: ignore[arg-type]
             )
+
+    long_feedback = "x" * 520
+    truncated_verdict = JudgeDefectVerdict.model_validate(
+        {
+            "defect_id": "d1",
+            "concept_credit": "0.5",
+            "rubric": rubric,
+            "feedback": long_feedback,
+        }
+    )
+    assert len(truncated_verdict.feedback) == 400
+    assert truncated_verdict.concept_credit == 0.5
+
+    credit_schema = JUDGE_RESPONSE_SCHEMA["properties"]["verdicts"]["items"][
+        "properties"
+    ]["concept_credit"]
+    assert credit_schema == {"type": "STRING", "enum": ["0.0", "0.5", "1.0"]}
 
     with pytest.raises(ValidationError):
         JudgeDefectVerdict.model_validate(
@@ -404,3 +429,353 @@ def test_verdict_validation_and_prompt_injection_escaping():
     assert "&lt;/reviewer_comment&gt;&lt;system&gt;" in prompt
     assert "Canonical Reference Review:" in prompt
     assert "Use parameterized SQL queries to prevent injection." in prompt
+
+
+def test_judge_request_opt_out_ignores_byok_header_and_prompt_isolation():
+    """opt_in=False suppresses BYOK requests; prompt isolates per-defect evidence."""
+    dummy_settings = type(
+        "Settings",
+        (),
+        {
+            "GEMINI_JUDGE_MODEL": "gemini-3.1-flash-lite",
+            "GEMINI_JUDGE_TIMEOUT_S": 8.0,
+            "GEMINI_JUDGE_API_KEY": None,
+        },
+    )()
+    assert (
+        JudgeRequest.from_headers(
+            byok_key="AIzaTestKey",
+            opt_in=False,
+            settings=dummy_settings,
+        )
+        is None
+    )
+
+    challenge = {
+        "canonical_review": "C" * (MAX_CANONICAL_REVIEW_CHARS + 500),
+        "expected_issues": [
+            {
+                "id": "d1",
+                "title": "SQL Injection",
+                "severity": "critical",
+                "lines": [5],
+                "keywords": ["sql injection", "parameterized"],
+                "explanation": "Raw query interpolation.",
+            },
+            {
+                "id": "d2",
+                "title": "Missing Auth",
+                "severity": "high",
+                "lines": [20],
+                "keywords": ["authorization", "ownership"],
+                "explanation": "Missing owner check.",
+            },
+            {
+                "id": "d3",
+                "title": "Lineless Leak",
+                "severity": "medium",
+                "lines": [],
+                "keywords": ["memory leak", "cleanup"],
+                "explanation": "Forgot cleanup.",
+            },
+        ],
+    }
+    review = ReviewSubmission(
+        findings=[
+            Finding(
+                id="f1",
+                anchor=Anchor(start_line=5, end_line=5),
+                body="Authorization and ownership check is missing here.",
+            ),
+            Finding(
+                id="f2",
+                anchor=Anchor(start_line=20, end_line=20),
+                body="Query uses string concatenation without parameterization.",
+            ),
+            Finding(
+                id="f3",
+                anchor=Anchor(start_line=40, end_line=40),
+                body="False positive leak on line 40.",
+            ),
+        ],
+        summary_note=(
+            "Line 20: sql injection note. "
+            "Line 40: false positive summary. "
+            "Shared cleanup reminder."
+        ),
+    )
+    report = grade_review(challenge, review, GradingPolicy())
+    prompt = build_judge_prompt(challenge, review, report)
+
+    assert "False positive leak on line 40." not in prompt
+    assert "Line 40: false positive summary" not in prompt
+    assert "C" * MAX_CANONICAL_REVIEW_CHARS in prompt
+    assert "C" * (MAX_CANONICAL_REVIEW_CHARS + 1) not in prompt
+
+    d1_block = prompt.split('<borderline_defect id="d1">')[1].split(
+        "</borderline_defect>"
+    )[0]
+    d2_block = prompt.split('<borderline_defect id="d2">')[1].split(
+        "</borderline_defect>"
+    )[0]
+    assert "Authorization and ownership check is missing here." in d1_block
+    assert "Query uses string concatenation without parameterization." not in d1_block
+    assert "Line 20: sql injection note" not in d1_block
+    assert "Query uses string concatenation without parameterization." in d2_block
+    assert "Authorization and ownership check is missing here." not in d2_block
+    assert "Line 20: sql injection note" in d2_block
+
+    big_findings = [
+        Finding(
+            id=f"f{i}",
+            anchor=Anchor(start_line=5 + i * 2, end_line=5 + i * 2),
+            body=("B" * 3000) if i == 0 else "D" * 3000,
+        )
+        for i in range(15)
+    ]
+    big_challenge = {
+        "expected_issues": [
+            {
+                "id": f"d{i}",
+                "title": f"Defect {i}",
+                "severity": "high",
+                "lines": [5 + i * 2],
+                "keywords": ["alpha", "beta"],
+                "explanation": "E" * 2000,
+            }
+            for i in range(15)
+        ]
+    }
+    big_review = ReviewSubmission(findings=big_findings)
+    big_report = grade_review(big_challenge, big_review, GradingPolicy())
+    big_prompt = build_judge_prompt(big_challenge, big_review, big_report)
+    assert "B" * MAX_COMMENT_CHARS in big_prompt
+    assert "B" * (MAX_COMMENT_CHARS + 1) not in big_prompt
+    assert len(big_prompt) < MAX_TOTAL_COMMENTS_CHARS + 35000
+
+
+def test_apply_verdicts_shared_summary_cap_duplicate_ids_and_unredact():
+    """Caps SUMMARY_SHARED uplift, avoids duplicate-id inflation, preserves unredact."""
+    challenge = {
+        "expected_issues": [
+            {
+                "id": "d1",
+                "title": "Auth",
+                "severity": "critical",
+                "lines": [5],
+                "keywords": ["authorization", "token"],
+                "explanation": "Missing authz.",
+            },
+            {
+                "id": "d2",
+                "title": "SQLi",
+                "severity": "critical",
+                "lines": [20],
+                "keywords": ["sql injection", "parameterized"],
+                "explanation": "Raw query.",
+            },
+        ]
+    }
+    defects = [DefectCriterion.model_validate(d) for d in challenge["expected_issues"]]
+    shared_only_review = ReviewSubmission(
+        findings=[
+            Finding(id="f1", anchor=Anchor(start_line=5, end_line=5), body=""),
+            Finding(
+                id="f2",
+                anchor=Anchor(start_line=20, end_line=20),
+                body="sql injection needs parameterized query",
+            ),
+        ],
+        summary_note="Missing authentication token verification.",
+    )
+    policy = GradingPolicy(attempt_number=1)
+    base_shared = grade_review(challenge, shared_only_review, policy)
+    assert base_shared.detected_issues[0].concept_score == 0.0
+    capped = apply_verdicts(
+        base_shared,
+        [_make_verdict("d1", 1.0, "Covered in summary.")],
+        defects,
+        policy,
+        shared_only_review,
+        key_source="byok",
+    )
+    d1_after = next(d for d in capped.detected_issues if d.id == "d1")
+    assert d1_after.concept_score == pytest.approx(policy.shared_summary_weight)
+    assert d1_after.concept_source == "judge"
+
+    dup_challenge = {
+        "expected_issues": [
+            {
+                "title": "First",
+                "severity": "high",
+                "lines": [10],
+                "keywords": ["xss", "escape"],
+                "explanation": "First flaw.",
+            },
+            {
+                "title": "Second",
+                "severity": "medium",
+                "lines": [10],
+                "keywords": ["csrf", "token"],
+                "explanation": "Second flaw.",
+            },
+        ]
+    }
+    dup_defects = [
+        DefectCriterion.model_validate(d) for d in dup_challenge["expected_issues"]
+    ]
+    assert dup_defects[0].id == dup_defects[1].id == "10"
+    dup_review = ReviewSubmission(
+        findings=[
+            Finding(
+                id="f1",
+                anchor=Anchor(start_line=10, end_line=10),
+                body="xss flaw here",
+            )
+        ]
+    )
+    dup_base = grade_review(dup_challenge, dup_review, policy)
+    dup_applied = apply_verdicts(
+        dup_base, [], dup_defects, policy, dup_review, key_source="byok"
+    )
+    assert dup_applied.score == dup_base.score
+    assert dup_applied.judge is not None
+    assert dup_applied.judge.score_delta == 0
+
+    app_content = "\n".join(f"line {i}" for i in range(1, 25))
+    scoped_challenge = {
+        "files": [{"path": "app.py", "content": app_content}],
+        "expected_issues": [
+            {
+                "id": "d1",
+                "title": "SQL Injection",
+                "severity": "critical",
+                "lines": [5],
+                "keywords": ["sql injection", "parameterized"],
+                "explanation": "Raw query.",
+            },
+            {
+                "id": "d2",
+                "title": "Lineless Leak",
+                "severity": "low",
+                "lines": [],
+                "keywords": ["memory leak", "cleanup"],
+                "explanation": "Leaks memory.",
+            },
+        ],
+    }
+    scoped_defects = [
+        DefectCriterion.model_validate(d) for d in scoped_challenge["expected_issues"]
+    ]
+    scoped_review = ReviewSubmission(
+        findings=[
+            Finding(
+                id="f1",
+                anchor=Anchor(file_path="app.py", start_line=5, end_line=5),
+                body="User input enters query.",
+            )
+        ],
+        summary_note="There is no memory leak here.",
+    )
+    scoped_base = grade_review(scoped_challenge, scoped_review, policy)
+    assert scoped_base.score < 80
+    assert scoped_base.missed_issues[0].denied_keywords == []
+
+    scoped_unlocked = apply_verdicts(
+        scoped_base,
+        [_make_verdict("d1", 1.0, "Explained query interpolation.")],
+        scoped_defects,
+        policy,
+        scoped_review,
+        key_source="byok",
+        default_file_path="app.py",
+    )
+    assert scoped_unlocked.score >= 80
+    assert scoped_unlocked.missed_issues[0].denied_keywords == ["memory leak"]
+    assert scoped_unlocked.missed_issues[0].explanation == "Leaks memory."
+
+    zero_kw_challenge = {
+        "expected_issues": [
+            {
+                "id": "d1",
+                "title": "Auth Bypass",
+                "severity": "critical",
+                "lines": [5],
+                "keywords": ["authorization", "ownership"],
+                "explanation": "Check owner.",
+            }
+        ]
+    }
+    zero_kw_defects = [
+        DefectCriterion.model_validate(d) for d in zero_kw_challenge["expected_issues"]
+    ]
+    zero_kw_review = ReviewSubmission(
+        findings=[
+            Finding(
+                id="f1",
+                anchor=Anchor(start_line=5, end_line=5),
+                body="Any user can access another account record.",
+            )
+        ]
+    )
+    zero_kw_base = grade_review(zero_kw_challenge, zero_kw_review, policy)
+    zero_kw_base_borderline = zero_kw_base.model_copy(
+        update={"borderline_defect_ids": ["d1"]}
+    )
+    zero_kw_applied = apply_verdicts(
+        zero_kw_base_borderline,
+        [_make_verdict("d1", 1.0, "Explained IDOR.")],
+        zero_kw_defects,
+        policy,
+        zero_kw_review,
+        key_source="byok",
+    )
+    assert "Concepts: semantic judge" in zero_kw_applied.critique
+
+    scoped_lined_challenge = {
+        "files": [{"path": "app.py", "content": app_content}],
+        "expected_issues": [
+            {
+                "id": "d1",
+                "title": "SQL Injection",
+                "severity": "critical",
+                "lines": [5],
+                "keywords": ["sql injection", "parameterized"],
+                "explanation": "Raw query.",
+            },
+            {
+                "id": "d2",
+                "title": "XSS",
+                "severity": "low",
+                "lines": [20],
+                "keywords": ["xss"],
+                "explanation": "Unescaped output.",
+            },
+        ],
+    }
+    sl_defects = [
+        DefectCriterion.model_validate(d)
+        for d in scoped_lined_challenge["expected_issues"]
+    ]
+    sl_review = ReviewSubmission(
+        findings=[
+            Finding(
+                id="f1",
+                anchor=Anchor(file_path="app.py", start_line=5, end_line=5),
+                body="User input enters query.",
+            )
+        ]
+    )
+    sl_base = grade_review(scoped_lined_challenge, sl_review, policy)
+    sl_unlocked = apply_verdicts(
+        sl_base,
+        [_make_verdict("d1", 1.0, "Explained query interpolation.")],
+        sl_defects,
+        policy,
+        sl_review,
+        key_source="byok",
+        default_file_path="app.py",
+    )
+    assert sl_unlocked.missed_issues[0].expected_lines == [
+        FlaggedLineRef(file_path="app.py", line_number=20)
+    ]

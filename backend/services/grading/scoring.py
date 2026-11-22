@@ -6,7 +6,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 from backend.models.challenge import (
     Challenge,
@@ -89,6 +89,7 @@ class DetectedIssue(BaseModel):
     weight: float = 0.0
     explanation: str = ""
     finding_ids: list[str] = Field(default_factory=list)
+    _defect_index: int | None = PrivateAttr(default=None)
 
 
 class MissedIssue(BaseModel):
@@ -104,6 +105,7 @@ class MissedIssue(BaseModel):
     denied_keywords: list[str] = Field(default_factory=list)
     weight: float = 0.0
     explanation: str = ""
+    _defect_index: int | None = PrivateAttr(default=None)
 
 
 class GradeReport(BaseModel):
@@ -124,6 +126,7 @@ class GradeReport(BaseModel):
     finding_verdicts: list[FindingVerdict] = Field(default_factory=list)
     borderline_defect_ids: list[str] = Field(default_factory=list)
     judge: JudgeOutcome | None = None
+    _raw_missed_issues: list[MissedIssue] | None = PrivateAttr(default=None)
 
 
 def aggregate_scores(
@@ -331,9 +334,12 @@ def generate_critique(
             lines_str = ", ".join(
                 _format_line_item_text(ln) for ln in issue.matched_lines
             )
-            kws_str = (
-                ", ".join(issue.matched_keywords) if issue.matched_keywords else "none"
-            )
+            if issue.matched_keywords:
+                kws_str = ", ".join(issue.matched_keywords)
+            elif issue.concept_source == "judge":
+                kws_str = "semantic judge"
+            else:
+                kws_str = "none"
             parts.append(
                 f"  ✓ {issue.title} [{issue.severity.upper()}] "
                 f"(Line(s): {lines_str} | Concepts: {kws_str})"
@@ -501,6 +507,8 @@ def grade_review(
 
     summary_note = review.summary_note.strip()
     summary_norm = normalize_text(summary_note)
+    all_bodies_empty = all(not f.body.strip() for f in review.findings)
+    all_finding_ids = frozenset(f.id for f in review.findings)
     finding_evidence: list[tuple[Evidence, ...]] = []
     for finding in review.findings:
         fp = (
@@ -518,7 +526,14 @@ def grade_review(
             if ln in own_lines or ln not in other_exact
         )
         finding_evidence.append(
-            bind_evidence(finding, summary_norm, anchor_lines, active_policy)
+            bind_evidence(
+                finding,
+                summary_norm,
+                anchor_lines,
+                active_policy,
+                all_bodies_empty=all_bodies_empty,
+                other_finding_ids=all_finding_ids - {finding.id},
+            )
         )
 
     pair_line_scores: dict[tuple[int, int], float] = {}
@@ -562,7 +577,7 @@ def grade_review(
                 line_fd
                 + (0.001 if has_exact else 0.0)
                 + weights[d_idx] * 1e-4
-                + kw_bonus * 1e-6
+                + kw_bonus * 1e-8
             )
 
     assigned = match_one_to_one(
@@ -773,23 +788,23 @@ def grade_review(
         defect_concept_scores.append(concept_score)
 
         if is_detected:
-            detected_issues.append(
-                DetectedIssue(
-                    id=defect.id,
-                    title=defect.title or defect.id,
-                    severity=defect.severity,
-                    matched_lines=matched_lines,
-                    matched_keywords=matched_kws,
-                    denied_keywords=denied_kws,
-                    evidence=evidence_sources,
-                    concept_source="keywords",
-                    line_score=line_score,
-                    concept_score=concept_score,
-                    weight=round(defect_weight, 4),
-                    explanation=defect.explanation,
-                    finding_ids=finding_ids_by_defect.get(idx, []),
-                )
+            detected_issue = DetectedIssue(
+                id=defect.id,
+                title=defect.title or defect.id,
+                severity=defect.severity,
+                matched_lines=matched_lines,
+                matched_keywords=matched_kws,
+                denied_keywords=denied_kws,
+                evidence=evidence_sources,
+                concept_source="keywords",
+                line_score=line_score,
+                concept_score=concept_score,
+                weight=round(defect_weight, 4),
+                explanation=defect.explanation,
+                finding_ids=finding_ids_by_defect.get(idx, []),
             )
+            detected_issue._defect_index = idx
+            detected_issues.append(detected_issue)
         else:
             expected_lines = (
                 _format_output_lines(
@@ -798,18 +813,18 @@ def grade_review(
                 if defect_scoped_lines[idx]
                 else defect.lines
             )
-            missed_issues.append(
-                MissedIssue(
-                    id=defect.id,
-                    title=defect.title or defect.id,
-                    severity=defect.severity,
-                    expected_lines=expected_lines,
-                    missing_keywords=missing_kws,
-                    denied_keywords=denied_kws,
-                    weight=round(defect_weight, 4),
-                    explanation=defect.explanation,
-                )
+            missed_issue = MissedIssue(
+                id=defect.id,
+                title=defect.title or defect.id,
+                severity=defect.severity,
+                expected_lines=expected_lines,
+                missing_keywords=missing_kws,
+                denied_keywords=denied_kws,
+                weight=round(defect_weight, 4),
+                explanation=defect.explanation,
             )
+            missed_issue._defect_index = idx
+            missed_issues.append(missed_issue)
 
     line_precision_pct, concept_score_pct, normalized_score = aggregate_scores(
         defect_line_scores,
@@ -819,7 +834,9 @@ def grade_review(
         active_policy,
     )
 
+    raw_missed_issues: list[MissedIssue] | None = None
     if not should_reveal(active_policy, review, normalized_score) and missed_issues:
+        raw_missed_issues = list(missed_issues)
         missed_issues = redact_missed_issues(missed_issues)
 
     summary_phrase, critique = generate_critique(
@@ -832,7 +849,7 @@ def grade_review(
 
     elapsed_ms = round((time.perf_counter() - start_time) * 1000, 2)
 
-    return GradeReport(
+    report = GradeReport(
         score=normalized_score,
         line_precision_score=line_precision_pct,
         concept_score=concept_score_pct,
@@ -846,3 +863,5 @@ def grade_review(
         finding_verdicts=finding_verdicts,
         borderline_defect_ids=borderline_defect_ids,
     )
+    report._raw_missed_issues = raw_missed_issues
+    return report

@@ -26,9 +26,9 @@ from backend.services.grading.judge.models import (
 from backend.services.grading.judge.prompt import (
     JUDGE_RESPONSE_SCHEMA,
     build_judge_prompt,
-    collect_borderline_review_text,
+    collect_borderline_evidence,
 )
-from backend.services.grading.review import ReviewSubmission
+from backend.services.grading.review import ReviewSubmission, extract_challenge_files
 from backend.services.grading.scoring import (
     GradeReport,
     GradingPolicy,
@@ -77,6 +77,7 @@ async def refine_with_judge(
     policy: GradingPolicy,
     *,
     client: GeminiJsonClient | None = None,
+    redact_judge_feedback: bool = True,
 ) -> GradeReport:
     """Optionally refine borderline defect concepts using a single Gemini judge call."""
     if not report.borderline_defect_ids:
@@ -87,10 +88,17 @@ async def refine_with_judge(
             key_source=request.key_source,
         )
 
-    inline_comments, summary_note = collect_borderline_review_text(
-        challenge, review, report
+    defects = extract_expected_issues(challenge)
+    challenge_files = extract_challenge_files(challenge)
+    default_file_path = challenge_files[0].path if len(challenge_files) == 1 else None
+    borderline_evidence = collect_borderline_evidence(
+        challenge,
+        review,
+        report,
+        defects=defects,
+        policy=policy,
     )
-    if not inline_comments and not summary_note:
+    if not any(item.has_text for item in borderline_evidence):
         return _with_judge_outcome(
             report,
             status="skipped_no_text",
@@ -98,7 +106,14 @@ async def refine_with_judge(
             key_source=request.key_source,
         )
 
-    prompt = build_judge_prompt(challenge, review, report)
+    prompt = build_judge_prompt(
+        challenge,
+        review,
+        report,
+        defects=defects,
+        policy=policy,
+        borderline_evidence=borderline_evidence,
+    )
     active_client = client or HttpxGeminiClient(timeout=request.timeout_s)
 
     try:
@@ -187,7 +202,6 @@ async def refine_with_judge(
             key_source=request.key_source,
         )
 
-    defects = extract_expected_issues(challenge)
     return apply_verdicts(
         report,
         verdicts,
@@ -195,6 +209,9 @@ async def refine_with_judge(
         policy,
         review,
         key_source=request.key_source,
+        default_file_path=default_file_path,
+        borderline_evidence=borderline_evidence,
+        redact_judge_feedback=redact_judge_feedback,
     )
 
 

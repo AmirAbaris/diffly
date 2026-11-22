@@ -24,7 +24,10 @@ from backend.services.grading import (
     JudgeRequest,
     ReviewSubmission,
     grade_review,
+    redact_judge_outcome,
+    redact_missed_issue_dicts,
     refine_with_judge,
+    should_reveal,
     validate_review_bounds,
     validate_review_text,
 )
@@ -193,6 +196,7 @@ def _persist_submission(
     actor: Actor,
     review: ReviewSubmission,
     report: GradeReport,
+    unlocked: bool,
 ) -> ReviewSubmissionResponse:
     submission = Submission.record(
         challenge_id=challenge_id,
@@ -204,6 +208,10 @@ def _persist_submission(
     session.add(submission)
     session.commit()
     session.refresh(submission)
+
+    judge_data = submission.get_judge_outcome()
+    if not unlocked:
+        judge_data = redact_judge_outcome(judge_data)
 
     return ReviewSubmissionResponse(
         submission_id=submission.id or 0,
@@ -223,7 +231,7 @@ def _persist_submission(
         finding_verdicts=submission.get_finding_verdicts(),
         comments=submission.comments,
         session_id=submission.session_id,
-        judge=submission.get_judge_outcome(),
+        judge=judge_data,
     )
 
 
@@ -276,7 +284,8 @@ async def submit_review(
         attempt_number=prior_attempts + 1,
         reveal=reveal or review.reveal,
     )
-    report = grade_review(
+    report = await run_in_threadpool(
+        grade_review,
         challenge=challenge_snapshot,
         review=review,
         policy=policy,
@@ -296,8 +305,10 @@ async def submit_review(
             report,
             judge_req,
             policy,
+            redact_judge_feedback=False,
         )
 
+    unlocked = should_reveal(policy, review, report.score)
     return await run_in_threadpool(
         _persist_submission,
         session=session,
@@ -305,39 +316,8 @@ async def submit_review(
         actor=actor,
         review=review,
         report=report,
+        unlocked=unlocked,
     )
-
-
-def _gate_history_missed_issues(missed_issues: list[Any]) -> list[Any]:
-    gated: list[Any] = []
-    for item in missed_issues:
-        if isinstance(item, dict):
-            gated.append(
-                {
-                    **item,
-                    "expected_lines": [],
-                    "missing_keywords": [],
-                    "explanation": "",
-                }
-            )
-        else:
-            gated.append(item)
-    return gated
-
-
-def _gate_history_judge_outcome(
-    judge_outcome: dict[str, Any] | None,
-) -> dict[str, Any] | None:
-    if not isinstance(judge_outcome, dict):
-        return judge_outcome
-    raw_verdicts = judge_outcome.get("verdicts")
-    if not isinstance(raw_verdicts, list):
-        return judge_outcome
-    gated_verdicts = [
-        {**item, "feedback": ""} if isinstance(item, dict) else item
-        for item in raw_verdicts
-    ]
-    return {**judge_outcome, "verdicts": gated_verdicts}
 
 
 @router.get(
@@ -385,8 +365,8 @@ def get_submission_history(
         missed = sub.get_missed_issues()
         judge_data = sub.get_judge_outcome()
         if not has_unlocked:
-            missed = _gate_history_missed_issues(missed)
-            judge_data = _gate_history_judge_outcome(judge_data)
+            missed = redact_missed_issue_dicts(missed)
+            judge_data = redact_judge_outcome(judge_data)
         history_items.append(
             SubmissionHistoryResponse(
                 attempt_number=index,

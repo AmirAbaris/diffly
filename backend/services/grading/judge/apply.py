@@ -5,6 +5,11 @@ from typing import Literal
 
 from backend.models.challenge import DefectCriterion, FlaggedLineRef
 from backend.services.grading.judge.models import JudgeDefectVerdict, JudgeOutcome
+from backend.services.grading.judge.prompt import (
+    BorderlineDefectEvidence,
+    collect_borderline_evidence,
+    pair_defects_with_issues,
+)
 from backend.services.grading.reveal import should_reveal
 from backend.services.grading.review import ReviewSubmission
 from backend.services.grading.scoring import (
@@ -41,19 +46,42 @@ def _uses_scoped_output(
 
 def _unredact_missed_issues(
     missed_issues: Sequence[MissedIssue],
-    defect_by_id: dict[str, DefectCriterion],
+    defects: Sequence[DefectCriterion],
     *,
     scoped_output: bool,
+    default_file_path: str | None = None,
 ) -> list[MissedIssue]:
+    used_defects: set[int] = set()
     restored: list[MissedIssue] = []
+
     for item in missed_issues:
-        defect = defect_by_id.get(item.id)
+        d_idx = getattr(item, "_defect_index", None)
+        defect: DefectCriterion | None = None
+        if isinstance(d_idx, int) and 0 <= d_idx < len(defects):
+            defect = defects[d_idx]
+            used_defects.add(d_idx)
+        else:
+            for idx, cand in enumerate(defects):
+                if idx in used_defects or cand.id != item.id:
+                    continue
+                if (cand.title or cand.id) == (item.title or item.id):
+                    defect = cand
+                    used_defects.add(idx)
+                    break
+            if defect is None:
+                for idx, cand in enumerate(defects):
+                    if idx not in used_defects and cand.id == item.id:
+                        defect = cand
+                        used_defects.add(idx)
+                        break
+
         if defect is None:
             restored.append(item)
             continue
+
         expected_lines = item.expected_lines
         if not expected_lines:
-            scoped = defect.get_scoped_lines()
+            scoped = defect.get_scoped_lines(default_file_path=default_file_path)
             expected_lines = (
                 _format_output_lines(scoped, scoped_output=scoped_output)
                 if scoped
@@ -64,6 +92,7 @@ def _unredact_missed_issues(
                 update={
                     "expected_lines": expected_lines,
                     "missing_keywords": item.missing_keywords or list(defect.keywords),
+                    "denied_keywords": list(item.denied_keywords),
                     "explanation": item.explanation or defect.explanation,
                 }
             )
@@ -79,6 +108,9 @@ def apply_verdicts(
     review: ReviewSubmission,
     *,
     key_source: Literal["byok", "server"],
+    default_file_path: str | None = None,
+    borderline_evidence: Sequence[BorderlineDefectEvidence] | None = None,
+    redact_judge_feedback: bool = True,
 ) -> GradeReport:
     """Apply raise-only judge concept verdicts to borderline defects."""
     borderline_ids = set(report.borderline_defect_ids)
@@ -93,30 +125,65 @@ def apply_verdicts(
         verdict_by_id[verdict.defect_id] = verdict
         filtered_verdicts.append(verdict)
 
+    weights = defect_weights(defects, policy.severity_weights) if defects else ()
+    paired_detected = (
+        pair_defects_with_issues(
+            defects, report.detected_issues, report.missed_issues, weights
+        )
+        if defects
+        else {}
+    )
+    det_obj_to_idx = {id(issue): d_idx for d_idx, issue in paired_detected.items()}
+
+    evidence_items = (
+        list(borderline_evidence)
+        if borderline_evidence is not None
+        else collect_borderline_evidence(
+            {"expected_issues": defects},
+            review,
+            report,
+            defects=defects,
+            policy=policy,
+        )
+    )
+    max_credit_by_idx = {ev.defect_index: ev.max_credit for ev in evidence_items}
+    max_credit_by_id = {ev.defect_id: ev.max_credit for ev in evidence_items}
+
     uplifted = False
     updated_detected: list[DetectedIssue] = []
     for issue in report.detected_issues:
+        d_idx = det_obj_to_idx.get(id(issue))
         verdict = verdict_by_id.get(issue.id)
-        if verdict is not None and float(verdict.concept_credit) > issue.concept_score:
+        max_credit = (
+            max_credit_by_idx.get(d_idx, max_credit_by_id.get(issue.id, 1.0))
+            if d_idx is not None
+            else max_credit_by_id.get(issue.id, 1.0)
+        )
+        if verdict is not None:
+            effective_credit = min(float(verdict.concept_credit), max_credit)
+        else:
+            effective_credit = 0.0
+
+        if verdict is not None and effective_credit > issue.concept_score:
             uplifted = True
-            updated_detected.append(
-                issue.model_copy(
-                    update={
-                        "concept_score": float(verdict.concept_credit),
-                        "concept_source": "judge",
-                    }
-                )
+            updated_issue = issue.model_copy(
+                update={
+                    "concept_score": effective_credit,
+                    "concept_source": "judge",
+                }
             )
+            if d_idx is not None:
+                updated_issue._defect_index = d_idx
+                paired_detected[d_idx] = updated_issue
+            updated_detected.append(updated_issue)
         else:
             updated_detected.append(issue)
 
-    detected_by_id = {issue.id: issue for issue in updated_detected}
     if defects:
-        weights = defect_weights(defects, policy.severity_weights)
         line_scores: list[float] = []
         concept_scores: list[float] = []
-        for defect in defects:
-            matched_issue = detected_by_id.get(defect.id)
+        for idx in range(len(defects)):
+            matched_issue = paired_detected.get(idx)
             if matched_issue is not None:
                 line_scores.append(matched_issue.line_score)
                 concept_scores.append(matched_issue.concept_score)
@@ -136,18 +203,24 @@ def apply_verdicts(
 
     reveal_now = should_reveal(policy, review, new_score)
     gated_verdicts = [
-        v if reveal_now else v.model_copy(update={"feedback": ""})
+        v
+        if (reveal_now or not redact_judge_feedback)
+        else v.model_copy(update={"feedback": ""})
         for v in filtered_verdicts
     ]
 
+    raw_missed = getattr(report, "_raw_missed_issues", None)
     if report.missed_issues:
         if reveal_now:
-            defect_by_id = {d.id: d for d in defects}
-            updated_missed = _unredact_missed_issues(
-                report.missed_issues,
-                defect_by_id,
-                scoped_output=_uses_scoped_output(report, defects),
-            )
+            if raw_missed is not None:
+                updated_missed = [item.model_copy() for item in raw_missed]
+            else:
+                updated_missed = _unredact_missed_issues(
+                    report.missed_issues,
+                    defects,
+                    scoped_output=_uses_scoped_output(report, defects),
+                    default_file_path=default_file_path,
+                )
         else:
             updated_missed = redact_missed_issues(report.missed_issues)
     else:
@@ -173,7 +246,7 @@ def apply_verdicts(
         score_delta=score_delta,
     )
 
-    return report.model_copy(
+    updated_report = report.model_copy(
         update={
             "score": new_score,
             "line_precision_score": report.line_precision_score,
@@ -185,6 +258,8 @@ def apply_verdicts(
             "judge": outcome,
         }
     )
+    updated_report._raw_missed_issues = raw_missed if not reveal_now else None
+    return updated_report
 
 
 __all__ = ["apply_verdicts"]

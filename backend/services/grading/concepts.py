@@ -10,10 +10,15 @@ from functools import lru_cache
 from typing import TYPE_CHECKING
 
 from backend.models.challenge import DefectCriterion
-from backend.services.grading.text.lexicon import TERM_POLARITY, Polarity
+from backend.services.grading.text.lexicon import (
+    EQUIVALENT_CONCEPT_TOKENS,
+    TERM_POLARITY,
+    Polarity,
+)
 from backend.services.grading.text.normalize import (
     NormalizedText,
     Sentence,
+    _lemmatize_token,
     normalize_phrase,
     normalize_text,
 )
@@ -27,24 +32,33 @@ if TYPE_CHECKING:
 # Keywords with syntax punctuation outside word separators (e.g. `text()`, `$tx`)
 # skip bare token matching so syntax tokens do not falsely match plain English words.
 _SYNTAX_PUNCT_RE = re.compile(r"[^A-Za-z0-9_\s-]")
-_FILE_REF_PATH_RE = re.compile(
-    r"((?:[A-Za-z0-9_.-]+/)*[A-Za-z0-9_-]+\.[A-Za-z][A-Za-z0-9]{0,9}):\d+"
-)
 _CONSEQUENCE_CONNECTORS = frozenset(
-    {
+    _lemmatize_token(word)
+    for word in (
         "for",
         "against",
         "allowing",
         "allow",
+        "allows",
         "enabling",
         "enable",
+        "enables",
         "causing",
+        "cause",
+        "causes",
         "exposing",
         "expose",
+        "exposes",
         "leading",
+        "lead",
+        "leads",
         "resulting",
+        "result",
+        "results",
         "triggering",
-    }
+        "trigger",
+        "triggers",
+    )
 )
 
 
@@ -100,26 +114,41 @@ def _raw_keyword_in_text(keyword: str, text: str) -> bool:
 def _mentions_finding_id(raw: str, finding_id: str) -> bool:
     if not finding_id:
         return False
-    if finding_id.isdigit():
-        pattern = rf"(?:#|finding\s+){re.escape(finding_id)}(?![A-Za-z0-9_-])"
-    else:
-        pattern = rf"(?<![A-Za-z0-9_-]){re.escape(finding_id)}(?![A-Za-z0-9_-])"
+    pattern = (
+        rf"(?:(?<![A-Za-z0-9_-])#|\bfinding\s+){re.escape(finding_id)}"
+        rf"(?![A-Za-z0-9_-])"
+    )
     return bool(re.search(pattern, raw, re.IGNORECASE))
 
 
-def _matches_finding_file(raw: str, finding_file_path: str | None) -> bool:
-    if finding_file_path is None:
+def _path_matches_target(ref_path: str, target_path: str) -> bool:
+    target_lower = target_path.lower()
+    if ref_path == target_lower:
         return True
-    mentioned_paths = _FILE_REF_PATH_RE.findall(raw)
-    if not mentioned_paths:
-        return True
-    target_lower = finding_file_path.lower()
-    target_base = target_lower.rsplit("/", 1)[-1]
-    for path in mentioned_paths:
-        path_lower = path.lower()
-        if path_lower == target_lower or path_lower.rsplit("/", 1)[-1] == target_base:
-            return True
+    if "/" not in ref_path:
+        return ref_path == target_lower.rsplit("/", 1)[-1]
     return False
+
+
+def _matches_sentence_location(
+    sent: Sentence,
+    anchor_lines: frozenset[int],
+    finding_file_path: str | None,
+) -> bool:
+    if not (sent.line_refs & anchor_lines):
+        return False
+    if finding_file_path is None or not sent.file_line_refs:
+        return True
+    if any(
+        ln in anchor_lines and _path_matches_target(fp, finding_file_path)
+        for fp, ln in sent.file_line_refs
+    ):
+        return True
+    file_bound_lines = {ln for _, ln in sent.file_line_refs}
+    bare_lines = sent.line_refs - file_bound_lines
+    return bool(bare_lines & anchor_lines) and all(
+        _path_matches_target(fp, finding_file_path) for fp, _ in sent.file_line_refs
+    )
 
 
 def bind_evidence(
@@ -127,6 +156,9 @@ def bind_evidence(
     summary: NormalizedText,
     anchor_lines: frozenset[int],
     policy: GradingPolicy,
+    *,
+    all_bodies_empty: bool | None = None,
+    other_finding_ids: frozenset[str] = frozenset(),
 ) -> tuple[Evidence, ...]:
     """Bind a finding's body and relevant summary sentences into weighted evidence."""
     items: list[Evidence] = []
@@ -147,14 +179,14 @@ def bind_evidence(
     finding_file_path = finding.anchor.file_path
 
     for sent in summary.sentences:
-        if _mentions_finding_id(sent.raw, finding.id):
-            bound_sentences.append(sent)
-        elif sent.line_refs:
-            if (sent.line_refs & anchor_lines) and _matches_finding_file(
-                sent.raw, finding_file_path
-            ):
+        if sent.line_refs:
+            if _matches_sentence_location(sent, anchor_lines, finding_file_path):
                 bound_sentences.append(sent)
-        else:
+        elif _mentions_finding_id(sent.raw, finding.id):
+            bound_sentences.append(sent)
+        elif not any(
+            _mentions_finding_id(sent.raw, other_id) for other_id in other_finding_ids
+        ):
             shared_sentences.append(sent)
 
     if bound_sentences:
@@ -166,7 +198,10 @@ def bind_evidence(
             )
         )
     if shared_sentences:
-        shared_weight = 1.0 if not body_stripped else policy.shared_summary_weight
+        use_full_shared = (
+            not body_stripped if all_bodies_empty is None else all_bodies_empty
+        )
+        shared_weight = 1.0 if use_full_shared else policy.shared_summary_weight
         items.append(
             Evidence(
                 sentences=tuple(shared_sentences),
@@ -178,17 +213,7 @@ def bind_evidence(
     return tuple(items)
 
 
-def _resolve_polarity(keyword: str, defect: DefectCriterion) -> Polarity:
-    overrides = getattr(defect, "keyword_polarity", None) or {}
-    if overrides:
-        if keyword in overrides:
-            return Polarity(overrides[keyword])
-        kw_lower = keyword.strip().lower()
-        for ov_key, ov_val in overrides.items():
-            if ov_key.strip().lower() == kw_lower:
-                return Polarity(ov_val)
-
-    canon = normalize_phrase(keyword)
+def _resolve_tokens_polarity(canon: tuple[str, ...]) -> Polarity:
     if not canon:
         return Polarity.HAZARD
     if canon in TERM_POLARITY:
@@ -208,6 +233,25 @@ def _resolve_polarity(keyword: str, defect: DefectCriterion) -> Polarity:
             if pol == Polarity.SAFEGUARD:
                 saw_safeguard = True
     return Polarity.SAFEGUARD if saw_safeguard else Polarity.HAZARD
+
+
+def _resolve_polarity(keyword: str, defect: DefectCriterion) -> tuple[Polarity, bool]:
+    overrides = getattr(defect, "keyword_polarity", None) or {}
+    if overrides:
+        if keyword in overrides:
+            return Polarity(overrides[keyword]), True
+        kw_lower = keyword.strip().lower()
+        for ov_key, ov_val in overrides.items():
+            if ov_key.strip().lower() == kw_lower:
+                return Polarity(ov_val), True
+
+    return _resolve_tokens_polarity(normalize_phrase(keyword)), False
+
+
+def _tokens_equivalent(sent_tok: str, kw_tok: str) -> bool:
+    if sent_tok == kw_tok:
+        return True
+    return kw_tok in EQUIVALENT_CONCEPT_TOKENS.get(sent_tok, ())
 
 
 def _is_safeguard_consequence(sent: Sentence, match_start: int) -> bool:
@@ -261,6 +305,7 @@ def _match_keyword_in_sentence(
     canon_phrase: tuple[str, ...],
     use_canon: bool,
     polarity: Polarity,
+    has_override: bool,
     sent: Sentence,
 ) -> tuple[bool, bool]:
     """Return (is_valid_hit, is_denied_or_dismissed_hit) for a single sentence."""
@@ -271,13 +316,21 @@ def _match_keyword_in_sentence(
         phrase_len = len(canon_phrase)
         for idx in range(len(sent.tokens) - phrase_len + 1):
             span = sent.tokens[idx : idx + phrase_len]
-            if tuple(t.canon for t in span) != canon_phrase:
+            if not all(
+                _tokens_equivalent(t.canon, kw_tok)
+                for t, kw_tok in zip(span, canon_phrase, strict=True)
+            ):
                 continue
+            effective_polarity = (
+                polarity
+                if has_override
+                else _resolve_tokens_polarity(tuple(t.canon for t in span))
+            )
             occ_dismissed = any(t.dismissed for t in span)
             occ_denied = any(t.denied for t in span) and not _is_safeguard_consequence(
                 sent, idx
             )
-            if occ_dismissed or (polarity == Polarity.HAZARD and occ_denied):
+            if occ_dismissed or (effective_polarity == Polarity.HAZARD and occ_denied):
                 denied_hit = True
             else:
                 valid = True
@@ -336,7 +389,7 @@ def match_concepts(
     for kw in defect.keywords:
         canon_phrase = normalize_phrase(kw)
         use_canon = bool(canon_phrase) and not _SYNTAX_PUNCT_RE.search(kw)
-        polarity = _resolve_polarity(kw, defect)
+        polarity, has_override = _resolve_polarity(kw, defect)
 
         best_weight = 0.0
         best_sources: list[EvidenceSource] = []
@@ -346,7 +399,7 @@ def match_concepts(
             ev_valid = False
             for sent in ev.sentences:
                 valid, denied_hit = _match_keyword_in_sentence(
-                    kw, canon_phrase, use_canon, polarity, sent
+                    kw, canon_phrase, use_canon, polarity, has_override, sent
                 )
                 if valid:
                     ev_valid = True

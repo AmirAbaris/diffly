@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, func, or_, select
 from sqlmodel.sql.expression import SelectOfScalar
+from starlette.concurrency import run_in_threadpool
 
 from api.deps import ActorDep, OwnerActorDep, SessionDep
 from backend.core.config import settings
@@ -34,7 +35,6 @@ from backend.models.challenge import (
     DefectCriterion,
     Difficulty,
     FlaggedLineItem,
-    FlaggedLineRef,
     FlaggedLines,
     GenerateCustomChallengeRequest,
     HintResponse,
@@ -62,6 +62,7 @@ from backend.services.grading import (
     JudgeRequest,
     MissedIssue,
     ReviewSubmission,
+    findings_to_flagged_lines,
     grade_review,
     refine_with_judge,
     validate_review_bounds,
@@ -261,13 +262,23 @@ class CustomEvaluationRequest(BaseModel):
         description="Opt in to optional async semantic judge for borderline concepts",
     )
 
+    def to_review_submission(self) -> ReviewSubmission:
+        note = (
+            self.summary_note if self.summary_note is not None else self.comments
+        ).strip()
+        if self.findings is not None:
+            return ReviewSubmission(findings=self.findings, summary_note=note)
+        return ReviewSubmission.model_validate(
+            {
+                "flagged_lines": self.flagged_lines,
+                "summary_note": note,
+            }
+        )
+
     @model_validator(mode="after")
     def validate_flagged_lines_bounds(self) -> "CustomEvaluationRequest":
+        review = self.to_review_submission()
         if self.findings is not None:
-            note = (
-                self.summary_note if self.summary_note is not None else self.comments
-            ).strip()
-            review = ReviewSubmission(findings=self.findings, summary_note=note)
             validate_review_text(review)
             if self.code_snippet or self.files:
                 validate_review_bounds(
@@ -664,21 +675,12 @@ async def evaluate_custom_challenge_endpoint(
         "files": payload.files,
         "canonical_review": payload.canonical_review,
     }
-    note = (
-        payload.summary_note if payload.summary_note is not None else payload.comments
-    ).strip()
-    if payload.findings is not None:
-        review = ReviewSubmission(findings=payload.findings, summary_note=note)
-    else:
-        review = ReviewSubmission.model_validate(
-            {
-                "flagged_lines": payload.flagged_lines,
-                "summary_note": note,
-            }
-        )
+    review = payload.to_review_submission()
+    note = review.summary_note
 
     policy = GradingPolicy()
-    report = grade_review(
+    report = await run_in_threadpool(
+        grade_review,
         challenge=challenge_payload,
         review=review,
         policy=policy,
@@ -687,6 +689,7 @@ async def evaluate_custom_challenge_endpoint(
         byok_key=x_gemini_key,
         opt_in=payload.semantic_judge,
         settings=settings,
+        allow_server_key=False,
     )
     if judge_req is not None:
         report = await refine_with_judge(
@@ -698,19 +701,7 @@ async def evaluate_custom_challenge_endpoint(
         )
 
     if payload.findings is not None:
-        derived_lines: list[FlaggedLineItem] = []
-        seen_lines: set[tuple[str | None, int]] = set()
-        for finding in review.findings:
-            fp = finding.anchor.file_path
-            for ln in finding.anchor.lines():
-                if (fp, ln) in seen_lines:
-                    continue
-                seen_lines.add((fp, ln))
-                if fp is not None:
-                    derived_lines.append(FlaggedLineRef(file_path=fp, line_number=ln))
-                else:
-                    derived_lines.append(ln)
-        out_flagged_lines = derived_lines
+        out_flagged_lines = findings_to_flagged_lines(review.findings)
         out_findings = [f.model_dump() for f in review.findings]
         out_verdicts = report.finding_verdicts
         out_comments = note

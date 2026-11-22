@@ -17,6 +17,15 @@ class RubricCheck(StrEnum):
     FIX = "fix"
 
 
+_STRING_CONCEPT_CREDITS: dict[str, float] = {
+    "0.0": 0.0,
+    "0.5": 0.5,
+    "1.0": 1.0,
+    "0": 0.0,
+    "1": 1.0,
+}
+
+
 class JudgeDefectVerdict(BaseModel):
     """Strict structured verdict emitted by Gemini for a single borderline defect."""
 
@@ -29,10 +38,26 @@ class JudgeDefectVerdict(BaseModel):
 
     @field_validator("concept_credit", mode="before")
     @classmethod
-    def _reject_bool_credit(cls, value: Any) -> Any:
+    def _coerce_and_reject_bool_credit(cls, value: Any) -> Any:
         # Python bool subclasses int, so True == 1.0 would satisfy Literal[1.0].
         if isinstance(value, bool):
             raise ValueError("concept_credit must be 0.0, 0.5, or 1.0")
+        if isinstance(value, str):
+            stripped = value.strip()
+            if stripped in _STRING_CONCEPT_CREDITS:
+                return _STRING_CONCEPT_CREDITS[stripped]
+            raise ValueError("concept_credit must be 0.0, 0.5, or 1.0")
+        if isinstance(value, int):
+            return float(value)
+        return value
+
+    @field_validator("feedback", mode="before")
+    @classmethod
+    def _truncate_feedback(cls, value: Any) -> Any:
+        if value is None:
+            return ""
+        if isinstance(value, str):
+            return value[:400]
         return value
 
 
@@ -68,11 +93,15 @@ class JudgeRequest:
         byok_key: str | None,
         opt_in: bool,
         settings: Any,
+        allow_server_key: bool = True,
     ) -> "JudgeRequest | None":
         """Resolve an active JudgeRequest from BYOK header or server opt-in config."""
-        raw_model = getattr(settings, "gemini_judge_model", DEFAULT_GEMINI_MODEL)
+        if not opt_in:
+            return None
+
+        raw_model = getattr(settings, "GEMINI_JUDGE_MODEL", DEFAULT_GEMINI_MODEL)
         model = str(raw_model or "").strip() or DEFAULT_GEMINI_MODEL
-        raw_timeout = getattr(settings, "gemini_judge_timeout_s", 8.0)
+        raw_timeout = getattr(settings, "GEMINI_JUDGE_TIMEOUT_S", 8.0)
         try:
             timeout_s = float(raw_timeout)
         except (TypeError, ValueError):
@@ -88,8 +117,8 @@ class JudgeRequest:
                 timeout_s=timeout_s,
             )
 
-        if opt_in:
-            raw_server_key = getattr(settings, "gemini_judge_api_key", "")
+        if allow_server_key:
+            raw_server_key = getattr(settings, "GEMINI_JUDGE_API_KEY", None)
             if isinstance(raw_server_key, SecretStr):
                 server_key = raw_server_key.get_secret_value().strip()
             else:

@@ -241,3 +241,60 @@ def test_tie_breaking_prefers_higher_severity_defect(
     report = grade_review(challenge, review, GradingPolicy())
     assert [issue.id for issue in report.detected_issues] == [expected_winner]
     assert report.finding_verdicts[0].defect_id == expected_winner
+
+
+def test_tie_breaking_severity_always_beats_keyword_bonus_across_many_defects():
+    """Higher severity wins tie even across 5 defects with 100% concept match."""
+    challenge = {
+        "expected_issues": [
+            {
+                "id": "d-med",
+                "title": "Medium Issue",
+                "severity": "medium",
+                "lines": [15],
+                "keywords": ["sql injection"],
+            },
+            {
+                "id": "d-high",
+                "title": "High Issue",
+                "severity": "high",
+                "lines": [15],
+                "keywords": ["unrelated_kw"],
+            },
+            {
+                "id": "d-3",
+                "title": "Three",
+                "severity": "critical",
+                "lines": [30],
+                "keywords": ["a"],
+            },
+            {
+                "id": "d-4",
+                "title": "Four",
+                "severity": "critical",
+                "lines": [40],
+                "keywords": ["b"],
+            },
+            {
+                "id": "d-5",
+                "title": "Five",
+                "severity": "high",
+                "lines": [50],
+                "keywords": ["c"],
+            },
+        ]
+    }
+    review = ReviewSubmission.model_validate(
+        {
+            "findings": [
+                {
+                    "id": "f1",
+                    "start_line": 15,
+                    "end_line": 15,
+                    "body": "sql injection flaw",
+                }
+            ]
+        }
+    )
+    report = grade_review(challenge, review, GradingPolicy())
+    assert [issue.id for issue in report.detected_issues] == ["d-high"]

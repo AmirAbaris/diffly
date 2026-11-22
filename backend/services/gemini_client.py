@@ -88,7 +88,15 @@ class HttpxGeminiClient:
         temperature: float = 0.2,
         fallback_models: Sequence[str] = FALLBACK_GEMINI_MODELS,
     ) -> dict[str, Any]:
-        if not api_key or not api_key.strip():
+        if not isinstance(api_key, str) or any(
+            ch in api_key for ch in ("\r", "\n", "\x00")
+        ):
+            raise GeminiAuthError(
+                "Missing or invalid Gemini API key. "
+                "Provide a valid key in the X-Gemini-Key header."
+            )
+        cleaned_key = api_key.strip()
+        if not cleaned_key or not cleaned_key.isascii():
             raise GeminiAuthError(
                 "Missing or invalid Gemini API key. "
                 "Provide a valid key in the X-Gemini-Key header."
@@ -96,7 +104,7 @@ class HttpxGeminiClient:
 
         headers = {
             "Content-Type": "application/json",
-            "x-goog-api-key": api_key.strip(),
+            "x-goog-api-key": cleaned_key,
         }
         payload = {
             "contents": [{"parts": [{"text": prompt}]}],
@@ -148,11 +156,7 @@ class HttpxGeminiClient:
 
         if response.status_code == 400:
             err_body = response.text
-            if (
-                "API_KEY_INVALID" in err_body
-                or "API key not valid" in err_body
-                or "INVALID_ARGUMENT" in err_body
-            ):
+            if "API_KEY_INVALID" in err_body or "API key not valid" in err_body:
                 raise GeminiAuthError("Invalid Gemini API key or unauthorized request.")
             raise GeminiAPIError(f"Gemini API bad request: {err_body}")
 

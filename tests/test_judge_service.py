@@ -9,9 +9,10 @@ from unittest.mock import AsyncMock, patch
 import httpx
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import SecretStr
 from sqlmodel import Session
 
-from backend.core.config import settings
+from backend.core.config import Settings, settings
 from backend.models.challenge import Category, Challenge, Difficulty, Language
 from backend.models.submission import Submission
 from backend.services.gemini_client import (
@@ -19,6 +20,7 @@ from backend.services.gemini_client import (
     GeminiAuthError,
     GeminiRateLimitError,
     GeminiSchemaError,
+    HttpxGeminiClient,
 )
 from backend.services.grading import (
     Anchor,
@@ -165,9 +167,9 @@ def _judge_request(*, timeout_s: float = 8.0) -> JudgeRequest:
             "JudgeSettings",
             (),
             {
-                "gemini_judge_model": "gemini-3.1-flash-lite",
-                "gemini_judge_timeout_s": timeout_s,
-                "gemini_judge_api_key": "",
+                "GEMINI_JUDGE_MODEL": "gemini-3.1-flash-lite",
+                "GEMINI_JUDGE_TIMEOUT_S": timeout_s,
+                "GEMINI_JUDGE_API_KEY": None,
             },
         )(),
     )  # type: ignore[return-value]
@@ -502,8 +504,10 @@ def test_evaluate_custom_endpoint_with_semantic_judge_and_canonical_review(
     assert canonical_text in mock_generate.call_args.kwargs["prompt"]
 
     mock_generate.reset_mock()
-    monkeypatch.setattr(settings, "gemini_judge_api_key", "server-judge-key-test")
-    res_legacy = client.post(
+    monkeypatch.setattr(
+        settings, "GEMINI_JUDGE_API_KEY", SecretStr("server-judge-key-test")
+    )
+    res_server_blocked = client.post(
         "/api/challenges/evaluate-custom",
         json={
             "code_snippet": base_payload["code_snippet"],
@@ -514,22 +518,62 @@ def test_evaluate_custom_endpoint_with_semantic_judge_and_canonical_review(
             "semantic_judge": True,
         },
     )
-    assert res_legacy.status_code == 200
-    data_legacy = res_legacy.json()
+    assert res_server_blocked.status_code == 200
+    assert res_server_blocked.json()["score"] == 50
+    assert res_server_blocked.json()["judge"] is None
+    mock_generate.assert_not_called()
+
+    res_legacy_byok = client.post(
+        "/api/challenges/evaluate-custom",
+        json={
+            "code_snippet": base_payload["code_snippet"],
+            "expected_issues": base_payload["expected_issues"],
+            "flagged_lines": [2],
+            "comments": "User id flows directly into the database query.",
+            "canonical_review": canonical_text,
+            "semantic_judge": True,
+        },
+        headers={"X-Gemini-Key": SECRET_BYOK_KEY},
+    )
+    assert res_legacy_byok.status_code == 200
+    data_legacy = res_legacy_byok.json()
     assert data_legacy["score"] == 100
     assert data_legacy["judge"]["status"] == "applied"
-    assert data_legacy["judge"]["key_source"] == "server"
+    assert data_legacy["judge"]["key_source"] == "byok"
     assert data_legacy["findings"] == []
 
     mock_generate.reset_mock()
     res_opt_out = client.post(
         "/api/challenges/evaluate-custom",
         json={**base_payload, "semantic_judge": False},
+        headers={"X-Gemini-Key": SECRET_BYOK_KEY},
     )
     assert res_opt_out.status_code == 200
     assert res_opt_out.json()["score"] == 50
     assert res_opt_out.json()["judge"] is None
     mock_generate.assert_not_called()
+
+
+def test_evaluate_custom_over_200_flagged_lines_returns_422(client: TestClient):
+    """POST /evaluate-custom with >200 unique flagged_lines returns 422, not 500."""
+    res = client.post(
+        "/api/challenges/evaluate-custom",
+        json={
+            "code_snippet": "\n".join(f"line_{i} = {i}" for i in range(1, 220)),
+            "expected_issues": [
+                {
+                    "id": "i1",
+                    "title": "Test",
+                    "severity": "medium",
+                    "lines": [1],
+                    "keywords": ["test"],
+                }
+            ],
+            "flagged_lines": list(range(1, 206)),
+            "comments": "Many lines flagged.",
+        },
+    )
+    assert res.status_code == 422
 
 
 @patch("backend.services.grading.judge.service.HttpxGeminiClient.generate_json")
@@ -615,7 +659,160 @@ def test_submissions_history_gates_judge_feedback_until_unlocked(
     )
     hist_unlocked = c2.get(f"/api/challenges/{ch.slug}/submissions")
     assert hist_unlocked.status_code == 200
+    unlocked_items = hist_unlocked.json()
+    assert len(unlocked_items) == 3
+    for item in unlocked_items:
+        assert (
+            item["judge"]["verdicts"][0]["feedback"]
+            == "Spoiler-sensitive judge feedback on SQLi."
+        )
+
+
+def test_submissions_history_gates_denied_keywords_and_config_rejects_gemini_api_key(
+    client_factory,
+    session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """History gates denied_keywords when locked; Settings ignores GEMINI_API_KEY."""
+    monkeypatch.setenv("GEMINI_API_KEY", "general-key-must-not-enable-judge")
+    monkeypatch.delenv("GEMINI_JUDGE_API_KEY", raising=False)
+    fresh_settings = Settings()
+    assert fresh_settings.GEMINI_JUDGE_API_KEY is None
     assert (
-        hist_unlocked.json()[0]["judge"]["verdicts"][0]["feedback"]
-        == "Spoiler-sensitive judge feedback on SQLi."
+        JudgeRequest.from_headers(byok_key=None, opt_in=True, settings=fresh_settings)
+        is None
     )
+
+    ch = Challenge(
+        slug="denied-keywords-history-gate",
+        title="Denied Keywords Gate Drill",
+        difficulty=Difficulty.MEDIUM,
+        category=Category.SECURITY,
+        language=Language.PYTHON,
+        description="Inspect query.",
+        code_snippet="",
+        expected_issues=json.dumps(
+            [
+                {
+                    "id": "lineless-1",
+                    "title": "Lineless Leak",
+                    "severity": "medium",
+                    "lines": [],
+                    "keywords": ["memory leak", "cleanup"],
+                    "explanation": "Memory is never freed.",
+                }
+            ]
+        ),
+        hints=json.dumps([{"tier": 1, "hint": "Look closely."}]),
+        is_public=True,
+    )
+    session.add(ch)
+    session.commit()
+
+    c1 = client_factory()
+    res = c1.post(
+        f"/api/challenges/{ch.slug}/review?reveal=true",
+        json={
+            "findings": [],
+            "comments": "There is no memory leak here at all.",
+        },
+    )
+    assert res.status_code == 200
+    assert res.json()["missed_issues"][0]["denied_keywords"] == ["memory leak"]
+
+    locked_hist = c1.get(f"/api/challenges/{ch.slug}/submissions")
+    assert locked_hist.status_code == 200
+    assert locked_hist.json()[0]["missed_issues"][0]["denied_keywords"] == []
+    assert locked_hist.json()[0]["missed_issues"][0]["missing_keywords"] == []
+    assert locked_hist.json()[0]["missed_issues"][0]["explanation"] == ""
+
+    revealed_hist = c1.get(f"/api/challenges/{ch.slug}/submissions?reveal=true")
+    assert revealed_hist.status_code == 200
+    assert revealed_hist.json()[0]["missed_issues"][0]["denied_keywords"] == [
+        "memory leak"
+    ]
+
+
+@pytest.mark.anyio
+async def test_gemini_client_non_ascii_key_and_400_classification():
+    """Non-ASCII/control keys raise GeminiAuthError; generic 400 stays APIError."""
+    client = HttpxGeminiClient()
+    for bad_key in ("bad🔑key", "bad\u00e9key", "bad\nkey", "bad\rkey", "bad\x00key"):
+        with pytest.raises(GeminiAuthError):
+            await client.generate_json(
+                prompt="hello",
+                response_schema={"type": "OBJECT"},
+                api_key=bad_key,
+            )
+
+    challenge = _borderline_challenge_dict()
+    policy = GradingPolicy(attempt_number=1)
+    review = ReviewSubmission(
+        findings=[
+            Finding(
+                id="f1",
+                anchor=Anchor(start_line=2, end_line=2),
+                body="User input goes directly into query string.",
+            )
+        ]
+    )
+    base_report = grade_review(challenge, review, policy)
+    non_ascii_req = JudgeRequest(
+        api_key=SecretStr("bad🔑key"),
+        key_source="byok",
+        model="gemini-3.1-flash-lite",
+        timeout_s=8.0,
+    )
+    res_non_ascii = await refine_with_judge(
+        challenge, review, base_report, non_ascii_req, policy
+    )
+    assert res_non_ascii.judge is not None
+    assert res_non_ascii.judge.status == "unavailable"
+    assert res_non_ascii.judge.reason == "auth_error"
+
+    def _handler_generic_400(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            400,
+            json={
+                "error": {
+                    "code": 400,
+                    "message": "Invalid JSON payload received.",
+                    "status": "INVALID_ARGUMENT",
+                }
+            },
+        )
+
+    transport = httpx.MockTransport(_handler_generic_400)
+    async with httpx.AsyncClient(transport=transport) as http_client:
+        api_client = HttpxGeminiClient(http_client=http_client)
+        with pytest.raises(GeminiAPIError):
+            await api_client.generate_json(
+                prompt="hello",
+                response_schema={"type": "OBJECT"},
+                api_key=SECRET_BYOK_KEY,
+                fallback_models=(),
+            )
+
+    def _handler_bad_key_400(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            400,
+            json={
+                "error": {
+                    "code": 400,
+                    "message": "API key not valid. Please pass a valid API key.",
+                    "status": "INVALID_ARGUMENT",
+                    "details": [{"reason": "API_KEY_INVALID"}],
+                }
+            },
+        )
+
+    transport_auth = httpx.MockTransport(_handler_bad_key_400)
+    async with httpx.AsyncClient(transport=transport_auth) as http_client:
+        auth_client = HttpxGeminiClient(http_client=http_client)
+        with pytest.raises(GeminiAuthError):
+            await auth_client.generate_json(
+                prompt="hello",
+                response_schema={"type": "OBJECT"},
+                api_key=SECRET_BYOK_KEY,
+                fallback_models=(),
+            )
