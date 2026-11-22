@@ -21,11 +21,12 @@ _SENTENCE_SPLIT_RE = re.compile(r"[!?;\n]+|\.(?!\w)")
 _COMMA_SPLIT_RE = re.compile(r",+")
 _TOKEN_RE = re.compile(r"[A-Za-z0-9'\u2019]+")
 
+_LINE_ITEM_RE = r"#?\d+(?:\s*[-–—]\s*#?\d+)?"
+_LINE_SEP_PLURAL_RE = r"(?:,\s*(?:(?:and|&)\s+)?|\s+(?:and|&)\s+)"
+_LINE_SEP_SINGULAR_RE = r"(?:,\s*(?:and|&)\s+|,\s*(?=#)|\s+(?:and|&)\s+)"
 _LINE_WORD_RE = re.compile(
-    r"\b(?:lines\s*#?\d+(?:\s*[-–—]\s*#?\d+)?"
-    r"(?:\s*(?:,\s*(?:(?:and|&)\s+)?|\s+(?:and|&)\s+)#?\d+(?:\s*[-–—]\s*#?\d+)?)*"
-    r"|line\s*#?\d+(?:\s*[-–—]\s*#?\d+|"
-    r"(?:\s*(?:,\s*(?:and|&)\s+|,\s*#|\s+(?:and|&)\s+)#?\d+(?:\s*[-–—]\s*#?\d+)?)*))\b",
+    rf"\b(?:lines\s*{_LINE_ITEM_RE}(?:{_LINE_SEP_PLURAL_RE}{_LINE_ITEM_RE})*"
+    rf"|line\s*{_LINE_ITEM_RE}(?:{_LINE_SEP_SINGULAR_RE}{_LINE_ITEM_RE})*)\b",
     re.IGNORECASE,
 )
 _LINE_RANGE_PART_RE = re.compile(r"#?(\d+)\s*[-–—]\s*#?(\d+)")
