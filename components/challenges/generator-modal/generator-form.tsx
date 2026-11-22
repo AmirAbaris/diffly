@@ -1,24 +1,18 @@
 "use client"
 
 import * as React from "react"
+import Link from "next/link"
 import {
   AlertCircle,
   AlertTriangle,
-  ExternalLink,
-  Eye,
-  EyeOff,
   Key,
   Loader2,
+  Settings,
 } from "lucide-react"
 import { GeneratorLoadingPhase } from "@/components/challenges/generator-modal/generator-loading-phase"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import {
-  InputGroup,
-  InputGroupAddon,
-  InputGroupButton,
-  InputGroupInput,
-} from "@/components/ui/input-group"
 import {
   Select,
   SelectContent,
@@ -27,11 +21,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Skeleton } from "@/components/ui/skeleton"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
-import {
-  getStoredGeminiKey,
-  setStoredGeminiKey,
-} from "@/hooks/use-custom-challenges"
+import { useAIConnection } from "@/hooks/use-ai-connection"
+import { formatAIConnectionSummary } from "@/lib/ai/catalog"
+import { useCustomChallengeModalStore } from "@/stores/custom-challenge-modal-store"
 import {
   CHALLENGE_DIFFICULTIES,
   CHALLENGE_LANGUAGES,
@@ -43,8 +37,6 @@ export interface GeneratorFormValues {
   topic: string
   language: Language
   difficulty: Difficulty
-  apiKey: string
-  rememberKey: boolean
 }
 
 export interface GeneratorFormProps {
@@ -53,6 +45,7 @@ export interface GeneratorFormProps {
   errorMessage: string | null
   onSubmit: (values: GeneratorFormValues) => Promise<void>
   onSwitchToManage: () => void
+  onCloseModal?: () => void
 }
 
 const EXAMPLE_TOPICS = [
@@ -63,159 +56,34 @@ const EXAMPLE_TOPICS = [
   "Spring Boot SpEL injection or IDOR",
 ] as const
 
-function QuotaLimitBanner({ onManage }: { onManage: () => void }) {
-  return (
-    <div
-      role="alert"
-      data-testid="quota-limit-banner"
-      className="flex items-start gap-2.5 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3"
-    >
-      <AlertTriangle
-        aria-hidden="true"
-        className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400"
-      />
-      <div className="flex flex-1 flex-col gap-1.5">
-        <span className="font-medium text-foreground tabular-nums">
-          Quota limit reached (5/5)
-        </span>
-        <p className="leading-relaxed text-muted-foreground">
-          You have reached your limit of 5 custom challenges. Please delete a
-          challenge from your custom library to create a new one.
-        </p>
-        <Button
-          type="button"
-          variant="outline"
-          size="xs"
-          className="mt-0.5 self-start"
-          onClick={onManage}
-          data-testid="quota-manage-btn"
-        >
-          Manage Custom Challenges
-        </Button>
-      </div>
-    </div>
-  )
-}
-
-interface GeminiKeyFieldProps {
-  apiKey: string
-  onApiKeyChange: (val: string) => void
-  rememberKey: boolean
-  onRememberKeyChange: (val: boolean) => void
-  disabled: boolean
-}
-
-function GeminiKeyField({
-  apiKey,
-  onApiKeyChange,
-  rememberKey,
-  onRememberKeyChange,
-  disabled,
-}: GeminiKeyFieldProps) {
-  const [showApiKey, setShowApiKey] = React.useState(false)
-  const VisibilityIcon = showApiKey ? EyeOff : Eye
-
-  return (
-    <div className="flex flex-col gap-2 rounded-lg border border-border/70 bg-card/40 p-3">
-      <div className="flex items-center justify-between">
-        <label
-          htmlFor="gemini-api-key"
-          className="flex items-center gap-1.5 font-medium text-foreground"
-        >
-          <Key aria-hidden="true" className="size-3.5" />
-          <span>Google Gemini API Key</span>
-        </label>
-        <a
-          href="https://aistudio.google.com/app/apikey"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-1 text-muted-foreground transition-colors hover:text-foreground hover:underline"
-          data-testid="get-gemini-key-link"
-        >
-          <span>Get a free key</span>
-          <ExternalLink aria-hidden="true" className="size-3" />
-        </a>
-      </div>
-
-      <InputGroup>
-        <InputGroupInput
-          id="gemini-api-key"
-          name="geminiApiKey"
-          type={showApiKey ? "text" : "password"}
-          placeholder="AIzaSy…"
-          value={apiKey}
-          onChange={(e) => onApiKeyChange(e.target.value)}
-          disabled={disabled}
-          autoComplete="off"
-          spellCheck={false}
-          data-testid="generator-api-key-input"
-        />
-        <InputGroupAddon align="inline-end">
-          <InputGroupButton
-            type="button"
-            size="icon-xs"
-            disabled={disabled}
-            onClick={() => setShowApiKey(!showApiKey)}
-            aria-label={showApiKey ? "Hide API key" : "Show API key"}
-          >
-            <VisibilityIcon aria-hidden="true" />
-          </InputGroupButton>
-        </InputGroupAddon>
-      </InputGroup>
-
-      <label
-        htmlFor="remember-key-checkbox"
-        className="flex cursor-pointer items-center gap-2 pt-0.5 text-muted-foreground select-none"
-      >
-        <input
-          id="remember-key-checkbox"
-          type="checkbox"
-          checked={rememberKey}
-          onChange={(e) => onRememberKeyChange(e.target.checked)}
-          disabled={disabled}
-          className="size-3.5 rounded border-border accent-primary"
-          data-testid="remember-key-checkbox"
-        />
-        <span>Remember key in browser storage</span>
-      </label>
-
-      <p className="leading-relaxed text-muted-foreground">
-        Your key is stored only in your browser&apos;s local storage and is sent
-        securely to generate your challenge. It is never logged or stored on our
-        servers.
-      </p>
-    </div>
-  )
-}
-
 export function GeneratorForm({
   isQuotaFull,
   isGenerating,
   errorMessage,
   onSubmit,
   onSwitchToManage,
+  onCloseModal,
 }: GeneratorFormProps) {
   const [topic, setTopic] = React.useState("")
   const [language, setLanguage] = React.useState<Language>("python")
   const [difficulty, setDifficulty] = React.useState<Difficulty>("Medium")
-  const [apiKey, setApiKey] = React.useState(() => getStoredGeminiKey())
-  const [rememberKey, setRememberKey] = React.useState(true)
 
+  const storeSetIsOpen = useCustomChallengeModalStore((s) => s.setIsOpen)
+  const conn = useAIConnection()
+  const summary = formatAIConnectionSummary(conn)
   const isDisabled = isGenerating || isQuotaFull
-  const isFormValid = topic.trim().length >= 3 && apiKey.trim().length > 0
+  const isFormValid =
+    conn.isConnected && !conn.isLoading && topic.trim().length >= 3
+
+  const handleNavigateSettings = () => {
+    storeSetIsOpen(false)
+    onCloseModal?.()
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (isDisabled || !isFormValid) return
-
-    setStoredGeminiKey(apiKey, rememberKey)
-    await onSubmit({
-      topic: topic.trim(),
-      language,
-      difficulty,
-      apiKey: apiKey.trim(),
-      rememberKey,
-    })
+    await onSubmit({ topic: topic.trim(), language, difficulty })
   }
 
   return (
@@ -224,9 +92,39 @@ export function GeneratorForm({
       className="flex flex-col gap-4 text-xs"
       data-testid="generator-form"
     >
-      {isQuotaFull && <QuotaLimitBanner onManage={onSwitchToManage} />}
+      {isQuotaFull ? (
+        <div
+          role="alert"
+          data-testid="quota-limit-banner"
+          className="flex items-start gap-2.5 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3"
+        >
+          <AlertTriangle
+            aria-hidden="true"
+            className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400"
+          />
+          <div className="flex flex-1 flex-col gap-1.5">
+            <span className="font-medium text-foreground tabular-nums">
+              Quota limit reached (5/5)
+            </span>
+            <p className="leading-relaxed text-muted-foreground">
+              You have reached your limit of 5 custom challenges. Please delete
+              a challenge from your custom library to create a new one.
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              size="xs"
+              className="mt-0.5 self-start"
+              onClick={onSwitchToManage}
+              data-testid="quota-manage-btn"
+            >
+              Manage Custom Challenges
+            </Button>
+          </div>
+        </div>
+      ) : null}
 
-      {errorMessage && (
+      {errorMessage ? (
         <div
           role="alert"
           data-testid="generator-error-banner"
@@ -235,6 +133,68 @@ export function GeneratorForm({
           <AlertCircle aria-hidden="true" className="size-4 shrink-0" />
           <span>{errorMessage}</span>
         </div>
+      ) : null}
+
+      {!conn.isLoading ? (
+        conn.isConnected && summary ? (
+          <div
+            data-testid="generator-ai-connected-banner"
+            className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/70 bg-muted/20 px-3 py-2.5"
+          >
+            <Badge
+              variant="success"
+              data-testid="generator-ai-status-pill"
+              className="font-mono"
+            >
+              Connected: {summary}
+            </Badge>
+            <Link
+              href="/settings"
+              onClick={handleNavigateSettings}
+              data-testid="generator-manage-settings-link"
+              className="flex items-center gap-1 font-medium text-muted-foreground hover:text-foreground hover:underline"
+            >
+              <Settings aria-hidden="true" className="size-3.5" />
+              <span>Manage in Settings</span>
+            </Link>
+          </div>
+        ) : (
+          <div
+            data-testid="generator-ai-disconnected-cta"
+            className="flex flex-col justify-between gap-3 rounded-lg border border-border/70 bg-muted/20 p-3 sm:flex-row sm:items-center"
+          >
+            <div className="flex items-start gap-2.5">
+              <Key
+                aria-hidden="true"
+                className="mt-0.5 size-4 shrink-0 text-muted-foreground"
+              />
+              <div className="flex flex-col gap-0.5">
+                <span className="font-medium text-foreground">
+                  Connect an AI provider to generate challenges
+                </span>
+                <p className="leading-relaxed text-muted-foreground">
+                  Configure Google Gemini, OpenAI, Anthropic, or an
+                  OpenAI-compatible key once in Settings.
+                </p>
+              </div>
+            </div>
+            <Button variant="outline" size="xs" asChild className="shrink-0">
+              <Link
+                href="/settings"
+                onClick={handleNavigateSettings}
+                data-testid="generator-configure-settings-link"
+              >
+                <Settings data-icon="inline-start" aria-hidden="true" />
+                <span>Configure in Settings</span>
+              </Link>
+            </Button>
+          </div>
+        )
+      ) : (
+        <Skeleton
+          data-testid="generator-ai-status-skeleton"
+          className="h-14 w-full rounded-lg"
+        />
       )}
 
       <div className="flex flex-col gap-1.5">
@@ -248,7 +208,6 @@ export function GeneratorForm({
         <Input
           id="challenge-topic"
           name="topic"
-          autoComplete="off"
           placeholder="e.g. FastAPI JWT authentication bypass, Next.js CSRF…"
           value={topic}
           onChange={(e) => setTopic(e.target.value)}
@@ -257,7 +216,6 @@ export function GeneratorForm({
           aria-describedby="topic-suggestions"
           data-testid="generator-topic-input"
         />
-
         <div
           id="topic-suggestions"
           className="flex flex-wrap items-center gap-1.5 pt-0.5"
@@ -269,7 +227,7 @@ export function GeneratorForm({
               type="button"
               disabled={isDisabled}
               onClick={() => setTopic(example)}
-              className="rounded-md border border-border bg-muted/30 px-2 py-0.5 text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+              className="rounded-md border border-border bg-muted/30 px-2 py-0.5 text-muted-foreground hover:text-foreground disabled:opacity-50"
             >
               {example}
             </button>
@@ -279,10 +237,7 @@ export function GeneratorForm({
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="flex flex-col gap-1.5">
-          <label
-            htmlFor="challenge-language"
-            className="font-medium text-foreground"
-          >
+          <label htmlFor="challenge-language" className="font-medium">
             Language
           </label>
           <Select
@@ -310,10 +265,7 @@ export function GeneratorForm({
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <span
-            id="challenge-difficulty-label"
-            className="font-medium text-foreground"
-          >
+          <span id="challenge-difficulty-label" className="font-medium">
             Difficulty
           </span>
           <ToggleGroup
@@ -337,15 +289,7 @@ export function GeneratorForm({
         </div>
       </div>
 
-      <GeminiKeyField
-        apiKey={apiKey}
-        onApiKeyChange={setApiKey}
-        rememberKey={rememberKey}
-        onRememberKeyChange={setRememberKey}
-        disabled={isDisabled}
-      />
-
-      {isGenerating && <GeneratorLoadingPhase />}
+      {isGenerating ? <GeneratorLoadingPhase /> : null}
 
       <Button
         type="submit"
@@ -353,13 +297,13 @@ export function GeneratorForm({
         className="w-full"
         data-testid="generate-challenge-submit-btn"
       >
-        {isGenerating && (
+        {isGenerating ? (
           <Loader2
             aria-hidden="true"
             data-icon="inline-start"
             className="animate-spin motion-reduce:animate-none"
           />
-        )}
+        ) : null}
         <span>
           {isGenerating ? "Generating challenge…" : "Generate Challenge"}
         </span>

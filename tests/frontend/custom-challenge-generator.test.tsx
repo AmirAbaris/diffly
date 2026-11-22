@@ -5,11 +5,8 @@ import { AxiosError } from "axios"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { CustomChallengeButton } from "@/components/challenges/custom-challenge-button"
 import { CustomChallengeModal } from "@/components/challenges/generator-modal/custom-challenge-modal"
-import {
-  getStoredGeminiKey,
-  setStoredGeminiKey,
-  type QuotaSyncState,
-} from "@/hooks/use-custom-challenges"
+import type { QuotaSyncState } from "@/hooks/use-custom-challenges"
+import type { AIProviderId } from "@/lib/ai/catalog"
 import { useCustomChallengeModalStore } from "@/stores/custom-challenge-modal-store"
 import type { ChallengeSummary } from "@/types/challenge"
 
@@ -21,6 +18,26 @@ vi.mock("next/navigation", () => ({
   }),
   usePathname: () => "/challenges",
   useSearchParams: () => new URLSearchParams(),
+}))
+
+let mockAIConnectionState = {
+  isConnected: true,
+  provider: "google" as AIProviderId | null,
+  model: "gemini-2.5-flash" as string | null,
+  baseUrl: null as string | null,
+  maskedKey: "AIza••••1234" as string | null,
+  isLoading: false,
+  isValidating: false,
+  isSaving: false,
+  isDisconnecting: false,
+  error: null as Error | null,
+  saveConnection: vi.fn(),
+  disconnect: vi.fn(),
+  mutate: vi.fn(),
+}
+
+vi.mock("@/hooks/use-ai-connection", () => ({
+  useAIConnection: () => mockAIConnectionState,
 }))
 
 const mockDeleteCustomChallenge = vi.fn()
@@ -71,6 +88,22 @@ describe("Custom Challenge Generator & Quota Flow", () => {
     mockDeleteCustomChallenge.mockReset()
     mockToggleChallengeShare.mockReset()
     mockGenerateCustomChallenge.mockReset()
+
+    mockAIConnectionState = {
+      isConnected: true,
+      provider: "google",
+      model: "gemini-2.5-flash",
+      baseUrl: null,
+      maskedKey: "AIza••••1234",
+      isLoading: false,
+      isValidating: false,
+      isSaving: false,
+      isDisconnecting: false,
+      error: null,
+      saveConnection: vi.fn(),
+      disconnect: vi.fn(),
+      mutate: vi.fn(),
+    }
 
     mockCustomChallenges = [
       {
@@ -150,7 +183,7 @@ describe("Custom Challenge Generator & Quota Flow", () => {
       ).not.toBeInTheDocument()
     })
 
-    it("renders modal with header, tabs, and direct Google AI Studio link", async () => {
+    it("renders modal with header, tabs, connected provider pill, and Manage in Settings link", async () => {
       render(<CustomChallengeModal open={true} />)
 
       expect(
@@ -161,36 +194,28 @@ describe("Custom Challenge Generator & Quota Flow", () => {
         "1/5 Used"
       )
 
-      const link = screen.getByTestId("get-gemini-key-link")
-      expect(link).toHaveAttribute(
-        "href",
-        "https://aistudio.google.com/app/apikey"
+      expect(screen.getByTestId("generator-ai-status-pill")).toHaveTextContent(
+        "Connected: Google Gemini (gemini-2.5-flash)"
       )
-      expect(link).toHaveAttribute("target", "_blank")
-      expect(link).toHaveAttribute("rel", "noopener noreferrer")
-
-      expect(
-        screen.getByText(
-          /your key is stored only in your browser's local storage/i
-        )
-      ).toBeInTheDocument()
+      const manageLink = screen.getByTestId("generator-manage-settings-link")
+      expect(manageLink).toHaveAttribute("href", "/settings")
     })
 
-    it("pre-fills saved Gemini API key from localStorage and remembers it", async () => {
-      setStoredGeminiKey("AIzaSyTestStoredKey", true)
-      expect(getStoredGeminiKey()).toBe("AIzaSyTestStoredKey")
+    it("renders disconnected CTA when no AI provider is connected", async () => {
+      mockAIConnectionState = {
+        ...mockAIConnectionState,
+        isConnected: false,
+        provider: null,
+        model: null,
+        maskedKey: null,
+      }
 
       render(<CustomChallengeModal open={true} />)
 
-      const keyInput = (await screen.findByTestId(
-        "generator-api-key-input"
-      )) as HTMLInputElement
-      expect(keyInput.value).toBe("AIzaSyTestStoredKey")
-
-      const rememberCheckbox = screen.getByTestId(
-        "remember-key-checkbox"
-      ) as HTMLInputElement
-      expect(rememberCheckbox.checked).toBe(true)
+      expect(
+        await screen.findByTestId("generator-ai-disconnected-cta")
+      ).toBeInTheDocument()
+      expect(screen.getByTestId("generate-challenge-submit-btn")).toBeDisabled()
     })
 
     it("enforces strict 5-challenge quota: disables generate button and displays banner", async () => {
@@ -290,24 +315,18 @@ describe("Custom Challenge Generator & Quota Flow", () => {
       render(<CustomChallengeModal open={true} />)
 
       const topicInput = await screen.findByTestId("generator-topic-input")
-      const keyInput = screen.getByTestId("generator-api-key-input")
-
       await user.type(topicInput, "Next.js Server Actions CSRF")
-      await user.type(keyInput, "AIzaSyCustomLiveKey123")
 
       const submitBtn = screen.getByTestId("generate-challenge-submit-btn")
       expect(submitBtn).toBeEnabled()
       await user.click(submitBtn)
 
       await waitFor(() => {
-        expect(mockGenerateCustomChallenge).toHaveBeenCalledWith(
-          {
-            topic: "Next.js Server Actions CSRF",
-            language: "python",
-            difficulty: "Medium",
-          },
-          "AIzaSyCustomLiveKey123"
-        )
+        expect(mockGenerateCustomChallenge).toHaveBeenCalledWith({
+          topic: "Next.js Server Actions CSRF",
+          language: "python",
+          difficulty: "Medium",
+        })
         expect(mockPush).toHaveBeenCalledWith(
           "/challenges/nextjs-csrf-action-defect"
         )
@@ -317,16 +336,13 @@ describe("Custom Challenge Generator & Quota Flow", () => {
     it("displays error banner when generation fails", async () => {
       const user = userEvent.setup()
       mockGenerateCustomChallenge.mockRejectedValueOnce(
-        new Error("Gemini API key is invalid or unauthorized.")
+        new Error("AI provider authentication failed.")
       )
 
       render(<CustomChallengeModal open={true} />)
 
       const topicInput = await screen.findByTestId("generator-topic-input")
-      const keyInput = screen.getByTestId("generator-api-key-input")
-
       await user.type(topicInput, "Go mutex deadlock")
-      await user.type(keyInput, "invalid-key")
 
       const submitBtn = screen.getByTestId("generate-challenge-submit-btn")
       await user.click(submitBtn)
@@ -334,7 +350,7 @@ describe("Custom Challenge Generator & Quota Flow", () => {
       const errorBanner = await screen.findByTestId("generator-error-banner")
       expect(errorBanner).toBeInTheDocument()
       expect(
-        screen.getByText(/gemini api key is invalid or unauthorized/i)
+        screen.getByText(/ai provider authentication failed/i)
       ).toBeInTheDocument()
     })
 
@@ -348,21 +364,29 @@ describe("Custom Challenge Generator & Quota Flow", () => {
       render(<CustomChallengeModal open={true} />)
 
       const topicInput = await screen.findByTestId("generator-topic-input")
-      const keyInput = screen.getByTestId("generator-api-key-input")
-
       await user.type(topicInput, "FastAPI SSRF bypass")
-      await user.type(keyInput, "AIzaSyValidKey")
 
       const submitBtn = screen.getByTestId("generate-challenge-submit-btn")
       await user.click(submitBtn)
 
       const errorBanner = await screen.findByTestId("generator-error-banner")
       expect(errorBanner).toHaveTextContent(
-        /timed out waiting for gemini.*synced/i
+        /timed out waiting for the ai provider.*synced/i
       )
       expect(screen.getByTestId("quota-sync-status-badge")).toHaveTextContent(
         "Quota synced"
       )
+    })
+
+    it("uses provider-neutral copy in the empty custom challenges library state", async () => {
+      mockCustomChallenges = []
+      mockTotal = 0
+
+      render(<CustomChallengeModal open={true} initialTab="manage" />)
+
+      const empty = await screen.findByTestId("custom-challenges-empty")
+      expect(empty).toHaveTextContent(/connected ai provider/i)
+      expect(empty).not.toHaveTextContent(/gemini/i)
     })
   })
 })

@@ -4,7 +4,7 @@ import * as React from "react"
 import { CheckCircle2, LogOut } from "lucide-react"
 import { AccountAuthEmpty } from "@/components/account/account-auth-empty"
 import { AccountShell } from "@/components/account/account-shell"
-import { SettingsGeminiCard } from "@/components/account/settings-gemini-card"
+import { SettingsAIConnectionCard } from "@/components/account/settings-gemini-card"
 import { SettingsTimezoneCard } from "@/components/account/settings-timezone-card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -22,10 +22,10 @@ import { toast } from "@/hooks/use-toast"
 
 const GITHUB_CONNECT_HREF = "/api/auth/github/login?next=/settings"
 
-function SettingsSkeleton() {
+function SettingsAccountSkeleton() {
   return (
     <div data-testid="settings-loading" className="flex flex-col gap-6">
-      {["sk-1", "sk-2", "sk-3"].map((key) => (
+      {["sk-1", "sk-2"].map((key) => (
         <Card key={key}>
           <CardHeader>
             <Skeleton className="h-5 w-36" />
@@ -40,7 +40,7 @@ function SettingsSkeleton() {
   )
 }
 
-function SettingsAuthenticatedContent({
+function SettingsAuthenticatedAccountCards({
   user,
   logout,
 }: {
@@ -70,7 +70,7 @@ function SettingsAuthenticatedContent({
   }
 
   return (
-    <div data-testid="settings-view" className="flex flex-col gap-6">
+    <>
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Account &amp; GitHub</CardTitle>
@@ -137,10 +137,6 @@ function SettingsAuthenticatedContent({
         </CardContent>
       </Card>
 
-      <SettingsTimezoneCard />
-
-      <SettingsGeminiCard />
-
       <Card>
         <CardHeader className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
           <div className="flex flex-col gap-1">
@@ -163,34 +159,35 @@ function SettingsAuthenticatedContent({
           </Button>
         </CardHeader>
       </Card>
-    </div>
+    </>
   )
 }
 
 export function SettingsView() {
   const { user, isAuthenticated, isLoading: authLoading, logout } = useAuth()
 
-  let body: React.ReactNode
-  if (authLoading) {
-    body = <SettingsSkeleton />
-  } else if (!isAuthenticated || !user) {
-    body = (
-      <AccountAuthEmpty
-        title="Sign in to manage settings"
-        description="Sign in to connect GitHub, set your preferred timezone, and manage your Diffly account session."
-        showGuestStatsLink
-      />
-    )
-  } else {
-    body = <SettingsAuthenticatedContent user={user} logout={logout} />
-  }
-
   return (
     <AccountShell
       title="Settings"
-      description="Manage connected providers, timezone preferences, local Gemini key, and your session."
+      description="Manage AI & Agent connections, timezone preferences, connected OAuth providers, and your session."
     >
-      {body}
+      <div data-testid="settings-view" className="flex flex-col gap-6">
+        <SettingsAIConnectionCard />
+
+        <SettingsTimezoneCard />
+
+        {authLoading ? (
+          <SettingsAccountSkeleton />
+        ) : isAuthenticated && user ? (
+          <SettingsAuthenticatedAccountCards user={user} logout={logout} />
+        ) : (
+          <AccountAuthEmpty
+            title="Sign in to manage account settings"
+            description="Your AI connection and timezone apply to this browser immediately. Sign in to connect GitHub and sync your review progress across devices."
+            showGuestStatsLink
+          />
+        )}
+      </div>
     </AccountShell>
   )
 }

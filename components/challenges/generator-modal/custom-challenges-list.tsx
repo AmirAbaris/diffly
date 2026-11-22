@@ -164,7 +164,7 @@ export function CustomChallengesList({
           <EmptyTitle>No custom challenges yet</EmptyTitle>
           <EmptyDescription>
             You have 5 available custom slots. Generate your first personalized
-            code review challenge using Gemini.
+            code review challenge using your connected AI provider.
           </EmptyDescription>
         </EmptyHeader>
         <EmptyContent>
