@@ -6,6 +6,7 @@ import { createOpenAI } from "@ai-sdk/openai"
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible"
 import { generateText, type LanguageModel } from "ai"
 
+import { AI_PROVIDERS, type AIProviderId } from "@/lib/ai/catalog"
 import {
   hasControlChars,
   isBlockedHostname,
@@ -16,16 +17,7 @@ import {
   validateBaseUrl,
 } from "@/lib/ai/url-validation"
 
-export { validateBaseUrl }
-
-export const AI_PROVIDERS = [
-  "google",
-  "openai",
-  "anthropic",
-  "openai-compatible",
-] as const
-
-export type AIProviderId = (typeof AI_PROVIDERS)[number]
+export { AI_PROVIDERS, validateBaseUrl, type AIProviderId }
 
 export interface SealedAICredential {
   provider: AIProviderId
@@ -104,6 +96,7 @@ const PROVIDER_FACTORIES: Record<
       apiKey: credential.apiKey,
       baseURL: credential.baseUrl ?? "",
       fetch: createSafeFetch(),
+      supportsStructuredOutputs: true,
     })(credential.model),
 }
 
@@ -208,12 +201,19 @@ function isAbortOrTimeoutError(error: unknown, depth = 0): boolean {
   return record.cause ? isAbortOrTimeoutError(record.cause, depth + 1) : false
 }
 
-function mapProviderError(
+export function mapProviderError(
   error: unknown,
-  options: { timedOut: boolean; clientAborted: boolean }
+  options: {
+    timedOut?: boolean
+    clientAborted?: boolean
+    abortMessage?: string
+  } = {}
 ): { status: number; message: string } {
   if (options.clientAborted && !options.timedOut) {
-    return { status: 499, message: "Connection verification was cancelled." }
+    return {
+      status: 499,
+      message: options.abortMessage ?? "Connection verification was cancelled.",
+    }
   }
 
   if (options.timedOut || isAbortOrTimeoutError(error)) {

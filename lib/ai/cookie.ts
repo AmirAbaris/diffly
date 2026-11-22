@@ -5,11 +5,10 @@ import {
   randomBytes,
 } from "node:crypto"
 
-import {
-  sanitizeCredential,
-  type AIProviderId,
-  type SealedAICredential,
-} from "@/lib/ai/provider"
+import { type AIConnectionMetadata } from "@/lib/ai/catalog"
+import { sanitizeCredential, type SealedAICredential } from "@/lib/ai/provider"
+
+export type { AIConnectionMetadata }
 
 export const BYOK_COOKIE_NAME = "diffly_byok_ai"
 export const BYOK_COOKIE_MAX_AGE_SECONDS = 2_592_000
@@ -24,14 +23,6 @@ const MIN_SECRET_LENGTH = 32
 const KEY_BYTES = 32
 const IV_BYTES = 12
 const AUTH_TAG_BYTES = 16
-
-export interface AIConnectionMetadata {
-  connected: boolean
-  provider?: AIProviderId
-  model?: string
-  baseUrl?: string
-  maskedKey?: string
-}
 
 export type UnsealCredentialResult =
   | { status: "missing" }

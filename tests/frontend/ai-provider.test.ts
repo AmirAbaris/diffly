@@ -19,6 +19,7 @@ import {
   AI_PROVIDERS,
   createBYOKModel,
   createSafeFetch,
+  mapProviderError,
   parseCredentialInput,
   verifyBYOKConnection,
   type SealedAICredential,
@@ -193,7 +194,23 @@ describe("lib/ai/provider", () => {
     for (const credential of credentials) {
       const model = createBYOKModel(credential)
       expect(model).toBeDefined()
+      if (credential.provider === "openai-compatible") {
+        expect(
+          (model as { supportsStructuredOutputs?: boolean })
+            .supportsStructuredOutputs
+        ).toBe(true)
+      }
     }
+
+    expect(
+      mapProviderError(new DOMException("Aborted", "AbortError"), {
+        clientAborted: true,
+        abortMessage: "Challenge generation was cancelled.",
+      })
+    ).toEqual({
+      status: 499,
+      message: "Challenge generation was cancelled.",
+    })
   })
 
   it("maps provider verification errors without exposing apiKey", async () => {
