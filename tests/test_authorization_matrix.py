@@ -75,6 +75,12 @@ MATRIX: dict[tuple[str, str], dict[str, dict[str, int]]] = {
             "guest_a": 200,
         },
     },
+    ("POST", "/api/challenges/custom"): {
+        "create_owned_custom": {
+            "user_a": 200,
+            "guest_a": 200,
+        },
+    },
     ("GET", "/api/challenges/custom"): {
         "own_list": {
             "anonymous": 200,
@@ -976,6 +982,183 @@ def test_generate_custom_challenge_owner_isolation(
                 ).status_code
                 == 404
             )
+
+
+def test_create_custom_challenge_owner_isolation(
+    session: Session,
+    client_factory: Callable[[], TestClient],
+    register_user: Callable[..., dict[str, Any]],
+    login_as: Callable[..., TestClient],
+    as_guest: Callable[[TestClient, str | None], str],
+):
+    """Custom challenges created via POST /api/challenges/custom isolate owners."""
+    actors, meta = _make_actors(
+        session, client_factory, register_user, login_as, as_guest
+    )
+
+    def _build_payload(slug: str) -> dict[str, Any]:
+        return {
+            "topic": "FastAPI Ownership Isolation",
+            "language": "python",
+            "difficulty": "Medium",
+            "slug": slug,
+            "title": "Custom Ownership Check",
+            "category": "Security",
+            "description": "Verify tenant ownership before returning records.",
+            "threat_model": "Cross-tenant IDOR read",
+            "defect_target": "Find missing ownership filter",
+            "code_snippet": (
+                "def fetch_invoice(db, invoice_id, actor):\n"
+                "    return db.query(Invoice).filter_by(id=invoice_id).first()\n"
+            ),
+            "expected_issues": [
+                {
+                    "id": "custom-idor-1",
+                    "title": "Missing owner filter",
+                    "severity": "high",
+                    "anchor_lines": [
+                        "return db.query(Invoice).filter_by(id=invoice_id).first()"
+                    ],
+                    "matched_lines": [2],
+                    "matched_keywords": ["owner", "idor", "authorization"],
+                    "explanation": "Invoice lookup omits tenant owner check.",
+                }
+            ],
+            "hints": [
+                {"tier": 1, "label": "Context", "text": "Check query filters."},
+                {"tier": 2, "label": "Class", "text": "Look for IDOR."},
+                {"tier": 3, "label": "Pointer", "text": "Inspect line 2."},
+            ],
+            "canonical_review": "Scope query to the authenticated owner.",
+            "recommended_fix_diff": (
+                "@@ -1,2 +1,4 @@\n"
+                " def fetch_invoice(db, invoice_id, actor):\n"
+                "-    return db.query(Invoice).filter_by(id=invoice_id).first()\n"
+                "+    return db.query(Invoice).filter_by(\n"
+                "+        id=invoice_id, owner_id=actor.id\n"
+                "+    ).first()"
+            ),
+            "user_id": meta["user_b"]["id"],
+            "session_id": meta["guest_b_sid"],
+            "is_public": True,
+            "share_token": "injected-share-token-must-be-ignored",
+            "id": 987654,
+        }
+
+    for creator_name in ("user_a", "guest_a"):
+        creator_client, creator_headers = actors[creator_name]
+        res = creator_client.post(
+            "/api/challenges/custom",
+            json=_build_payload(f"matrix-custom-{creator_name}"),
+            headers=creator_headers,
+        )
+        assert (
+            res.status_code
+            == MATRIX[("POST", "/api/challenges/custom")]["create_owned_custom"][
+                creator_name
+            ]
+        )
+        body = res.json()
+        created_slug = body["slug"]
+        assert body["id"] != 987654
+
+        db_challenge = session.exec(
+            select(Challenge).where(Challenge.slug == created_slug)
+        ).one()
+        assert db_challenge.is_public is False
+        assert db_challenge.share_token is None
+        if creator_name == "user_a":
+            assert db_challenge.user_id == meta["user_a"]["id"]
+            assert db_challenge.session_id is None
+        else:
+            assert db_challenge.user_id is None
+            assert db_challenge.session_id == meta["guest_a_sid"]
+
+        assert (
+            creator_client.get(
+                f"/api/challenges/{created_slug}", headers=creator_headers
+            ).status_code
+            == 200
+        )
+        assert (
+            creator_client.post(
+                f"/api/challenges/{created_slug}/review",
+                json={"flagged_lines": [2], "comments": "Owner review check"},
+                headers=creator_headers,
+            ).status_code
+            == 200
+        )
+
+        for other_name, (other_client, other_headers) in actors.items():
+            if other_name == creator_name:
+                continue
+            assert (
+                other_client.get(
+                    f"/api/challenges/{created_slug}", headers=other_headers
+                ).status_code
+                == 404
+            ), f"{creator_name} detail <- {other_name}"
+            assert (
+                other_client.get(
+                    f"/api/challenges/{created_slug}/hints", headers=other_headers
+                ).status_code
+                == 404
+            ), f"{creator_name} hints <- {other_name}"
+            assert (
+                other_client.get(
+                    f"/api/challenges/{created_slug}/solution?reveal=true",
+                    headers=other_headers,
+                ).status_code
+                == 404
+            ), f"{creator_name} solution <- {other_name}"
+            assert (
+                other_client.get(
+                    f"/api/challenges/{created_slug}/submissions",
+                    headers=other_headers,
+                ).status_code
+                == 404
+            ), f"{creator_name} submissions <- {other_name}"
+            assert (
+                other_client.post(
+                    f"/api/challenges/{created_slug}/review",
+                    json={"flagged_lines": [2], "comments": "Cross-actor review"},
+                    headers=other_headers,
+                ).status_code
+                == 404
+            ), f"{creator_name} review <- {other_name}"
+            assert (
+                other_client.patch(
+                    f"/api/challenges/custom/{created_slug}/share",
+                    json={"enabled": True},
+                    headers=other_headers,
+                ).status_code
+                == 404
+            ), f"{creator_name} share <- {other_name}"
+            assert (
+                other_client.delete(
+                    f"/api/challenges/custom/{created_slug}", headers=other_headers
+                ).status_code
+                == 404
+            ), f"{creator_name} delete <- {other_name}"
+
+    inactive_client, inactive_headers = actors["inactive"]
+    inactive_res = inactive_client.post(
+        "/api/challenges/custom",
+        json=_build_payload("matrix-custom-inactive-fallback"),
+        headers=inactive_headers,
+    )
+    assert inactive_res.status_code == 200
+    inactive_created = session.exec(
+        select(Challenge).where(Challenge.slug == inactive_res.json()["slug"])
+    ).one()
+    assert inactive_created.user_id is None
+    assert inactive_created.session_id is not None
+    assert (
+        session.exec(
+            select(Challenge).where(Challenge.user_id == meta["inactive"]["id"])
+        ).all()
+        == []
+    )
 
 
 def test_authenticated_actor_ignores_unclaimed_guest_session_cookie_and_header(
