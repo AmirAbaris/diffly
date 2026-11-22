@@ -1,5 +1,13 @@
 """Public API for v2 inline review grading."""
 
+from backend.services.grading.concepts import (
+    ConceptMatch,
+    Evidence,
+    EvidenceSource,
+    bind_evidence,
+    is_keyword_matched,
+    match_concepts,
+)
 from backend.services.grading.matching import match_one_to_one
 from backend.services.grading.reveal import should_reveal
 from backend.services.grading.review import (
@@ -29,8 +37,15 @@ from backend.services.grading.scoring import (
     get_proximity_lines,
     get_tolerated_lines,
     grade_review,
-    is_keyword_matched,
     redact_missed_issues,
+)
+from backend.services.grading.text import (
+    NormalizedText,
+    Polarity,
+    Sentence,
+    Token,
+    normalize_phrase,
+    normalize_text,
 )
 from backend.services.grading.weights import (
     SEVERITY_WEIGHTS,
@@ -48,15 +63,23 @@ __all__ = [
     "PASS_SCORE_THRESHOLD",
     "SEVERITY_WEIGHTS",
     "Anchor",
+    "ConceptMatch",
     "DetectedIssue",
+    "Evidence",
+    "EvidenceSource",
     "Finding",
     "FindingVerdict",
     "GradeReport",
     "GradingPolicy",
     "MissedIssue",
+    "NormalizedText",
+    "Polarity",
     "ReviewSubmission",
     "ScopedLine",
+    "Sentence",
     "Severity",
+    "Token",
+    "bind_evidence",
     "coerce_severity",
     "defect_weights",
     "extract_challenge_files",
@@ -67,8 +90,11 @@ __all__ = [
     "get_tolerated_lines",
     "grade_review",
     "is_keyword_matched",
+    "match_concepts",
     "match_one_to_one",
+    "normalize_phrase",
     "normalize_scoped_flagged_lines",
+    "normalize_text",
     "redact_missed_issues",
     "should_reveal",
     "validate_review_bounds",
