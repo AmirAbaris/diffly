@@ -181,15 +181,18 @@ export function CustomChallengesList({
   }
 
   return (
-    <div className="flex flex-col gap-3" data-testid="custom-challenges-list">
-      <div className="flex items-center justify-between text-xs text-muted-foreground">
+    <div
+      className="flex min-w-0 flex-col gap-3"
+      data-testid="custom-challenges-list"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-xs text-muted-foreground">
         <span className="tabular-nums">
           Your Private Library ({challenges.length}/5)
         </span>
         <span>Share, review, or delete to free quota</span>
       </div>
 
-      <div className="flex max-h-[320px] flex-col gap-2 overflow-y-auto pr-1">
+      <div className="flex max-h-[320px] min-w-0 flex-col gap-2 overflow-y-auto pr-1">
         {challenges.map((ch) => {
           const isDeleting = deletingId === ch.id
           const isUpdatingShare = sharingId === ch.id
@@ -200,7 +203,7 @@ export function CustomChallengesList({
             <div
               key={ch.id}
               data-testid={`custom-challenge-item-${ch.id}`}
-              className="group flex flex-col justify-between gap-3 rounded-lg border border-border bg-card/60 p-3 transition-colors hover:border-foreground/20 hover:bg-muted/40 sm:flex-row sm:items-center"
+              className="group flex min-w-0 flex-col justify-between gap-3 rounded-lg border border-border bg-card/60 p-3 transition-colors hover:border-foreground/20 hover:bg-muted/40 sm:flex-row sm:items-center"
             >
               <div className="flex min-w-0 flex-1 flex-col gap-1.5">
                 <div className="flex flex-wrap items-center gap-1.5">
