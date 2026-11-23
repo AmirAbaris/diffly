@@ -65,7 +65,9 @@ describe("SettingsAIConnectionCard", () => {
       "aria-checked",
       "true"
     )
-    expect(screen.getByTestId("ai-model-input")).toHaveValue("gemini-3.8-flash")
+    expect(screen.getByTestId("ai-model-input")).toHaveValue(
+      "gemini-3.1-flash-lite"
+    )
 
     await user.click(screen.getByTestId("ai-provider-option-openai"))
     expect(screen.getByTestId("ai-provider-option-openai")).toHaveAttribute(
@@ -177,8 +179,8 @@ describe("SettingsAIConnectionCard", () => {
       </SWRConfig>
     )
 
-    await user.click(screen.getByTestId("ai-suggested-model-gemini-4-argon"))
-    expect(screen.getByTestId("ai-model-input")).toHaveValue("gemini-4-argon")
+    await user.click(screen.getByTestId("ai-suggested-model-gemini-3.5-flash"))
+    expect(screen.getByTestId("ai-model-input")).toHaveValue("gemini-3.5-flash")
 
     resolveFetch({
       connected: true,
@@ -194,6 +196,6 @@ describe("SettingsAIConnectionCard", () => {
       "aria-checked",
       "true"
     )
-    expect(screen.getByTestId("ai-model-input")).toHaveValue("gemini-4-argon")
+    expect(screen.getByTestId("ai-model-input")).toHaveValue("gemini-3.5-flash")
   })
 })

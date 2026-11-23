@@ -17,7 +17,7 @@ export type {
 } from "@/lib/ai/catalog"
 
 export const AI_CONNECTION_SWR_KEY = "/api/ai/connection"
-export const AI_CONNECTION_VERIFY_TIMEOUT_MS = 20_000
+export const AI_CONNECTION_VERIFY_TIMEOUT_MS = 30_000
 export const LEGACY_GEMINI_STORAGE_KEY = "diffly_gemini_key"
 
 export interface UseAIConnectionResult {

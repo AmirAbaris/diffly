@@ -358,4 +358,27 @@ describe("lib/ai/provider", () => {
       expect.objectContaining({ redirect: "error" })
     )
   })
+
+  it("maps upstream 503 and 529 overload errors to HTTP 503 with actionable copy", async () => {
+    mockGenerateText.mockRejectedValueOnce(
+      Object.assign(
+        new Error("This model is currently experiencing high demand"),
+        {
+          statusCode: 503,
+        }
+      )
+    )
+
+    const overloaded = await verifyBYOKConnection({
+      provider: "google",
+      model: "gemini-3.8-flash",
+      apiKey: "AIzaSy-secret-key",
+    })
+    expect(overloaded).toEqual({
+      ok: false,
+      status: 503,
+      message:
+        "The selected AI model is temporarily overloaded. Try again shortly or switch to a lighter model.",
+    })
+  })
 })

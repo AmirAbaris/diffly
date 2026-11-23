@@ -32,7 +32,7 @@ export type ParseCredentialResult =
 export type VerifyConnectionResult =
   { ok: true } | { ok: false; status: number; message: string }
 
-const VERIFY_TIMEOUT_MS = 15_000
+const VERIFY_TIMEOUT_MS = 25_000
 const MAX_ERROR_CAUSE_DEPTH = 5
 
 export function createSafeFetch(): typeof fetch {
@@ -247,6 +247,14 @@ export function mapProviderError(
     return {
       status: 429,
       message: "Provider rate limit exceeded. Please try again shortly.",
+    }
+  }
+
+  if (statusCode === 503 || statusCode === 529) {
+    return {
+      status: 503,
+      message:
+        "The selected AI model is temporarily overloaded. Try again shortly or switch to a lighter model.",
     }
   }
 

@@ -256,7 +256,7 @@ describe("Account pages (/stats, /profile, /settings)", () => {
       data: {
         connected: true,
         provider: "google",
-        model: "gemini-4-argon",
+        model: "gemini-3.5-flash",
         maskedKey: "AIza••••3456",
       },
     })
@@ -290,8 +290,8 @@ describe("Account pages (/stats, /profile, /settings)", () => {
       /never stored in our database.*AES-256-GCM.*HttpOnly.*Path=\/api/i
     )
 
-    await user.click(screen.getByTestId("ai-suggested-model-gemini-4-argon"))
-    expect(screen.getByTestId("ai-model-input")).toHaveValue("gemini-4-argon")
+    await user.click(screen.getByTestId("ai-suggested-model-gemini-3.5-flash"))
+    expect(screen.getByTestId("ai-model-input")).toHaveValue("gemini-3.5-flash")
 
     await user.type(screen.getByTestId("ai-api-key-input"), "AIzaSyLiveKey3456")
     await user.click(screen.getByTestId("ai-test-save-button"))
@@ -301,16 +301,16 @@ describe("Account pages (/stats, /profile, /settings)", () => {
         "/api/ai/connection",
         {
           provider: "google",
-          model: "gemini-4-argon",
+          model: "gemini-3.5-flash",
           apiKey: "AIzaSyLiveKey3456",
           baseUrl: undefined,
         },
-        expect.objectContaining({ timeout: 20_000 })
+        expect.objectContaining({ timeout: 30_000 })
       )
       expect(
         screen.getByTestId("ai-connection-status-badge")
       ).toHaveTextContent(
-        "Connected: Google Gemini (gemini-4-argon) · AIza••••3456"
+        "Connected: Google Gemini (gemini-3.5-flash) · AIza••••3456"
       )
     })
 
