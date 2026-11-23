@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import dynamic from "next/dynamic"
 import Link from "next/link"
 import { AlertCircle, Globe, RefreshCw } from "lucide-react"
 import { AccountShell } from "@/components/account/account-shell"
@@ -8,6 +9,7 @@ import { ActivityHeatmap } from "@/components/account/activity-heatmap"
 import { CategoryMasteryCard } from "@/components/account/category-mastery-card"
 import { CustomChallengeStatsCard } from "@/components/account/custom-challenge-stats-card"
 import { PrecisionRecallChart } from "@/components/account/precision-recall-chart"
+import { PatternsCoachDrawer } from "@/components/coach/patterns-coach-drawer"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -22,7 +24,16 @@ import { useAuth } from "@/hooks/use-auth"
 import { useUserAnalytics } from "@/hooks/use-user-analytics"
 import { useUserStats } from "@/hooks/use-user-stats"
 import { useAuthModalStore } from "@/stores/auth-modal-store"
+import { useCustomChallengeModalStore } from "@/stores/custom-challenge-modal-store"
 import type { AnalyticsWindowDays, UserAnalytics } from "@/types/analytics"
+
+const CustomChallengeModal = dynamic(
+  () =>
+    import("@/components/challenges/generator-modal/custom-challenge-modal").then(
+      (mod) => mod.CustomChallengeModal
+    ),
+  { ssr: false }
+)
 
 const WINDOW_OPTIONS: ReadonlyArray<{
   value: AnalyticsWindowDays
@@ -134,8 +145,11 @@ function StatsDashboardContent({ analytics }: { analytics: UserAnalytics }) {
 
 export function StatsView() {
   const [days, setDays] = React.useState<AnalyticsWindowDays>(90)
+  const [hasMountedChallengeModal, setHasMountedChallengeModal] =
+    React.useState(false)
   const { isAuthenticated, isLoading: authLoading } = useAuth()
   const openAuthModal = useAuthModalStore((s) => s.openAuthModal)
+  const isChallengeModalOpen = useCustomChallengeModalStore((s) => s.isOpen)
   const { analytics, timezone, error, isLoading, mutate } =
     useUserAnalytics(days)
 
@@ -252,7 +266,15 @@ export function StatsView() {
         </div>
       </div>
 
+      <PatternsCoachDrawer
+        onOpeningTargetedDrill={() => setHasMountedChallengeModal(true)}
+      />
+
       {body}
+
+      {isChallengeModalOpen || hasMountedChallengeModal ? (
+        <CustomChallengeModal />
+      ) : null}
     </AccountShell>
   )
 }

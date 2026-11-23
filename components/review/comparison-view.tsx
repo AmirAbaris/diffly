@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import useSWR from "swr"
+import { DebriefCoachDrawer } from "@/components/coach/debrief-coach-drawer"
 import {
   ComparisonBody,
   type ComparisonTab,
@@ -21,6 +22,7 @@ import type {
 export interface ComparisonViewProps {
   challengeId?: string | number
   challengeSlug?: string
+  challengeTitle?: string
   shareToken?: string | null
   userFlaggedLines?: FlaggedLine[]
   userComments?: string
@@ -49,6 +51,7 @@ function extractSolutionErrorMessage(fetchError: unknown): string | null {
 export function ComparisonView({
   challengeId,
   challengeSlug,
+  challengeTitle,
   shareToken: propShareToken,
   userFlaggedLines = DEFAULT_FLAGGED_LINES,
   userComments = "",
@@ -178,6 +181,18 @@ export function ComparisonView({
         language={language}
         onRetry={handleRetry}
         onTabChange={handleTabChange}
+      />
+
+      <DebriefCoachDrawer
+        challengeSlug={challengeSlug}
+        challengeTitle={challengeTitle}
+        language={language}
+        codeSnippet={codeSnippet}
+        files={files}
+        userFlaggedLines={userFlaggedLines}
+        userComments={userComments}
+        gradeReport={gradeReport}
+        solution={solution}
       />
     </div>
   )
