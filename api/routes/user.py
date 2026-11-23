@@ -24,6 +24,10 @@ from backend.services.analytics_service import (
     resolve_timezone,
     to_local_date,
 )
+from backend.services.coach_service import (
+    CoachPatternsResponse,
+    get_actor_coach_patterns,
+)
 from backend.services.ownership import (
     Actor,
     CustomQuotaExceeded,
@@ -398,6 +402,32 @@ def get_user_analytics(
         ],
         trends=trends,
         custom=custom_stats,
+    )
+
+
+@router.get(
+    "/coach-patterns",
+    response_model=CoachPatternsResponse,
+    status_code=status.HTTP_200_OK,
+)
+def get_user_coach_patterns(
+    session: SessionDep,
+    actor: ActorDep,
+    slice_limit: Annotated[
+        int,
+        Query(ge=1, le=20, description="Max weakest/strongest slices to return"),
+    ] = 5,
+    missed_limit: Annotated[
+        int,
+        Query(ge=1, le=50, description="Max recent missed submissions to return"),
+    ] = 10,
+) -> CoachPatternsResponse:
+    """Aggregate actor-scoped weakness slices and recent missed reviews."""
+    return get_actor_coach_patterns(
+        session,
+        actor,
+        slice_limit=slice_limit,
+        missed_limit=missed_limit,
     )
 
 
