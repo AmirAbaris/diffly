@@ -3,7 +3,7 @@
 import * as React from "react"
 
 const GENERATION_PHASES = [
-  "Connecting to Gemini API…",
+  "Connecting to AI provider…",
   "Analyzing threat model & security boundaries…",
   "Writing defective snippet with realistic logic…",
   "Verifying line targets & reference critique…",

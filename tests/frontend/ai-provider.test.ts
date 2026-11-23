@@ -19,6 +19,7 @@ import {
   AI_PROVIDERS,
   createBYOKModel,
   createSafeFetch,
+  mapProviderError,
   parseCredentialInput,
   verifyBYOKConnection,
   type SealedAICredential,
@@ -193,7 +194,23 @@ describe("lib/ai/provider", () => {
     for (const credential of credentials) {
       const model = createBYOKModel(credential)
       expect(model).toBeDefined()
+      if (credential.provider === "openai-compatible") {
+        expect(
+          (model as { supportsStructuredOutputs?: boolean })
+            .supportsStructuredOutputs
+        ).toBe(true)
+      }
     }
+
+    expect(
+      mapProviderError(new DOMException("Aborted", "AbortError"), {
+        clientAborted: true,
+        abortMessage: "Challenge generation was cancelled.",
+      })
+    ).toEqual({
+      status: 499,
+      message: "Challenge generation was cancelled.",
+    })
   })
 
   it("maps provider verification errors without exposing apiKey", async () => {
@@ -340,5 +357,28 @@ describe("lib/ai/provider", () => {
       "https://api.example.com/v1",
       expect.objectContaining({ redirect: "error" })
     )
+  })
+
+  it("maps upstream 503 and 529 overload errors to HTTP 503 with actionable copy", async () => {
+    mockGenerateText.mockRejectedValueOnce(
+      Object.assign(
+        new Error("This model is currently experiencing high demand"),
+        {
+          statusCode: 503,
+        }
+      )
+    )
+
+    const overloaded = await verifyBYOKConnection({
+      provider: "google",
+      model: "gemini-3.8-flash",
+      apiKey: "AIzaSy-secret-key",
+    })
+    expect(overloaded).toEqual({
+      ok: false,
+      status: 503,
+      message:
+        "The selected AI model is temporarily overloaded. Try again shortly or switch to a lighter model.",
+    })
   })
 })

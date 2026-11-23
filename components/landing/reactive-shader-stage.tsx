@@ -176,7 +176,7 @@ export function ReactiveShaderStage({
             className="bg-background/85 backdrop-blur-xs"
           >
             <Sparkles aria-hidden="true" data-icon="inline-start" />
-            <span>Generate with Gemini BYOK</span>
+            <span>Generate with AI BYOK</span>
           </Button>
         </div>
       </div>

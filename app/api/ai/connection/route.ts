@@ -9,37 +9,14 @@ import {
   toConnectionMetadata,
   unsealAICredential,
 } from "@/lib/ai/cookie"
+import {
+  isCrossSiteRequest,
+  noStoreJson,
+  requireJsonContentType,
+} from "@/lib/ai/http"
 import { parseCredentialInput, verifyBYOKConnection } from "@/lib/ai/provider"
 
 const GENERIC_CONFIG_ERROR = "AI connection service is not configured."
-
-function noStoreJson(data: unknown, status = 200): NextResponse {
-  return NextResponse.json(data, {
-    status,
-    headers: {
-      "Cache-Control": "no-store",
-      Vary: "Cookie",
-    },
-  })
-}
-
-function isCrossSiteRequest(request: NextRequest): boolean {
-  if (request.headers.get("sec-fetch-site") === "cross-site") {
-    return true
-  }
-
-  const origin = request.headers.get("origin")
-  if (!origin) {
-    return false
-  }
-
-  const expectedHost = request.headers.get("host") ?? request.nextUrl.host
-  try {
-    return new URL(origin).host !== expectedHost
-  } catch {
-    return true
-  }
-}
 
 function clearBYOKCookie(response: NextResponse): void {
   const options = getBYOKCookieOptions()
@@ -72,9 +49,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return noStoreJson({ error: "Cross-site requests are not allowed." }, 403)
   }
 
-  const contentType = request.headers.get("content-type") ?? ""
-  if (!contentType.toLowerCase().startsWith("application/json")) {
-    return noStoreJson({ error: "Content-Type must be application/json." }, 415)
+  const contentTypeError = requireJsonContentType(request)
+  if (contentTypeError) {
+    return contentTypeError
   }
 
   let body: unknown

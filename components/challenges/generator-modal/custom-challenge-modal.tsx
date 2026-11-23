@@ -41,18 +41,22 @@ export interface CustomChallengeModalProps {
 
 function resolveGenerationErrorMessage(err: unknown): string {
   if (isRequestTimeoutError(err)) {
-    return "Generation timed out waiting for Gemini. Your quota and custom library have been synced — check Manage Library in case it finished on the server."
+    return "Generation timed out waiting for the AI provider. Your quota and custom library have been synced — check Manage Library in case it finished on the server."
   }
   if (axios.isAxiosError(err)) {
-    const detail = err.response?.data?.detail
-    if (typeof detail === "string") {
-      return detail
+    const data = err.response?.data as
+      { detail?: unknown; error?: unknown } | undefined
+    if (typeof data?.detail === "string" && data.detail.trim()) {
+      return data.detail
+    }
+    if (typeof data?.error === "string" && data.error.trim()) {
+      return data.error
     }
     if (err.response?.status === 401) {
-      return "Invalid or expired Gemini API key. Please check your key at Google AI Studio."
+      return "AI provider authentication failed or no key is connected. Please check your API key in Settings."
     }
     if (err.response?.status === 429) {
-      return "Gemini API rate limit reached. Please wait a minute and try again."
+      return "AI provider rate limit reached. Please wait a minute and try again."
     }
     if (err.response?.status === 400) {
       return "Quota limit reached. Please delete an existing custom challenge first."
@@ -60,7 +64,7 @@ function resolveGenerationErrorMessage(err: unknown): string {
   } else if (err instanceof Error) {
     return err.message
   }
-  return "Failed to generate challenge. Please check your API key and try again."
+  return "Failed to generate challenge. Please check your AI provider connection in Settings and try again."
 }
 
 const QUOTA_SYNC_BADGE_MAP: Record<
@@ -135,14 +139,11 @@ export function CustomChallengeModal({
     try {
       setLifecycle({ status: "generating" })
 
-      const generated = await generateCustomChallenge(
-        {
-          topic: values.topic,
-          language: values.language,
-          difficulty: values.difficulty,
-        },
-        values.apiKey
-      )
+      const generated = await generateCustomChallenge({
+        topic: values.topic,
+        language: values.language,
+        difficulty: values.difficulty,
+      })
 
       toast({
         title: "Challenge generated",
@@ -184,18 +185,18 @@ export function CustomChallengeModal({
             >
               {total}/{quotaLimit} Used
             </Badge>
-            {quotaSyncBadge && (
+            {quotaSyncBadge ? (
               <Badge
                 variant={quotaSyncBadge.variant}
                 data-testid="quota-sync-status-badge"
               >
                 {quotaSyncBadge.label}
               </Badge>
-            )}
+            ) : null}
           </div>
           <DialogDescription className="text-xs text-muted-foreground">
-            Generate custom code review scenarios powered by Google Gemini
-            (BYOK) and persisted to your private library.
+            Generate custom code review scenarios powered by your connected AI
+            provider (BYOK) and persisted to your private library.
           </DialogDescription>
         </DialogHeader>
 
@@ -235,6 +236,7 @@ export function CustomChallengeModal({
               errorMessage={errorMessage}
               onSubmit={handleGenerate}
               onSwitchToManage={() => setTabOverride("manage")}
+              onCloseModal={handleClose}
             />
           </TabsContent>
 

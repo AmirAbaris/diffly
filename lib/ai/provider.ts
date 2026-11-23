@@ -6,6 +6,7 @@ import { createOpenAI } from "@ai-sdk/openai"
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible"
 import { generateText, type LanguageModel } from "ai"
 
+import { AI_PROVIDERS, type AIProviderId } from "@/lib/ai/catalog"
 import {
   hasControlChars,
   isBlockedHostname,
@@ -16,16 +17,7 @@ import {
   validateBaseUrl,
 } from "@/lib/ai/url-validation"
 
-export { validateBaseUrl }
-
-export const AI_PROVIDERS = [
-  "google",
-  "openai",
-  "anthropic",
-  "openai-compatible",
-] as const
-
-export type AIProviderId = (typeof AI_PROVIDERS)[number]
+export { AI_PROVIDERS, validateBaseUrl, type AIProviderId }
 
 export interface SealedAICredential {
   provider: AIProviderId
@@ -40,7 +32,7 @@ export type ParseCredentialResult =
 export type VerifyConnectionResult =
   { ok: true } | { ok: false; status: number; message: string }
 
-const VERIFY_TIMEOUT_MS = 15_000
+const VERIFY_TIMEOUT_MS = 25_000
 const MAX_ERROR_CAUSE_DEPTH = 5
 
 export function createSafeFetch(): typeof fetch {
@@ -104,6 +96,7 @@ const PROVIDER_FACTORIES: Record<
       apiKey: credential.apiKey,
       baseURL: credential.baseUrl ?? "",
       fetch: createSafeFetch(),
+      supportsStructuredOutputs: true,
     })(credential.model),
 }
 
@@ -208,12 +201,19 @@ function isAbortOrTimeoutError(error: unknown, depth = 0): boolean {
   return record.cause ? isAbortOrTimeoutError(record.cause, depth + 1) : false
 }
 
-function mapProviderError(
+export function mapProviderError(
   error: unknown,
-  options: { timedOut: boolean; clientAborted: boolean }
+  options: {
+    timedOut?: boolean
+    clientAborted?: boolean
+    abortMessage?: string
+  } = {}
 ): { status: number; message: string } {
   if (options.clientAborted && !options.timedOut) {
-    return { status: 499, message: "Connection verification was cancelled." }
+    return {
+      status: 499,
+      message: options.abortMessage ?? "Connection verification was cancelled.",
+    }
   }
 
   if (options.timedOut || isAbortOrTimeoutError(error)) {
@@ -247,6 +247,14 @@ function mapProviderError(
     return {
       status: 429,
       message: "Provider rate limit exceeded. Please try again shortly.",
+    }
+  }
+
+  if (statusCode === 503 || statusCode === 529) {
+    return {
+      status: 503,
+      message:
+        "The selected AI model is temporarily overloaded. Try again shortly or switch to a lighter model.",
     }
   }
 

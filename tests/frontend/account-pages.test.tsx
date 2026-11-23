@@ -6,7 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { ProfileView } from "@/components/account/profile-view"
 import { SettingsView } from "@/components/account/settings-view"
 import { StatsView } from "@/components/account/stats-view"
-import { GEMINI_API_KEY_STORAGE_KEY } from "@/hooks/use-custom-challenges"
+import { LEGACY_GEMINI_STORAGE_KEY } from "@/hooks/use-ai-connection"
+import { apiClient } from "@/lib/axios"
 import { useAuthModalStore } from "@/stores/auth-modal-store"
 import type { UserAnalytics } from "@/types/analytics"
 
@@ -228,10 +229,10 @@ describe("Account pages (/stats, /profile, /settings)", () => {
     )
   })
 
-  it("renders Connect GitHub link and clears stored Gemini API key on /settings", async () => {
+  it("renders multi-provider AI & Agent Connections card on /settings, supports Test & Save and Disconnect, and scrubs legacy key", async () => {
     const user = userEvent.setup()
     mockPathname = "/settings"
-    window.localStorage.setItem(GEMINI_API_KEY_STORAGE_KEY, "AIzaSyTest123456")
+    window.localStorage.setItem(LEGACY_GEMINI_STORAGE_KEY, "AIzaSyTest123456")
 
     mockAuthState = {
       ...mockAuthState,
@@ -247,7 +248,20 @@ describe("Account pages (/stats, /profile, /settings)", () => {
 
     const fetcher = vi.fn(async (key: string) => {
       if (key === "/api/auth/providers") return { github: true }
+      if (key === "/api/ai/connection") return { connected: false }
       return null
+    })
+
+    const postSpy = vi.spyOn(apiClient, "post").mockResolvedValueOnce({
+      data: {
+        connected: true,
+        provider: "google",
+        model: "gemini-3.5-flash",
+        maskedKey: "AIza••••3456",
+      },
+    })
+    const deleteSpy = vi.spyOn(apiClient, "delete").mockResolvedValueOnce({
+      data: { connected: false },
     })
 
     render(
@@ -268,14 +282,97 @@ describe("Account pages (/stats, /profile, /settings)", () => {
       "/api/auth/github/login?next=/settings"
     )
 
-    expect(screen.getByTestId("gemini-key-status")).toHaveTextContent(
-      "Stored (AIza••••3456)"
+    expect(window.localStorage.getItem(LEGACY_GEMINI_STORAGE_KEY)).toBeNull()
+    expect(screen.getByTestId("ai-connection-status-badge")).toHaveTextContent(
+      "Not connected"
+    )
+    expect(screen.getByTestId("ai-privacy-notice")).toHaveTextContent(
+      /never stored in our database.*AES-256-GCM.*HttpOnly.*Path=\/api/i
     )
 
-    await user.click(screen.getByTestId("clear-gemini-key-button"))
-    expect(window.localStorage.getItem(GEMINI_API_KEY_STORAGE_KEY)).toBeNull()
-    expect(screen.getByTestId("gemini-key-status")).toHaveTextContent(
-      "Not stored"
+    await user.click(screen.getByTestId("ai-suggested-model-gemini-3.5-flash"))
+    expect(screen.getByTestId("ai-model-input")).toHaveValue("gemini-3.5-flash")
+
+    await user.type(screen.getByTestId("ai-api-key-input"), "AIzaSyLiveKey3456")
+    await user.click(screen.getByTestId("ai-test-save-button"))
+
+    await waitFor(() => {
+      expect(postSpy).toHaveBeenCalledWith(
+        "/api/ai/connection",
+        {
+          provider: "google",
+          model: "gemini-3.5-flash",
+          apiKey: "AIzaSyLiveKey3456",
+          baseUrl: undefined,
+        },
+        expect.objectContaining({ timeout: 30_000 })
+      )
+      expect(
+        screen.getByTestId("ai-connection-status-badge")
+      ).toHaveTextContent(
+        "Connected: Google Gemini (gemini-3.5-flash) · AIza••••3456"
+      )
+    })
+
+    await user.click(screen.getByTestId("ai-disconnect-button"))
+
+    await waitFor(() => {
+      expect(deleteSpy).toHaveBeenCalledWith("/api/ai/connection")
+      expect(
+        screen.getByTestId("ai-connection-status-badge")
+      ).toHaveTextContent("Not connected")
+    })
+
+    postSpy.mockRestore()
+    deleteSpy.mockRestore()
+  })
+
+  it("renders AI & Agent Connections and Timezone cards for unauthenticated guests on /settings while gating Account & Session cards", async () => {
+    mockPathname = "/settings"
+    mockAuthState = {
+      user: null,
+      isAuthenticated: false,
+      isLoading: false,
+      logout: vi.fn(),
+    }
+
+    const fetcher = vi.fn(async (key: string) => {
+      if (key === "/api/ai/connection") {
+        return {
+          connected: true,
+          provider: "openai",
+          model: "gpt-6.2-sol",
+          maskedKey: "sk-p••••9999",
+        }
+      }
+      return null
+    })
+
+    render(
+      <SWRConfig
+        value={{
+          provider: () => new Map(),
+          dedupingInterval: 0,
+          fetcher,
+        }}
+      >
+        <SettingsView />
+      </SWRConfig>
     )
+
+    expect(
+      await screen.findByTestId("settings-ai-connection-card")
+    ).toBeInTheDocument()
+    expect(
+      await screen.findByTestId("ai-connection-status-badge")
+    ).toHaveTextContent("Connected: OpenAI (gpt-6.2-sol) · sk-p••••9999")
+    expect(screen.getByTestId("timezone-select-trigger")).toBeInTheDocument()
+    expect(screen.getByTestId("account-auth-empty")).toBeInTheDocument()
+    expect(
+      screen.queryByTestId("settings-signout-button")
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByTestId("connect-github-button")
+    ).not.toBeInTheDocument()
   })
 })
