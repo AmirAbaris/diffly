@@ -311,6 +311,18 @@ MATRIX: dict[tuple[str, str], dict[str, dict[str, int]]] = {
             "inactive": 200,
         },
     },
+    ("GET", "/api/user/coach-patterns"): {
+        "own_coach_patterns": {
+            "anonymous": 200,
+            "guest_a": 200,
+            "guest_b": 200,
+            "guest_forged": 200,
+            "guest_tampered": 200,
+            "user_a": 200,
+            "user_b": 200,
+            "inactive": 200,
+        },
+    },
     ("GET", "/api/challenges/next"): {
         "public_drill_recommendation": {
             "anonymous": 200,
@@ -782,6 +794,32 @@ def test_authorization_matrix_enforcement(
             }
             assert analytics["trends"] == []
 
+    for actor_name, expected in MATRIX[("GET", "/api/user/coach-patterns")][
+        "own_coach_patterns"
+    ].items():
+        ac, headers = actors[actor_name]
+        res = ac.get("/api/user/coach-patterns", headers=headers)
+        assert res.status_code == expected, actor_name
+        patterns = res.json()
+        if actor_name == "user_a":
+            assert patterns["total_submissions"] == 3
+            missed_slugs = {
+                item["challenge_slug"] for item in patterns["recent_missed"]
+            }
+            assert guest_a_private.slug not in missed_slugs
+        elif actor_name == "guest_a":
+            assert patterns["total_submissions"] == 3
+            missed_slugs = {
+                item["challenge_slug"] for item in patterns["recent_missed"]
+            }
+            assert user_a_private.slug not in missed_slugs
+        else:
+            assert patterns["total_submissions"] == 0
+            assert patterns["total_missed_submissions"] == 0
+            assert patterns["weakest_slices"] == []
+            assert patterns["strongest_slices"] == []
+            assert patterns["recent_missed"] == []
+
     for actor_name, expected in MATRIX[("GET", "/api/challenges/next")][
         "public_drill_recommendation"
     ].items():
@@ -884,6 +922,7 @@ def test_authorization_matrix_enforcement(
         assert ac.get(f"/api/challenges/{public_ch.slug}/submissions").json() == []
         assert ac.get("/api/user/progress").json()["total_attempted"] == 0
         assert ac.get("/api/user/analytics").json()["total_submissions"] == 0
+        assert ac.get("/api/user/coach-patterns").json()["total_submissions"] == 0
 
     # User A now owns both private challenges and can delete them
     assert (
@@ -1201,6 +1240,12 @@ def test_authenticated_actor_ignores_unclaimed_guest_session_cookie_and_header(
             f"/api/challenges/custom/{guest_private_slug}", headers=guest_headers
         ).status_code
         == 404
+    )
+    assert (
+        user_b_client.get("/api/user/coach-patterns", headers=guest_headers).json()[
+            "total_submissions"
+        ]
+        == 0
     )
 
 
