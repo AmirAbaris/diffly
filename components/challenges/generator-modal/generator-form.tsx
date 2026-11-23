@@ -25,7 +25,10 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { useAIConnection } from "@/hooks/use-ai-connection"
 import { formatAIConnectionSummary } from "@/lib/ai/catalog"
-import { useCustomChallengeModalStore } from "@/stores/custom-challenge-modal-store"
+import {
+  useCustomChallengeModalStore,
+  type CustomChallengePrefill,
+} from "@/stores/custom-challenge-modal-store"
 import {
   CHALLENGE_DIFFICULTIES,
   CHALLENGE_LANGUAGES,
@@ -40,6 +43,7 @@ export interface GeneratorFormValues {
 }
 
 export interface GeneratorFormProps {
+  initialValues?: CustomChallengePrefill
   isQuotaFull: boolean
   isGenerating: boolean
   errorMessage: string | null
@@ -57,6 +61,7 @@ const EXAMPLE_TOPICS = [
 ] as const
 
 export function GeneratorForm({
+  initialValues,
   isQuotaFull,
   isGenerating,
   errorMessage,
@@ -64,9 +69,13 @@ export function GeneratorForm({
   onSwitchToManage,
   onCloseModal,
 }: GeneratorFormProps) {
-  const [topic, setTopic] = React.useState("")
-  const [language, setLanguage] = React.useState<Language>("python")
-  const [difficulty, setDifficulty] = React.useState<Difficulty>("Medium")
+  const [topic, setTopic] = React.useState(initialValues?.topic ?? "")
+  const [language, setLanguage] = React.useState<Language>(
+    initialValues?.language ?? "python"
+  )
+  const [difficulty, setDifficulty] = React.useState<Difficulty>(
+    initialValues?.difficulty ?? "Medium"
+  )
 
   const storeSetIsOpen = useCustomChallengeModalStore((s) => s.setIsOpen)
   const conn = useAIConnection()

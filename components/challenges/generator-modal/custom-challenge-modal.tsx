@@ -85,6 +85,8 @@ export function CustomChallengeModal({
   const storeIsOpen = useCustomChallengeModalStore((s) => s.isOpen)
   const storeInitialTab = useCustomChallengeModalStore((s) => s.initialTab)
   const storeSetIsOpen = useCustomChallengeModalStore((s) => s.setIsOpen)
+  const storePrefill = useCustomChallengeModalStore((s) => s.prefill)
+  const prefillNonce = useCustomChallengeModalStore((s) => s.prefillNonce)
 
   const isControlled = open !== undefined
   const isModalOpen = isControlled ? open : storeIsOpen
@@ -231,6 +233,8 @@ export function CustomChallengeModal({
 
           <TabsContent value="generate" className="mt-4">
             <GeneratorForm
+              key={storePrefill ? `prefill-${prefillNonce}` : "default"}
+              initialValues={storePrefill ?? undefined}
               isQuotaFull={isQuotaFull}
               isGenerating={isGenerating}
               errorMessage={errorMessage}
