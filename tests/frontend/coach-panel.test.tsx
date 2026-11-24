@@ -7,9 +7,14 @@ import { CoachWorkspace } from "@/components/coach/coach-workspace"
 import { PatternsCoachDrawer } from "@/components/coach/patterns-coach-drawer"
 import { PATTERNS_QUICK_PROMPTS } from "@/components/coach/use-coach-chat"
 import { ComparisonView } from "@/components/review/comparison-view"
-import type { AIProviderId } from "@/lib/ai/catalog"
 import type { CoachPatternsSnapshot, CoachUIMessage } from "@/lib/ai/coach"
-import { useCustomChallengeModalStore } from "@/stores/custom-challenge-modal-store"
+import type { ChallengeSummary } from "@/types/challenge"
+import {
+  createConnectionState,
+  SAMPLE_CUSTOM_CHALLENGE,
+  SAMPLE_DRILL_MESSAGES,
+  SAMPLE_PATTERNS,
+} from "./coach-test-fixtures"
 
 const mockPush = vi.fn()
 const mockReplace = vi.fn()
@@ -17,6 +22,8 @@ const mockSendMessage = vi.fn()
 const mockStop = vi.fn()
 const mockSetMessages = vi.fn()
 const mockClearError = vi.fn()
+const mockGenerateCustomChallenge = vi.fn()
+const mockDeleteCustomChallenge = vi.fn()
 
 let mockSearchParams = new URLSearchParams()
 
@@ -49,22 +56,6 @@ vi.mock("@ai-sdk/react", () => ({
   }),
 }))
 
-const createConnectionState = () => ({
-  isConnected: true,
-  provider: "anthropic" as AIProviderId | null,
-  model: "claude-sonnet-5-5" as string | null,
-  baseUrl: null as string | null,
-  maskedKey: "sk-a••••1234" as string | null,
-  isLoading: false,
-  isValidating: false,
-  isSaving: false,
-  isDisconnecting: false,
-  error: null as Error | null,
-  saveConnection: vi.fn(),
-  disconnect: vi.fn(),
-  mutate: vi.fn(),
-})
-
 let mockConnectionState = createConnectionState()
 
 vi.mock("@/hooks/use-ai-connection", () => ({
@@ -82,68 +73,39 @@ vi.mock("@/hooks/use-coach-patterns", () => ({
   useCoachPatterns: () => mockPatternsState,
 }))
 
+let mockCustomChallengesState: {
+  customChallenges: ChallengeSummary[]
+  total: number
+  quotaLimit: number
+  quotaRemaining: number
+  isQuotaFull: boolean
+  isLoading: boolean
+  generateCustomChallenge: typeof mockGenerateCustomChallenge
+  deleteCustomChallenge: typeof mockDeleteCustomChallenge
+}
+
 vi.mock("@/hooks/use-custom-challenges", () => ({
-  useCustomChallenges: () => ({
-    customChallenges: [],
-    total: 2,
-    quotaLimit: 5,
-    quotaRemaining: 3,
-    isQuotaFull: false,
-    isLoading: false,
-  }),
+  useCustomChallenges: () => mockCustomChallengesState,
+  isRequestTimeoutError: () => false,
 }))
 
 describe("Agent Coach UI components", () => {
   beforeEach(() => {
     mockSearchParams = new URLSearchParams()
-    useCustomChallengeModalStore.setState({
-      isOpen: false,
-      initialTab: "generate",
-      prefill: null,
-      prefillNonce: 0,
-    })
-
-    mockChatState = {
-      messages: [],
-      status: "ready",
-      error: undefined,
+    mockCustomChallengesState = {
+      customChallenges: [SAMPLE_CUSTOM_CHALLENGE],
+      total: 2,
+      quotaLimit: 5,
+      quotaRemaining: 3,
+      isQuotaFull: false,
+      isLoading: false,
+      generateCustomChallenge: mockGenerateCustomChallenge,
+      deleteCustomChallenge: mockDeleteCustomChallenge,
     }
-
+    mockChatState = { messages: [], status: "ready", error: undefined }
     mockConnectionState = createConnectionState()
-
     mockPatternsState = {
-      patterns: {
-        total_submissions: 8,
-        total_missed_submissions: 3,
-        weakest_slices: [
-          {
-            category: "Concurrency",
-            language: "rust",
-            difficulty: "Hard",
-            attempts: 3,
-            unique_challenges: 2,
-            average_score: 58,
-            precision: 70,
-            recall: 48,
-            concept_coverage: 55,
-            dominant_failure_mode: "low_recall",
-          },
-        ],
-        strongest_slices: [],
-        recent_missed: [
-          {
-            challenge_slug: "async-lock-order",
-            title: "Async Lock Ordering",
-            category: "Concurrency",
-            language: "rust",
-            difficulty: "Hard",
-            score: 52,
-            missed_line_count: 2,
-            false_positive_count: 1,
-            submitted_at: "2026-11-22T10:00:00Z",
-          },
-        ],
-      },
+      patterns: SAMPLE_PATTERNS,
       isLoading: false,
       error: null,
       mutate: vi.fn(),
@@ -218,39 +180,7 @@ describe("Agent Coach UI components", () => {
     mockChatState = {
       status: "ready",
       error: undefined,
-      messages: [
-        {
-          id: "assistant-1",
-          role: "assistant",
-          parts: [
-            {
-              type: "reasoning",
-              text: "Checking recall drop on Rust concurrency challenges.",
-            },
-            {
-              type: "text",
-              text: "Focus on lock ordering in concurrent Rust services.",
-            },
-            {
-              type: "tool-suggest_targeted_drill",
-              toolCallId: "call-1",
-              state: "output-available",
-              input: {
-                topic: "Async lock ordering across await points",
-                language: "rust",
-                difficulty: "Hard",
-                rationale: "Addresses low recall on concurrency challenges.",
-              },
-              output: {
-                topic: "Async lock ordering across await points",
-                language: "rust",
-                difficulty: "Hard",
-                rationale: "Addresses low recall on concurrency challenges.",
-              },
-            },
-          ],
-        },
-      ],
+      messages: SAMPLE_DRILL_MESSAGES,
     }
 
     render(<CoachWorkspace />)
@@ -276,16 +206,25 @@ describe("Agent Coach UI components", () => {
       screen.getByTestId("coach-drill-suggestion-card")
     ).toBeInTheDocument()
 
+    mockGenerateCustomChallenge.mockResolvedValue({
+      slug: "rust-async-lock-drill",
+      title: "Async Lock Ordering Across Await",
+    })
+
     await user.click(screen.getByTestId("coach-generate-drill-button"))
 
-    const store = useCustomChallengeModalStore.getState()
-    expect(store.isOpen).toBe(true)
-    expect(store.initialTab).toBe("generate")
-    expect(store.prefill).toEqual({
+    expect(mockGenerateCustomChallenge).toHaveBeenCalledWith({
       topic: "Async lock ordering across await points",
       language: "rust",
       difficulty: "Hard",
     })
+
+    const openLink = await screen.findByTestId("coach-drill-open-challenge")
+    expect(openLink).toHaveTextContent("Start Review in Arena")
+    expect(openLink).toHaveAttribute(
+      "href",
+      "/challenges/rust-async-lock-drill"
+    )
   })
 
   it("auto-sends ?prompt= in CoachWorkspace and cleans the URL", () => {
@@ -363,22 +302,46 @@ describe("Agent Coach UI components", () => {
     ).toBeInTheDocument()
   })
 
-  it("opens custom challenge modal from CoachWorkspace top bar and context rail", async () => {
+  it("opens inline challenge generator from top bar and deletes custom challenges in context rail", async () => {
     const user = userEvent.setup()
+    mockGenerateCustomChallenge.mockResolvedValue({
+      slug: "go-mutex-deadlock-drill",
+      title: "Go Mutex Deadlock in Cache",
+    })
+    mockDeleteCustomChallenge.mockResolvedValue({ deleted: true })
 
     render(<CoachWorkspace />)
 
     expect(screen.getByTestId("coach-rail-quota-badge")).toHaveTextContent(
       "2/5"
     )
+    expect(
+      screen.queryByTestId("coach-inline-generator")
+    ).not.toBeInTheDocument()
 
     await user.click(screen.getByTestId("coach-top-generate-button"))
-    expect(useCustomChallengeModalStore.getState().isOpen).toBe(true)
-    expect(useCustomChallengeModalStore.getState().initialTab).toBe("generate")
+    expect(screen.getByTestId("coach-inline-generator")).toBeInTheDocument()
 
-    useCustomChallengeModalStore.setState({ isOpen: false })
-    await user.click(screen.getByTestId("coach-rail-manage-library-button"))
-    expect(useCustomChallengeModalStore.getState().isOpen).toBe(true)
-    expect(useCustomChallengeModalStore.getState().initialTab).toBe("manage")
+    await user.type(
+      screen.getByTestId("coach-inline-topic-input"),
+      "Go mutex deadlock in cache"
+    )
+    await user.click(screen.getByTestId("coach-inline-submit-button"))
+
+    expect(mockGenerateCustomChallenge).toHaveBeenCalledWith({
+      topic: "Go mutex deadlock in cache",
+      language: "python",
+      difficulty: "Medium",
+    })
+
+    const createdLink = await screen.findByTestId("coach-inline-open-challenge")
+    expect(createdLink).toHaveTextContent("Start Review in Arena")
+    expect(createdLink).toHaveAttribute(
+      "href",
+      "/challenges/go-mutex-deadlock-drill"
+    )
+
+    await user.click(screen.getByTestId("coach-rail-delete-custom-jwt-bypass"))
+    expect(mockDeleteCustomChallenge).toHaveBeenCalledWith("custom-jwt-bypass")
   })
 })

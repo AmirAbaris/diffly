@@ -22,7 +22,7 @@ export interface CoachPanelProps {
   emptyTitle?: string
   emptyDescription?: string
   placeholder?: string
-  onGenerateDrill: (drill: TargetedDrillSuggestion) => void
+  onGenerateDrill?: (drill: TargetedDrillSuggestion) => void
 }
 
 export function CoachPanel({

@@ -1,12 +1,12 @@
 "use client"
 
 import * as React from "react"
-import dynamic from "next/dynamic"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import { AlertCircle, Key, Plus, Settings, Sparkles } from "lucide-react"
 import { CoachContextRail } from "@/components/coach/coach-context-rail"
 import { CoachConversation } from "@/components/coach/coach-conversation"
+import { CoachInlineGenerator } from "@/components/coach/coach-inline-generator"
 import { CoachMessageList } from "@/components/coach/coach-message-list"
 import { CoachPromptInput } from "@/components/coach/coach-prompt-input"
 import {
@@ -21,16 +21,6 @@ import { Card, CardContent } from "@/components/ui/card"
 import { MessageScrollerItem } from "@/components/ui/message-scroller"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useCoachPatterns } from "@/hooks/use-coach-patterns"
-import type { TargetedDrillSuggestion } from "@/lib/ai/coach"
-import { useCustomChallengeModalStore } from "@/stores/custom-challenge-modal-store"
-
-const CustomChallengeModal = dynamic(
-  () =>
-    import("@/components/challenges/generator-modal/custom-challenge-modal").then(
-      (mod) => mod.CustomChallengeModal
-    ),
-  { ssr: false }
-)
 
 const WORKSPACE_TARGET: CoachTarget = {
   mode: "patterns",
@@ -138,13 +128,11 @@ function WorkspaceConnectedColumn({
   draft,
   onDraftChange,
   onSubmit,
-  onGenerateDrill,
 }: {
   chat: UseCoachChatResult
   draft: string
   onDraftChange: (value: string) => void
   onSubmit: () => void
-  onGenerateDrill: (drill: TargetedDrillSuggestion) => void
 }) {
   const { state, messages, connectionSummary, sendPrompt, stop } = chat
   const isStreaming = state.kind === "streaming"
@@ -163,7 +151,6 @@ function WorkspaceConnectedColumn({
             messages={messages}
             isStreaming={isStreaming}
             statusPhase={statusPhase}
-            onGenerateDrill={onGenerateDrill}
           />
         )}
       </CoachConversation>
@@ -219,14 +206,8 @@ function WorkspaceConnectedColumn({
 export function CoachWorkspace() {
   const searchParams = useSearchParams()
   const [draft, setDraft] = React.useState("")
-  const [hasMountedChallengeModal, setHasMountedChallengeModal] =
-    React.useState(false)
+  const [showGenerator, setShowGenerator] = React.useState(false)
   const consumedPromptRef = React.useRef<string | null>(null)
-
-  const openCustomChallengeModal = useCustomChallengeModalStore(
-    (s) => s.openCustomChallengeModal
-  )
-  const isChallengeModalOpen = useCustomChallengeModalStore((s) => s.isOpen)
 
   const { patterns, isLoading: patternsLoading } = useCoachPatterns()
   const chat = useCoachChat({
@@ -248,25 +229,9 @@ export function CoachWorkspace() {
     }
   }, [initialPrompt, sendPrompt, state.kind])
 
-  const handleOpenCustomModal = React.useCallback(
-    (tab: "generate" | "manage") => {
-      setHasMountedChallengeModal(true)
-      openCustomChallengeModal(tab)
-    },
-    [openCustomChallengeModal]
-  )
-
-  const handleGenerateDrill = React.useCallback(
-    (drill: TargetedDrillSuggestion) => {
-      setHasMountedChallengeModal(true)
-      openCustomChallengeModal("generate", {
-        topic: drill.topic,
-        language: drill.language,
-        difficulty: drill.difficulty,
-      })
-    },
-    [openCustomChallengeModal]
-  )
+  const handleToggleGenerator = React.useCallback(() => {
+    setShowGenerator((prev) => !prev)
+  }, [])
 
   const handleSubmit = () => {
     const trimmed = draft.trim()
@@ -274,6 +239,9 @@ export function CoachWorkspace() {
     sendPrompt(trimmed)
     setDraft("")
   }
+
+  const isConnected =
+    state.kind !== "disconnected" && state.kind !== "checking-connection"
 
   return (
     <div
@@ -285,7 +253,7 @@ export function CoachWorkspace() {
         isLoading={patternsLoading}
         disabled={state.kind !== "ready"}
         onSelectPrompt={sendPrompt}
-        onOpenCustomModal={handleOpenCustomModal}
+        onToggleGenerator={handleToggleGenerator}
       />
 
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -303,7 +271,9 @@ export function CoachWorkspace() {
             type="button"
             variant="outline"
             size="sm"
-            onClick={() => handleOpenCustomModal("generate")}
+            disabled={!isConnected}
+            aria-expanded={showGenerator}
+            onClick={handleToggleGenerator}
             data-testid="coach-top-generate-button"
             className="h-8 text-xs"
           >
@@ -311,6 +281,12 @@ export function CoachWorkspace() {
             <span>Generate Challenge</span>
           </Button>
         </div>
+
+        {showGenerator && isConnected ? (
+          <div className="mx-auto w-full max-w-3xl shrink-0 px-4 pt-4 sm:px-6">
+            <CoachInlineGenerator onClose={() => setShowGenerator(false)} />
+          </div>
+        ) : null}
 
         {state.kind === "checking-connection" ? (
           <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col justify-center gap-4 px-4 py-8 sm:px-6">
@@ -327,14 +303,9 @@ export function CoachWorkspace() {
             draft={draft}
             onDraftChange={setDraft}
             onSubmit={handleSubmit}
-            onGenerateDrill={handleGenerateDrill}
           />
         )}
       </div>
-
-      {isChallengeModalOpen || hasMountedChallengeModal ? (
-        <CustomChallengeModal />
-      ) : null}
     </div>
   )
 }

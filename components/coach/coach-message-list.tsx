@@ -2,11 +2,10 @@
 
 import * as React from "react"
 import { AlertCircle, Brain, Check, Copy, Sparkles } from "lucide-react"
+import { CoachDrillCard } from "@/components/coach/coach-drill-card"
 import { MarkdownPreview } from "@/components/review/markdown-preview"
-import { Badge } from "@/components/ui/badge"
 import { Bubble, BubbleContent } from "@/components/ui/bubble"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
 import {
   Message,
   MessageContent,
@@ -25,13 +24,12 @@ import {
 } from "@/components/ui/trace"
 import { useClipboard } from "@/hooks/use-clipboard"
 import type { CoachUIMessage, TargetedDrillSuggestion } from "@/lib/ai/coach"
-import { formatLanguageLabel } from "@/types/challenge"
 
 export interface CoachMessageListProps {
   messages: CoachUIMessage[]
   isStreaming: boolean
   statusPhase?: "submitted" | "streaming"
-  onGenerateDrill: (drill: TargetedDrillSuggestion) => void
+  onGenerateDrill?: (drill: TargetedDrillSuggestion) => void
 }
 
 function extractMessageText(message: CoachUIMessage): string {
@@ -45,56 +43,6 @@ function extractMessageText(message: CoachUIMessage): string {
     .trim()
 }
 
-function DrillSuggestionCard({
-  drill,
-  onGenerateDrill,
-}: {
-  drill: TargetedDrillSuggestion
-  onGenerateDrill: (drill: TargetedDrillSuggestion) => void
-}) {
-  return (
-    <Card
-      data-testid="coach-drill-suggestion-card"
-      className="gap-0 border-border bg-card py-0 shadow-none"
-    >
-      <CardContent className="flex flex-col gap-2.5 p-3.5">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <span className="text-xs font-medium text-muted-foreground">
-            Targeted Practice Drill
-          </span>
-          <div className="flex items-center gap-1.5">
-            <Badge variant="secondary" size="sm" className="font-mono">
-              {formatLanguageLabel(drill.language)}
-            </Badge>
-            <Badge variant="outline" size="sm">
-              {drill.difficulty}
-            </Badge>
-          </div>
-        </div>
-        <p className="text-sm font-medium text-balance text-foreground">
-          {drill.topic}
-        </p>
-        {drill.rationale ? (
-          <p className="text-xs leading-relaxed text-pretty text-muted-foreground">
-            {drill.rationale}
-          </p>
-        ) : null}
-        <div className="pt-0.5">
-          <Button
-            type="button"
-            size="sm"
-            onClick={() => onGenerateDrill(drill)}
-            data-testid="coach-generate-drill-button"
-          >
-            <Sparkles data-icon="inline-start" aria-hidden="true" />
-            <span>Generate Targeted Drill</span>
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
-
 function AssistantMessageParts({
   message,
   isActiveStream,
@@ -102,7 +50,7 @@ function AssistantMessageParts({
 }: {
   message: CoachUIMessage
   isActiveStream: boolean
-  onGenerateDrill: (drill: TargetedDrillSuggestion) => void
+  onGenerateDrill?: (drill: TargetedDrillSuggestion) => void
 }) {
   return (
     <>
@@ -175,7 +123,7 @@ function AssistantMessageParts({
 
           if (part.state === "output-available" && part.output) {
             return (
-              <DrillSuggestionCard
+              <CoachDrillCard
                 key={part.toolCallId}
                 drill={part.output}
                 onGenerateDrill={onGenerateDrill}
@@ -212,7 +160,7 @@ function AssistantMessageItem({
 }: {
   message: CoachUIMessage
   isActiveStream: boolean
-  onGenerateDrill: (drill: TargetedDrillSuggestion) => void
+  onGenerateDrill?: (drill: TargetedDrillSuggestion) => void
 }) {
   const { copied, copy } = useClipboard()
   const plainText = extractMessageText(message)

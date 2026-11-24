@@ -5,10 +5,10 @@ import Link from "next/link"
 import {
   AlertTriangle,
   ArrowUpRight,
-  FolderOpen,
   Plus,
   Sparkles,
   Target,
+  Trash2,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -27,7 +27,7 @@ export interface CoachContextRailProps {
   isLoading: boolean
   disabled?: boolean
   onSelectPrompt: (prompt: string) => void
-  onOpenCustomModal?: (tab: "generate" | "manage") => void
+  onToggleGenerator?: () => void
 }
 
 function WeakSliceCard({
@@ -123,11 +123,23 @@ function RailSkeleton() {
 }
 
 function CustomChallengesSection({
-  onOpenCustomModal,
+  onToggleGenerator,
 }: {
-  onOpenCustomModal: (tab: "generate" | "manage") => void
+  onToggleGenerator: () => void
 }) {
-  const { total, quotaLimit } = useCustomChallenges()
+  const { customChallenges, total, quotaLimit, deleteCustomChallenge } =
+    useCustomChallenges()
+  const [deletingSlug, setDeletingSlug] = React.useState<string | null>(null)
+
+  const handleDelete = async (slug: string) => {
+    if (deletingSlug) return
+    setDeletingSlug(slug)
+    try {
+      await deleteCustomChallenge(slug)
+    } finally {
+      setDeletingSlug(null)
+    }
+  }
 
   return (
     <section
@@ -151,30 +163,49 @@ function CustomChallengesSection({
           {total}/{quotaLimit}
         </Badge>
       </div>
-      <div className="flex flex-col gap-1.5">
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => onOpenCustomModal("generate")}
-          data-testid="coach-rail-new-challenge-button"
-          className="w-full justify-start text-xs"
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={onToggleGenerator}
+        data-testid="coach-rail-new-challenge-button"
+        className="w-full justify-start text-xs"
+      >
+        <Plus data-icon="inline-start" aria-hidden="true" />
+        <span>New Custom Challenge</span>
+      </Button>
+      {customChallenges.length > 0 ? (
+        <ul
+          data-testid="coach-rail-custom-list"
+          className="flex max-h-40 flex-col gap-1 overflow-y-auto overscroll-contain"
         >
-          <Plus data-icon="inline-start" aria-hidden="true" />
-          <span>New Custom Challenge</span>
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={() => onOpenCustomModal("manage")}
-          data-testid="coach-rail-manage-library-button"
-          className="w-full justify-start text-xs text-muted-foreground hover:text-foreground"
-        >
-          <FolderOpen data-icon="inline-start" aria-hidden="true" />
-          <span>Manage Library</span>
-        </Button>
-      </div>
+          {customChallenges.map((challenge) => (
+            <li
+              key={challenge.slug}
+              className="flex items-center justify-between gap-1.5 rounded-md px-2 py-1 transition-colors hover:bg-muted/40"
+            >
+              <Link
+                href={`/challenges/${challenge.slug}`}
+                className="min-w-0 flex-1 truncate text-xs text-foreground transition-colors hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+              >
+                {challenge.title}
+              </Link>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                disabled={deletingSlug === challenge.slug}
+                onClick={() => void handleDelete(challenge.slug)}
+                aria-label={`Delete ${challenge.title}`}
+                data-testid={`coach-rail-delete-${challenge.slug}`}
+                className="shrink-0 text-muted-foreground hover:text-destructive"
+              >
+                <Trash2 aria-hidden="true" className="size-3.5" />
+              </Button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
     </section>
   )
 }
@@ -184,7 +215,7 @@ export function CoachContextRail({
   isLoading,
   disabled = false,
   onSelectPrompt,
-  onOpenCustomModal,
+  onToggleGenerator,
 }: CoachContextRailProps) {
   return (
     <aside
@@ -282,8 +313,8 @@ export function CoachContextRail({
         </div>
       )}
 
-      {onOpenCustomModal ? (
-        <CustomChallengesSection onOpenCustomModal={onOpenCustomModal} />
+      {onToggleGenerator ? (
+        <CustomChallengesSection onToggleGenerator={onToggleGenerator} />
       ) : null}
     </aside>
   )

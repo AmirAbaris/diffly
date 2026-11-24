@@ -2,7 +2,6 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
 import {
   ArrowUpRight,
   ChevronDown,
@@ -19,7 +18,6 @@ import { Card } from "@/components/ui/card"
 import type { DebriefContext, TargetedDrillSuggestion } from "@/lib/ai/coach"
 import type { GradeReport } from "@/lib/review"
 import { cn } from "@/lib/utils"
-import { useCustomChallengeModalStore } from "@/stores/custom-challenge-modal-store"
 import type {
   ChallengeFile,
   ChallengeSolutionResponse,
@@ -48,27 +46,6 @@ function DebriefCoachPanelBody({
   target: CoachTarget
   onGenerateDrill?: (drill: TargetedDrillSuggestion) => void
 }) {
-  const router = useRouter()
-  const openCustomChallengeModal = useCustomChallengeModalStore(
-    (s) => s.openCustomChallengeModal
-  )
-
-  const handleGenerateDrill = React.useCallback(
-    (drill: TargetedDrillSuggestion) => {
-      if (onGenerateDrill) {
-        onGenerateDrill(drill)
-        return
-      }
-      openCustomChallengeModal("generate", {
-        topic: drill.topic,
-        language: drill.language,
-        difficulty: drill.difficulty,
-      })
-      router.push("/challenges")
-    },
-    [onGenerateDrill, openCustomChallengeModal, router]
-  )
-
   return (
     <CoachPanel
       chatId={`debrief:${resolvedSlug}`}
@@ -76,7 +53,7 @@ function DebriefCoachPanelBody({
       quickPrompts={DEBRIEF_QUICK_PROMPTS}
       emptyTitle="Debrief this submission"
       emptyDescription="Ask why you missed a defect, review your flagged lines, or launch a follow-up drill."
-      onGenerateDrill={handleGenerateDrill}
+      onGenerateDrill={onGenerateDrill}
     />
   )
 }
