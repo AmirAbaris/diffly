@@ -31,7 +31,7 @@ When a model hits quota or capacity limits, apply this chain (and warn if a mult
    - For single-model roles: fall back directly to `gemini-4-hydrogen-high` (or `-xhigh`).
 2. **`claude-sonnet-5-5-*` exhausted:**
    - Fall back to `gemini-4-hydrogen-*` at the matching effort level (`high` -> `high`, `medium` -> `medium`, `low` -> `low`).
-3. **`gemini-4-neon-*` or `gemini-4-argon-*` exhausted:**
+3. **`gemini-4-neon-*`, `gemini-4-carbon-*`, or `gemini-4-argon-*` exhausted:**
    - Fall back to `gemini-4-hydrogen-*` at the matching effort level (`xhigh` -> `xhigh`, `high` -> `high`, `medium` -> `medium`, `low` -> `low`).
 4. **`gemini-4-hydrogen-*` exhausted:**
    - Step down one effort level within Hydrogen (`xhigh` -> `high` -> `medium` -> `low`).
