@@ -3,27 +3,31 @@ import { cleanup, render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { CoachPanel } from "@/components/coach/coach-panel"
+import { CoachWorkspace } from "@/components/coach/coach-workspace"
 import { PatternsCoachDrawer } from "@/components/coach/patterns-coach-drawer"
 import { PATTERNS_QUICK_PROMPTS } from "@/components/coach/use-coach-chat"
 import { ComparisonView } from "@/components/review/comparison-view"
 import type { AIProviderId } from "@/lib/ai/catalog"
-import type { CoachUIMessage } from "@/lib/ai/coach"
+import type { CoachPatternsSnapshot, CoachUIMessage } from "@/lib/ai/coach"
 import { useCustomChallengeModalStore } from "@/stores/custom-challenge-modal-store"
 
 const mockPush = vi.fn()
+const mockReplace = vi.fn()
 const mockSendMessage = vi.fn()
 const mockStop = vi.fn()
 const mockSetMessages = vi.fn()
 const mockClearError = vi.fn()
 
+let mockSearchParams = new URLSearchParams()
+
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
     push: mockPush,
-    replace: vi.fn(),
+    replace: mockReplace,
     back: vi.fn(),
   }),
-  useSearchParams: () => new URLSearchParams(),
-  usePathname: () => "/stats",
+  useSearchParams: () => mockSearchParams,
+  usePathname: () => "/coach",
 }))
 
 let mockChatState: {
@@ -65,8 +69,20 @@ vi.mock("@/hooks/use-ai-connection", () => ({
   useAIConnection: () => mockConnectionState,
 }))
 
+let mockPatternsState: {
+  patterns: CoachPatternsSnapshot | null
+  isLoading: boolean
+  error: Error | null
+  mutate: ReturnType<typeof vi.fn>
+}
+
+vi.mock("@/hooks/use-coach-patterns", () => ({
+  useCoachPatterns: () => mockPatternsState,
+}))
+
 describe("Agent Coach UI components", () => {
   beforeEach(() => {
+    mockSearchParams = new URLSearchParams()
     useCustomChallengeModalStore.setState({
       isOpen: false,
       initialTab: "generate",
@@ -95,6 +111,44 @@ describe("Agent Coach UI components", () => {
       disconnect: vi.fn(),
       mutate: vi.fn(),
     }
+
+    mockPatternsState = {
+      patterns: {
+        total_submissions: 8,
+        total_missed_submissions: 3,
+        weakest_slices: [
+          {
+            category: "Concurrency",
+            language: "rust",
+            difficulty: "Hard",
+            attempts: 3,
+            unique_challenges: 2,
+            average_score: 58,
+            precision: 70,
+            recall: 48,
+            concept_coverage: 55,
+            dominant_failure_mode: "low_recall",
+          },
+        ],
+        strongest_slices: [],
+        recent_missed: [
+          {
+            challenge_slug: "async-lock-order",
+            title: "Async Lock Ordering",
+            category: "Concurrency",
+            language: "rust",
+            difficulty: "Hard",
+            score: 52,
+            missed_line_count: 2,
+            false_positive_count: 1,
+            submitted_at: "2026-11-22T10:00:00Z",
+          },
+        ],
+      },
+      isLoading: false,
+      error: null,
+      mutate: vi.fn(),
+    }
   })
 
   afterEach(() => {
@@ -102,7 +156,7 @@ describe("Agent Coach UI components", () => {
     vi.clearAllMocks()
   })
 
-  it("renders disconnected state with /settings link when AI provider is not connected", () => {
+  it("renders disconnected state with /settings link in CoachPanel and CoachWorkspace", () => {
     mockConnectionState = {
       ...mockConnectionState,
       isConnected: false,
@@ -111,7 +165,7 @@ describe("Agent Coach UI components", () => {
       maskedKey: null,
     }
 
-    render(
+    const { unmount } = render(
       <CoachPanel
         target={{ mode: "patterns" }}
         quickPrompts={PATTERNS_QUICK_PROMPTS}
@@ -120,11 +174,22 @@ describe("Agent Coach UI components", () => {
     )
 
     expect(screen.getByTestId("coach-disconnected-state")).toBeInTheDocument()
-    const settingsLink = screen.getByTestId("coach-settings-link")
-    expect(settingsLink).toHaveAttribute("href", "/settings")
+    expect(screen.getByTestId("coach-settings-link")).toHaveAttribute(
+      "href",
+      "/settings"
+    )
+
+    unmount()
+
+    render(<CoachWorkspace />)
+    expect(screen.getByTestId("coach-disconnected-state")).toBeInTheDocument()
+    expect(screen.getByTestId("coach-settings-link")).toHaveAttribute(
+      "href",
+      "/settings"
+    )
   })
 
-  it("renders connected quick-prompt chips and calls sendMessage on click", async () => {
+  it("renders connected quick-prompt cards and calls sendMessage on click", async () => {
     const user = userEvent.setup()
 
     render(
@@ -148,9 +213,8 @@ describe("Agent Coach UI components", () => {
     )
   })
 
-  it("renders suggest_targeted_drill card and hands off prefill to custom challenge modal store", async () => {
+  it("renders reasoning block, text prose, and suggest_targeted_drill handoff in CoachWorkspace", async () => {
     const user = userEvent.setup()
-    const onOpeningTargetedDrill = vi.fn()
 
     mockChatState = {
       status: "ready",
@@ -160,6 +224,10 @@ describe("Agent Coach UI components", () => {
           id: "assistant-1",
           role: "assistant",
           parts: [
+            {
+              type: "reasoning",
+              text: "Checking recall drop on Rust concurrency challenges.",
+            },
             {
               type: "text",
               text: "Focus on lock ordering in concurrent Rust services.",
@@ -186,22 +254,29 @@ describe("Agent Coach UI components", () => {
       ],
     }
 
-    render(
-      <PatternsCoachDrawer onOpeningTargetedDrill={onOpeningTargetedDrill} />
+    render(<CoachWorkspace />)
+
+    const reasoningToggle = screen.getByTestId("coach-reasoning-toggle")
+    expect(reasoningToggle).toHaveAttribute("aria-expanded", "false")
+    expect(
+      screen.queryByTestId("coach-reasoning-content")
+    ).not.toBeInTheDocument()
+
+    await user.click(reasoningToggle)
+    expect(reasoningToggle).toHaveAttribute("aria-expanded", "true")
+    expect(screen.getByTestId("coach-reasoning-content")).toHaveTextContent(
+      "Checking recall drop on Rust concurrency challenges."
     )
 
-    await user.click(screen.getByTestId("patterns-coach-toggle"))
-
     expect(
-      screen.getByTestId("coach-drill-suggestion-card")
+      screen.getByText("Focus on lock ordering in concurrent Rust services.")
     ).toBeInTheDocument()
     expect(
-      screen.getByText("Async lock ordering across await points")
+      screen.getByTestId("coach-drill-suggestion-card")
     ).toBeInTheDocument()
 
     await user.click(screen.getByTestId("coach-generate-drill-button"))
 
-    expect(onOpeningTargetedDrill).toHaveBeenCalledTimes(1)
     const store = useCustomChallengeModalStore.getState()
     expect(store.isOpen).toBe(true)
     expect(store.initialTab).toBe("generate")
@@ -212,7 +287,43 @@ describe("Agent Coach UI components", () => {
     })
   })
 
-  it("renders DebriefCoachDrawer inside ComparisonView and expands on toggle", async () => {
+  it("auto-sends ?prompt= in CoachWorkspace and cleans the URL", () => {
+    mockSearchParams = new URLSearchParams("prompt=Analyze+my+blind+spots")
+    const replaceStateSpy = vi.spyOn(window.history, "replaceState")
+
+    render(<CoachWorkspace />)
+
+    expect(mockSendMessage).toHaveBeenCalledWith(
+      { text: "Analyze my blind spots" },
+      { body: { mode: "patterns", sliceLimit: 5, missedLimit: 10 } }
+    )
+    expect(replaceStateSpy).toHaveBeenCalledWith(
+      window.history.state,
+      "",
+      "/coach"
+    )
+    replaceStateSpy.mockRestore()
+  })
+
+  it("renders PatternsCoachDrawer on /stats with direct links to /coach and /coach?prompt=...", () => {
+    render(<PatternsCoachDrawer />)
+
+    expect(screen.getByTestId("patterns-coach-drawer")).toBeInTheDocument()
+    expect(screen.getByTestId("patterns-coach-open-link")).toHaveAttribute(
+      "href",
+      "/coach"
+    )
+
+    const blindSpotsLink = screen.getByTestId(
+      "patterns-coach-prompt-blind-spots"
+    )
+    expect(blindSpotsLink).toHaveAttribute(
+      "href",
+      `/coach?prompt=${encodeURIComponent(PATTERNS_QUICK_PROMPTS[0].prompt)}`
+    )
+  })
+
+  it("renders DebriefCoachDrawer inside ComparisonView, expands on toggle, and links to /coach", async () => {
     const user = userEvent.setup()
 
     render(
@@ -237,6 +348,10 @@ describe("Agent Coach UI components", () => {
     const toggle = screen.getByTestId("debrief-coach-toggle")
     expect(toggle).toHaveAttribute("aria-expanded", "false")
     expect(screen.queryByTestId("coach-panel")).not.toBeInTheDocument()
+    expect(screen.getByTestId("debrief-open-full-coach")).toHaveAttribute(
+      "href",
+      "/coach"
+    )
 
     await user.click(toggle)
 

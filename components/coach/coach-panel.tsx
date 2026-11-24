@@ -2,25 +2,18 @@
 
 import * as React from "react"
 import Link from "next/link"
-import {
-  AlertCircle,
-  Key,
-  RotateCcw,
-  SendHorizontal,
-  Settings,
-  Square,
-} from "lucide-react"
+import { AlertCircle, Key, Settings, Sparkles } from "lucide-react"
+import { CoachConversation } from "@/components/coach/coach-conversation"
 import { CoachMessageList } from "@/components/coach/coach-message-list"
+import { CoachPromptInput } from "@/components/coach/coach-prompt-input"
 import {
   useCoachChat,
   type CoachQuickPrompt,
   type CoachTarget,
 } from "@/components/coach/use-coach-chat"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
-import { Textarea } from "@/components/ui/textarea"
-import type { TargetedDrillSuggestion } from "@/lib/ai/coach"
+import type { CoachUIMessage, TargetedDrillSuggestion } from "@/lib/ai/coach"
 
 export interface CoachPanelProps {
   chatId?: string
@@ -32,13 +25,26 @@ export interface CoachPanelProps {
   onGenerateDrill: (drill: TargetedDrillSuggestion) => void
 }
 
+function buildPanelScrollKey(
+  messages: CoachUIMessage[],
+  isStreaming: boolean
+): string {
+  const last = messages[messages.length - 1]
+  if (!last) return `empty:${isStreaming}`
+  const textLen = last.parts.reduce(
+    (sum, part) => sum + ("text" in part ? part.text.length : 0),
+    0
+  )
+  return `${messages.length}:${last.parts.length}:${textLen}:${isStreaming}`
+}
+
 export function CoachPanel({
   chatId,
   target,
   quickPrompts,
-  emptyTitle,
-  emptyDescription,
-  placeholder = "Ask Agent Coach a question… (Enter to send, Shift+Enter for newline)",
+  emptyTitle = "Start a coaching session",
+  emptyDescription = "Pick a prompt below or ask a question about this submission.",
+  placeholder = "Ask Agent Coach a question…",
   onGenerateDrill,
 }: CoachPanelProps) {
   const [draft, setDraft] = React.useState("")
@@ -53,9 +59,10 @@ export function CoachPanel({
   } = useCoachChat({ chatId, target })
 
   const isStreaming = state.kind === "streaming"
+  const statusPhase = state.kind === "streaming" ? state.phase : undefined
+  const scrollKey = buildPanelScrollKey(messages, isStreaming)
 
-  const handleSubmit = (event?: React.FormEvent) => {
-    event?.preventDefault()
+  const handleSubmit = () => {
     if (isStreaming) return
     const trimmed = draft.trim()
     if (!trimmed) return
@@ -63,18 +70,11 @@ export function CoachPanel({
     setDraft("")
   }
 
-  const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key === "Enter" && !event.shiftKey) {
-      event.preventDefault()
-      handleSubmit()
-    }
-  }
-
   if (state.kind === "checking-connection") {
     return (
       <Skeleton
         data-testid="coach-loading-skeleton"
-        className="h-28 w-full rounded-lg"
+        className="h-28 w-full rounded-xl"
       />
     )
   }
@@ -83,7 +83,7 @@ export function CoachPanel({
     return (
       <div
         data-testid="coach-disconnected-state"
-        className="flex flex-col justify-between gap-3 rounded-lg border border-border/70 bg-muted/20 p-4 sm:flex-row sm:items-center"
+        className="flex flex-col justify-between gap-3 rounded-xl border border-border/70 bg-muted/20 p-4 sm:flex-row sm:items-center"
       >
         <div className="flex items-start gap-2.5">
           <Key
@@ -112,66 +112,55 @@ export function CoachPanel({
 
   return (
     <div data-testid="coach-panel" className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-        <div className="flex flex-wrap items-center gap-2">
-          {connectionSummary ? (
-            <Badge
-              variant="success"
-              data-testid="coach-connected-badge"
-              className="font-mono"
-            >
-              Connected: {connectionSummary}
-            </Badge>
-          ) : null}
-          <Link
-            href="/settings"
-            className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground hover:underline"
+      {messages.length === 0 ? (
+        <div className="flex flex-col gap-3 rounded-xl border border-border/70 bg-muted/15 p-4">
+          <div className="flex items-center gap-2">
+            <Sparkles
+              aria-hidden="true"
+              className="size-4 shrink-0 text-muted-foreground"
+            />
+            <div className="flex flex-col gap-0.5">
+              <span className="text-sm font-medium text-foreground">
+                {emptyTitle}
+              </span>
+              <p className="text-xs text-pretty text-muted-foreground">
+                {emptyDescription}
+              </p>
+            </div>
+          </div>
+
+          <div
+            data-testid="coach-quick-prompts"
+            className="grid grid-cols-1 gap-2 sm:grid-cols-3"
           >
-            <Settings aria-hidden="true" className="size-3.5" />
-            <span>Settings</span>
-          </Link>
+            {quickPrompts.map((chip) => (
+              <button
+                key={chip.id}
+                type="button"
+                disabled={isStreaming}
+                onClick={() => sendPrompt(chip.prompt)}
+                data-testid={`coach-quick-prompt-${chip.id}`}
+                className="flex flex-col gap-1 rounded-lg border border-border/70 bg-card px-3 py-2.5 text-left transition-colors hover:border-border hover:bg-muted/40 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50"
+              >
+                <span className="text-xs font-medium text-foreground">
+                  {chip.label}
+                </span>
+              </button>
+            ))}
+          </div>
         </div>
-
-        {messages.length > 0 ? (
-          <Button
-            type="button"
-            variant="ghost"
-            size="xs"
-            onClick={resetConversation}
-            data-testid="coach-reset-button"
-          >
-            <RotateCcw data-icon="inline-start" aria-hidden="true" />
-            <span>Reset</span>
-          </Button>
-        ) : null}
-      </div>
-
-      <div
-        data-testid="coach-quick-prompts"
-        className="flex flex-wrap items-center gap-1.5"
-      >
-        {quickPrompts.map((chip) => (
-          <Button
-            key={chip.id}
-            type="button"
-            variant="outline"
-            size="xs"
-            disabled={isStreaming}
-            onClick={() => sendPrompt(chip.prompt)}
-            data-testid={`coach-quick-prompt-${chip.id}`}
-          >
-            {chip.label}
-          </Button>
-        ))}
-      </div>
-
-      <CoachMessageList
-        messages={messages}
-        isStreaming={isStreaming}
-        emptyTitle={emptyTitle}
-        emptyDescription={emptyDescription}
-        onGenerateDrill={onGenerateDrill}
-      />
+      ) : (
+        <div className="flex max-h-96 flex-col overflow-hidden rounded-xl border border-border/70 bg-muted/15">
+          <CoachConversation scrollKey={scrollKey} contentClassName="p-4">
+            <CoachMessageList
+              messages={messages}
+              isStreaming={isStreaming}
+              statusPhase={statusPhase}
+              onGenerateDrill={onGenerateDrill}
+            />
+          </CoachConversation>
+        </div>
+      )}
 
       {state.kind === "error" ? (
         <div
@@ -201,44 +190,17 @@ export function CoachPanel({
         </div>
       ) : null}
 
-      <form
+      <CoachPromptInput
+        value={draft}
+        onChange={setDraft}
         onSubmit={handleSubmit}
-        className="flex flex-col gap-2 sm:flex-row sm:items-end"
-      >
-        <Textarea
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder={placeholder}
-          aria-label="Ask Agent Coach"
-          disabled={isStreaming}
-          rows={2}
-          className="min-h-12 flex-1 text-sm"
-          data-testid="coach-composer-input"
-        />
-        {isStreaming ? (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => void stop()}
-            data-testid="coach-stop-button"
-          >
-            <Square data-icon="inline-start" aria-hidden="true" />
-            <span>Stop</span>
-          </Button>
-        ) : (
-          <Button
-            type="submit"
-            size="sm"
-            disabled={draft.trim().length === 0}
-            data-testid="coach-send-button"
-          >
-            <SendHorizontal data-icon="inline-start" aria-hidden="true" />
-            <span>Send</span>
-          </Button>
-        )}
-      </form>
+        onStop={() => void stop()}
+        isStreaming={isStreaming}
+        connectionSummary={connectionSummary}
+        placeholder={placeholder}
+        hasMessages={messages.length > 0}
+        onReset={resetConversation}
+      />
     </div>
   )
 }

@@ -1,27 +1,32 @@
 "use client"
 
 import * as React from "react"
-import { AlertCircle, Loader2, Sparkles } from "lucide-react"
+import { AlertCircle, Check, Copy, Loader2, Sparkles } from "lucide-react"
+import { CoachReasoning } from "@/components/coach/coach-reasoning"
 import { MarkdownPreview } from "@/components/review/markdown-preview"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "@/components/ui/empty"
+import { useClipboard } from "@/hooks/use-clipboard"
 import type { CoachUIMessage, TargetedDrillSuggestion } from "@/lib/ai/coach"
 import { formatLanguageLabel } from "@/types/challenge"
 
 export interface CoachMessageListProps {
   messages: CoachUIMessage[]
   isStreaming: boolean
-  emptyTitle?: string
-  emptyDescription?: string
+  statusPhase?: "submitted" | "streaming"
   onGenerateDrill: (drill: TargetedDrillSuggestion) => void
+}
+
+function extractMessageText(message: CoachUIMessage): string {
+  return message.parts
+    .filter(
+      (part): part is Extract<typeof part, { type: "text" }> =>
+        part.type === "text"
+    )
+    .map((part) => part.text)
+    .join("\n\n")
+    .trim()
 }
 
 function DrillSuggestionCard({
@@ -74,158 +79,198 @@ function DrillSuggestionCard({
   )
 }
 
-export function CoachMessageList({
-  messages,
-  isStreaming,
-  emptyTitle = "Start a coaching session",
-  emptyDescription = "Pick a quick prompt above or ask a question about your code review performance.",
+function AssistantMessageParts({
+  message,
+  isActiveStream,
   onGenerateDrill,
-}: CoachMessageListProps) {
-  const bottomRef = React.useRef<HTMLDivElement | null>(null)
-
-  React.useEffect(() => {
-    if (
-      (messages.length > 0 || isStreaming) &&
-      typeof bottomRef.current?.scrollIntoView === "function"
-    ) {
-      bottomRef.current.scrollIntoView({ block: "nearest" })
-    }
-  }, [messages.length, isStreaming])
-
+}: {
+  message: CoachUIMessage
+  isActiveStream: boolean
+  onGenerateDrill: (drill: TargetedDrillSuggestion) => void
+}) {
   return (
-    <div
-      role="log"
-      aria-live="polite"
-      aria-label="Agent Coach conversation"
-      data-testid="coach-message-list"
-      className="flex max-h-96 flex-col gap-3 overflow-y-auto overscroll-contain rounded-lg border border-border/70 bg-muted/20 p-3"
-    >
-      {messages.length === 0 ? (
-        <Empty className="border-0 p-6">
-          <EmptyHeader>
-            <EmptyMedia variant="icon">
-              <Sparkles aria-hidden="true" />
-            </EmptyMedia>
-            <EmptyTitle className="text-sm">{emptyTitle}</EmptyTitle>
-            <EmptyDescription className="text-xs">
-              {emptyDescription}
-            </EmptyDescription>
-          </EmptyHeader>
-        </Empty>
-      ) : (
-        messages.map((message) => {
-          if (message.role === "user") {
-            const text = message.parts
-              .filter(
-                (part): part is Extract<typeof part, { type: "text" }> =>
-                  part.type === "text"
-              )
-              .map((part) => part.text)
-              .join("")
+    <div className="flex flex-col gap-2.5">
+      {message.parts.map((part, index) => {
+        const partKey = `${message.id}-part-${index}`
+
+        if (part.type === "reasoning") {
+          const hasFollowingText = message.parts
+            .slice(index + 1)
+            .some((next) => next.type === "text" && next.text.trim().length > 0)
+          const isPartStreaming =
+            isActiveStream && (part.state === "streaming" || !hasFollowingText)
+
+          return (
+            <CoachReasoning
+              key={partKey}
+              text={part.text}
+              isStreaming={isPartStreaming}
+            />
+          )
+        }
+
+        if (part.type === "text") {
+          if (!part.text.trim()) return null
+          return (
+            <div key={partKey} className="text-sm text-foreground">
+              <MarkdownPreview
+                content={part.text}
+                className="border-0 bg-transparent p-0 shadow-none"
+              />
+            </div>
+          )
+        }
+
+        if (part.type === "tool-suggest_targeted_drill") {
+          if (
+            part.state === "input-streaming" ||
+            part.state === "input-available"
+          ) {
             return (
               <div
-                key={message.id}
-                data-testid="coach-message-user"
-                className="ml-auto max-w-[85%] rounded-lg border border-border bg-muted/50 px-3.5 py-2.5 text-sm whitespace-pre-wrap text-foreground"
+                key={part.toolCallId}
+                data-testid="coach-drill-loading"
+                className="flex items-center gap-2 rounded-lg border border-border/70 bg-muted/30 px-3 py-2 text-xs text-muted-foreground"
               >
-                {text}
+                <Loader2
+                  aria-hidden="true"
+                  className="size-3.5 shrink-0 animate-spin motion-reduce:animate-none"
+                />
+                <span>Preparing targeted drill…</span>
               </div>
             )
           }
 
+          if (part.state === "output-available" && part.output) {
+            return (
+              <DrillSuggestionCard
+                key={part.toolCallId}
+                drill={part.output}
+                onGenerateDrill={onGenerateDrill}
+              />
+            )
+          }
+
+          if (part.state === "output-error") {
+            return (
+              <div
+                key={part.toolCallId}
+                role="alert"
+                className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive"
+              >
+                <AlertCircle aria-hidden="true" className="size-3.5 shrink-0" />
+                <span>
+                  {part.errorText ||
+                    "Could not prepare targeted drill suggestion."}
+                </span>
+              </div>
+            )
+          }
+        }
+
+        return null
+      })}
+    </div>
+  )
+}
+
+function AssistantMessageItem({
+  message,
+  isActiveStream,
+  onGenerateDrill,
+}: {
+  message: CoachUIMessage
+  isActiveStream: boolean
+  onGenerateDrill: (drill: TargetedDrillSuggestion) => void
+}) {
+  const { copied, copy } = useClipboard()
+  const plainText = extractMessageText(message)
+
+  return (
+    <article
+      data-testid="coach-message-assistant"
+      className="flex w-full flex-col gap-2"
+    >
+      <div className="flex items-center justify-between gap-2">
+        <div className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+          <Sparkles aria-hidden="true" className="size-3.5" />
+          <span>Agent Coach</span>
+        </div>
+
+        {!isActiveStream && plainText ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            onClick={() => void copy(plainText)}
+            aria-label={copied ? "Copied response" : "Copy response"}
+            data-testid="coach-copy-message-button"
+            className="text-muted-foreground hover:text-foreground"
+          >
+            {copied ? (
+              <Check aria-hidden="true" className="size-3" />
+            ) : (
+              <Copy aria-hidden="true" className="size-3" />
+            )}
+          </Button>
+        ) : null}
+      </div>
+
+      <AssistantMessageParts
+        message={message}
+        isActiveStream={isActiveStream}
+        onGenerateDrill={onGenerateDrill}
+      />
+    </article>
+  )
+}
+
+export function CoachMessageList({
+  messages,
+  isStreaming,
+  statusPhase,
+  onGenerateDrill,
+}: CoachMessageListProps) {
+  const showSubmittedPulse = statusPhase === "submitted"
+
+  return (
+    <div data-testid="coach-message-list" className="flex flex-col gap-6">
+      {messages.map((message, index) => {
+        if (message.role === "user") {
           return (
             <div
               key={message.id}
-              data-testid="coach-message-assistant"
-              className="mr-auto flex w-full max-w-[92%] flex-col gap-2"
+              data-testid="coach-message-user"
+              className="ml-auto max-w-[82%] rounded-2xl bg-muted/70 px-4 py-2.5 text-sm whitespace-pre-wrap text-foreground"
             >
-              {message.parts.map((part) => {
-                if (part.type === "text") {
-                  if (!part.text.trim()) return null
-                  return (
-                    <div
-                      key={`${message.id}-text-${part.text.length}-${part.text.slice(0, 16)}`}
-                      className="rounded-lg border border-border bg-card px-3.5 py-2.5 text-sm text-foreground"
-                    >
-                      <MarkdownPreview
-                        content={part.text}
-                        className="border-0 bg-transparent p-0 shadow-none"
-                      />
-                    </div>
-                  )
-                }
-
-                if (part.type === "tool-suggest_targeted_drill") {
-                  if (
-                    part.state === "input-streaming" ||
-                    part.state === "input-available"
-                  ) {
-                    return (
-                      <div
-                        key={part.toolCallId}
-                        data-testid="coach-drill-loading"
-                        className="flex items-center gap-2 rounded-lg border border-border/70 bg-muted/30 px-3 py-2 text-xs text-muted-foreground"
-                      >
-                        <Loader2
-                          aria-hidden="true"
-                          className="size-3.5 shrink-0 animate-spin motion-reduce:animate-none"
-                        />
-                        <span>Preparing targeted drill…</span>
-                      </div>
-                    )
-                  }
-
-                  if (part.state === "output-available" && part.output) {
-                    return (
-                      <DrillSuggestionCard
-                        key={part.toolCallId}
-                        drill={part.output}
-                        onGenerateDrill={onGenerateDrill}
-                      />
-                    )
-                  }
-
-                  if (part.state === "output-error") {
-                    return (
-                      <div
-                        key={part.toolCallId}
-                        role="alert"
-                        className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive"
-                      >
-                        <AlertCircle
-                          aria-hidden="true"
-                          className="size-3.5 shrink-0"
-                        />
-                        <span>
-                          {part.errorText ||
-                            "Could not prepare targeted drill suggestion."}
-                        </span>
-                      </div>
-                    )
-                  }
-                }
-
-                return null
-              })}
+              {extractMessageText(message)}
             </div>
           )
-        })
-      )}
+        }
 
-      {isStreaming ? (
+        const isLastMessage = index === messages.length - 1
+        return (
+          <AssistantMessageItem
+            key={message.id}
+            message={message}
+            isActiveStream={isStreaming && isLastMessage}
+            onGenerateDrill={onGenerateDrill}
+          />
+        )
+      })}
+
+      {showSubmittedPulse ? (
         <div
           data-testid="coach-streaming-indicator"
-          className="flex items-center gap-2 px-1 text-xs text-muted-foreground"
+          className="flex items-center gap-2 text-xs text-muted-foreground"
         >
-          <Loader2
+          <Sparkles
             aria-hidden="true"
-            className="size-3.5 shrink-0 animate-spin motion-reduce:animate-none"
+            className="size-3.5 shrink-0 animate-pulse motion-reduce:animate-none"
           />
-          <span>Coach is thinking…</span>
+          <span>Thinking…</span>
         </div>
       ) : null}
-
-      <div ref={bottomRef} />
     </div>
   )
 }

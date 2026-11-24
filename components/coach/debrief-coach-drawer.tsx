@@ -1,8 +1,14 @@
 "use client"
 
 import * as React from "react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { ChevronDown, ChevronUp, MessageSquareCode } from "lucide-react"
+import {
+  ArrowUpRight,
+  ChevronDown,
+  ChevronUp,
+  MessageSquareCode,
+} from "lucide-react"
 import { CoachPanel } from "@/components/coach/coach-panel"
 import {
   DEBRIEF_QUICK_PROMPTS,
@@ -173,40 +179,51 @@ export function DebriefCoachDrawer({
       data-testid="debrief-coach-drawer"
       className="gap-0 overflow-hidden border-border/80 bg-background py-0 shadow-none"
     >
-      <button
-        type="button"
-        onClick={handleToggle}
-        aria-expanded={isOpen}
-        aria-controls={panelId}
-        data-testid="debrief-coach-toggle"
-        className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left transition-colors hover:bg-muted/30 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
-      >
-        <div className="flex items-start gap-2.5">
-          <div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md border border-border bg-muted/40 text-foreground">
-            <MessageSquareCode aria-hidden="true" className="size-3.5" />
-          </div>
-          <div className="flex flex-col gap-0.5">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-sm font-semibold tracking-tight text-foreground">
-                Debrief Tutor
-              </span>
-              <Badge variant="secondary" size="sm">
-                Agent Coach
-              </Badge>
+      <div className="flex items-center justify-between gap-2 pr-3">
+        <button
+          type="button"
+          onClick={handleToggle}
+          aria-expanded={isOpen}
+          aria-controls={panelId}
+          data-testid="debrief-coach-toggle"
+          className="flex min-w-0 flex-1 items-center justify-between gap-4 px-4 py-3 text-left transition-colors hover:bg-muted/30 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+        >
+          <div className="flex items-start gap-2.5">
+            <div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md border border-border bg-muted/40 text-foreground">
+              <MessageSquareCode aria-hidden="true" className="size-3.5" />
             </div>
-            <p className="text-xs text-pretty text-muted-foreground">
-              Interrogate this submission against the staff benchmark.
-            </p>
+            <div className="flex flex-col gap-0.5">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm font-semibold tracking-tight text-foreground">
+                  Debrief Tutor
+                </span>
+                <Badge variant="secondary" size="sm">
+                  Agent Coach
+                </Badge>
+              </div>
+              <p className="text-xs text-pretty text-muted-foreground">
+                Interrogate this submission against the staff benchmark.
+              </p>
+            </div>
           </div>
-        </div>
-        <span className="flex size-7 shrink-0 items-center justify-center rounded-md border border-border/70 bg-card text-muted-foreground">
-          {isOpen ? (
-            <ChevronUp aria-hidden="true" className="size-4" />
-          ) : (
-            <ChevronDown aria-hidden="true" className="size-4" />
-          )}
-        </span>
-      </button>
+          <span className="flex size-7 shrink-0 items-center justify-center rounded-md border border-border/70 bg-card text-muted-foreground">
+            {isOpen ? (
+              <ChevronUp aria-hidden="true" className="size-4" />
+            ) : (
+              <ChevronDown aria-hidden="true" className="size-4" />
+            )}
+          </span>
+        </button>
+
+        <Link
+          href="/coach"
+          data-testid="debrief-open-full-coach"
+          className="hidden shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none sm:inline-flex"
+        >
+          <span>Open full Coach</span>
+          <ArrowUpRight aria-hidden="true" className="size-3.5" />
+        </Link>
+      </div>
 
       {hasOpened ? (
         <div

@@ -1,7 +1,6 @@
 "use client"
 
 import * as React from "react"
-import dynamic from "next/dynamic"
 import Link from "next/link"
 import { AlertCircle, Globe, RefreshCw } from "lucide-react"
 import { AccountShell } from "@/components/account/account-shell"
@@ -24,16 +23,7 @@ import { useAuth } from "@/hooks/use-auth"
 import { useUserAnalytics } from "@/hooks/use-user-analytics"
 import { useUserStats } from "@/hooks/use-user-stats"
 import { useAuthModalStore } from "@/stores/auth-modal-store"
-import { useCustomChallengeModalStore } from "@/stores/custom-challenge-modal-store"
 import type { AnalyticsWindowDays, UserAnalytics } from "@/types/analytics"
-
-const CustomChallengeModal = dynamic(
-  () =>
-    import("@/components/challenges/generator-modal/custom-challenge-modal").then(
-      (mod) => mod.CustomChallengeModal
-    ),
-  { ssr: false }
-)
 
 const WINDOW_OPTIONS: ReadonlyArray<{
   value: AnalyticsWindowDays
@@ -145,11 +135,8 @@ function StatsDashboardContent({ analytics }: { analytics: UserAnalytics }) {
 
 export function StatsView() {
   const [days, setDays] = React.useState<AnalyticsWindowDays>(90)
-  const [hasMountedChallengeModal, setHasMountedChallengeModal] =
-    React.useState(false)
   const { isAuthenticated, isLoading: authLoading } = useAuth()
   const openAuthModal = useAuthModalStore((s) => s.openAuthModal)
-  const isChallengeModalOpen = useCustomChallengeModalStore((s) => s.isOpen)
   const { analytics, timezone, error, isLoading, mutate } =
     useUserAnalytics(days)
 
@@ -266,15 +253,9 @@ export function StatsView() {
         </div>
       </div>
 
-      <PatternsCoachDrawer
-        onOpeningTargetedDrill={() => setHasMountedChallengeModal(true)}
-      />
+      <PatternsCoachDrawer />
 
       {body}
-
-      {isChallengeModalOpen || hasMountedChallengeModal ? (
-        <CustomChallengeModal />
-      ) : null}
     </AccountShell>
   )
 }
