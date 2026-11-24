@@ -6,6 +6,8 @@ import {
   ConfigureChallengeInputSchema,
   ConfigureChallengeOutputSchema,
   createCoachTools,
+  getDefaultTopicsForLanguage,
+  getTopicsForLanguage,
   normalizeConfigureChallengeInput,
   parseCoachRequest,
 } from "@/lib/ai/coach"
@@ -53,12 +55,12 @@ describe("lib/ai/coach-challenge-config", () => {
     ).toBe(true)
   })
 
-  it("normalizes configure_challenge input, deduplicates topics, and provides language defaults", () => {
+  it("normalizes input as optional recommendations, deduplicates topics, and prepends recommended topic", () => {
     const partial = normalizeConfigureChallengeInput({
       prompt: "  Pick\na\x00 topic  ",
       language: "Rust" as "rust",
       difficulty: "hard" as "Hard",
-      topic: "ab",
+      topic: "Tokio channel deadlock",
       suggestedTopics: [
         { label: "Async lock", topic: "MutexGuard\nacross await" },
         { label: "Duplicate", topic: "mutexguard across await" },
@@ -66,19 +68,51 @@ describe("lib/ai/coach-challenge-config", () => {
       ],
     })
     expect(partial.prompt).toBe("Pick a topic")
-    expect(partial.prefilled).toEqual({ language: "rust", difficulty: "Hard" })
-    expect(partial.missingFields).toEqual(["topic"])
+    expect(partial.recommended).toEqual({
+      language: "rust",
+      difficulty: "Hard",
+      topic: "Tokio channel deadlock",
+    })
+    expect(partial.hasCustomSuggestedTopics).toBe(true)
     expect(partial.suggestedTopics).toEqual([
+      { label: "Tokio channel deadlock", topic: "Tokio channel deadlock" },
       { label: "Async lock", topic: "MutexGuard across await" },
     ])
 
-    const fallback = normalizeConfigureChallengeInput({ language: "go" })
-    expect(fallback.missingFields).toEqual(["difficulty", "topic"])
-    expect(fallback.suggestedTopics.length).toBeGreaterThanOrEqual(3)
-
     const empty = normalizeConfigureChallengeInput(undefined)
-    expect(empty.missingFields).toEqual(["language", "difficulty", "topic"])
+    expect(empty.recommended).toEqual({})
+    expect(empty.hasCustomSuggestedTopics).toBe(false)
     expect(empty.suggestedTopics.length).toBeGreaterThanOrEqual(3)
+  })
+
+  it("resolves language-matched topics when the user picks a different language", () => {
+    const pythonSuggested = normalizeConfigureChallengeInput({
+      language: "python",
+      suggestedTopics: [
+        { label: "Flask IDOR", topic: "IDOR in Python Flask route" },
+      ],
+    })
+
+    expect(getTopicsForLanguage(pythonSuggested, "python")).toEqual([
+      { label: "Flask IDOR", topic: "IDOR in Python Flask route" },
+    ])
+    expect(getTopicsForLanguage(pythonSuggested, "go")).toEqual(
+      getDefaultTopicsForLanguage("go")
+    )
+
+    const agnostic = normalizeConfigureChallengeInput({
+      suggestedTopics: [
+        { label: "Auth bypass", topic: "Missing auth check on admin endpoint" },
+      ],
+    })
+    expect(getTopicsForLanguage(agnostic, "go")).toEqual([
+      { label: "Auth bypass", topic: "Missing auth check on admin endpoint" },
+    ])
+
+    const noCustom = normalizeConfigureChallengeInput(undefined)
+    expect(getTopicsForLanguage(noCustom, "rust")).toEqual(
+      getDefaultTopicsForLanguage("rust")
+    )
   })
 
   it("accepts tool-configure_challenge parts in parseCoachRequest and includes prompt instructions", () => {
@@ -114,6 +148,9 @@ describe("lib/ai/coach-challenge-config", () => {
       },
     })
     expect(patternsPrompt).toContain("configure_challenge")
+    expect(patternsPrompt).toContain(
+      "OMIT `language`, `difficulty`, and `topic`"
+    )
     expect(patternsPrompt).toContain('status: "created"')
 
     const debriefPrompt = buildCoachSystemPrompt({

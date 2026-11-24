@@ -117,7 +117,7 @@ function formatIssueList(
 
 const CHALLENGE_CREATION_INSTRUCTIONS = [
   "When the user asks to create, generate, or build a new custom challenge, call `configure_challenge` ONCE immediately — never ask for language, difficulty, and topic across separate text turns.",
-  "Pre-fill any field (language, difficulty, topic) the user already stated, and supply 3-4 curated `suggestedTopics` tailored to their weakest slices and recent missed reviews (or practical starter topics if total_submissions is 0).",
+  "Supply 3-4 curated `suggestedTopics` tailored to their weakest slices and recent missed reviews (or practical starter topics if total_submissions is 0). OMIT `language`, `difficulty`, and `topic` unless the user explicitly named them in their message — never invent defaults.",
   'After `configure_challenge` returns `status: "created"`, give a brief 1-2 sentence review tip for the created challenge.',
   'If `configure_challenge` returns `status: "cancelled"` or `"quota_full"`, acknowledge concisely without retrying automatically.',
 ]

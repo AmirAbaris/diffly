@@ -11,7 +11,7 @@ import {
 export const COACH_CONFIGURE_CHALLENGE_TOOL_NAME =
   "configure_challenge" as const
 
-export type ConfigureChallengeField = "language" | "difficulty" | "topic"
+export type WizardStep = "language" | "difficulty" | "topic"
 
 const LANGUAGES = CHALLENGE_LANGUAGES.map((l) => l.value) as [
   Language,
@@ -20,11 +20,6 @@ const LANGUAGES = CHALLENGE_LANGUAGES.map((l) => l.value) as [
 const DIFFICULTIES = [...CHALLENGE_DIFFICULTIES] as [
   Difficulty,
   ...Difficulty[],
-]
-const ALL_CONFIG_FIELDS: readonly ConfigureChallengeField[] = [
-  "language",
-  "difficulty",
-  "topic",
 ]
 
 export interface ConfigureChallengeTopicOption {
@@ -43,13 +38,13 @@ export interface ConfigureChallengeInput {
 
 export interface NormalizedChallengeConfigInput {
   prompt: string
-  prefilled: {
+  recommended: {
     language?: Language
     difficulty?: Difficulty
     topic?: string
   }
-  missingFields: readonly ConfigureChallengeField[]
   suggestedTopics: readonly ConfigureChallengeTopicOption[]
+  hasCustomSuggestedTopics: boolean
 }
 
 export const ConfigureChallengeInputSchema = z.object({
@@ -61,16 +56,22 @@ export const ConfigureChallengeInputSchema = z.object({
   language: z
     .enum(LANGUAGES)
     .optional()
-    .describe("Pre-filled language when the user already specified one."),
+    .describe(
+      "Optional recommended language ONLY when the user explicitly named one in their message. Never invent a default."
+    ),
   difficulty: z
     .enum(DIFFICULTIES)
     .optional()
-    .describe("Pre-filled difficulty when the user already specified one."),
+    .describe(
+      "Optional recommended difficulty ONLY when the user explicitly named one in their message. Never invent a default."
+    ),
   topic: z
     .string()
     .max(200)
     .optional()
-    .describe("Pre-filled topic when the user already specified one."),
+    .describe(
+      "Optional recommended topic ONLY when the user explicitly named one in their message. Never invent a default."
+    ),
   suggestedTopics: z
     .array(
       z.object({
@@ -252,10 +253,36 @@ function sanitizeTopic(raw: unknown): string | undefined {
   return cleaned
 }
 
+export function getDefaultTopicsForLanguage(
+  language: Language
+): readonly ConfigureChallengeTopicOption[] {
+  return DEFAULT_TOPICS_BY_LANGUAGE[language]
+}
+
+export function getTopicsForLanguage(
+  normalized: NormalizedChallengeConfigInput,
+  language: Language
+): readonly ConfigureChallengeTopicOption[] {
+  if (!normalized.hasCustomSuggestedTopics) {
+    return getDefaultTopicsForLanguage(language)
+  }
+  if (
+    normalized.recommended.language &&
+    normalized.recommended.language !== language
+  ) {
+    return getDefaultTopicsForLanguage(language)
+  }
+  return normalized.suggestedTopics
+}
+
 function normalizeSuggestedTopics(
   rawTopics: unknown,
+  recommendedTopic?: string,
   language?: Language
-): readonly ConfigureChallengeTopicOption[] {
+): {
+  topics: readonly ConfigureChallengeTopicOption[]
+  hasCustom: boolean
+} {
   const result: ConfigureChallengeTopicOption[] = []
   const seen = new Set<string>()
 
@@ -288,10 +315,30 @@ function normalizeSuggestedTopics(
     }
   }
 
-  if (result.length > 0) return result
-  return language
-    ? DEFAULT_TOPICS_BY_LANGUAGE[language]
-    : GENERAL_DEFAULT_TOPICS
+  if (recommendedTopic) {
+    const recKey = recommendedTopic.toLowerCase()
+    const existingIdx = result.findIndex(
+      (item) => item.topic.toLowerCase() === recKey
+    )
+    if (existingIdx > 0) {
+      const [existing] = result.splice(existingIdx, 1)
+      result.unshift(existing)
+    } else if (existingIdx === -1) {
+      const label = recommendedTopic.slice(0, 60).trim()
+      if (label) {
+        result.unshift({ label, topic: recommendedTopic })
+        if (result.length > 4) result.pop()
+      }
+    }
+  }
+
+  if (result.length > 0) return { topics: result, hasCustom: true }
+  return {
+    topics: language
+      ? DEFAULT_TOPICS_BY_LANGUAGE[language]
+      : GENERAL_DEFAULT_TOPICS,
+    hasCustom: false,
+  }
 }
 
 export function normalizeConfigureChallengeInput(
@@ -305,20 +352,22 @@ export function normalizeConfigureChallengeInput(
   const difficulty = matchChoice(raw?.difficulty, DIFFICULTIES)
   const topic = sanitizeTopic(raw?.topic)
 
-  const prefilled: NormalizedChallengeConfigInput["prefilled"] = {
+  const recommended: NormalizedChallengeConfigInput["recommended"] = {
     ...(language ? { language } : {}),
     ...(difficulty ? { difficulty } : {}),
     ...(topic ? { topic } : {}),
   }
 
-  const missingFields = ALL_CONFIG_FIELDS.filter(
-    (field) => prefilled[field] === undefined
+  const { topics, hasCustom } = normalizeSuggestedTopics(
+    raw?.suggestedTopics,
+    topic,
+    language
   )
 
   return {
     prompt: rawPrompt || "Configure your custom challenge",
-    prefilled,
-    missingFields,
-    suggestedTopics: normalizeSuggestedTopics(raw?.suggestedTopics, language),
+    recommended,
+    suggestedTopics: topics,
+    hasCustomSuggestedTopics: hasCustom,
   }
 }

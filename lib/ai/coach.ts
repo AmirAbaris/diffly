@@ -89,7 +89,7 @@ export function createCoachTools() {
     }),
     [COACH_CONFIGURE_CHALLENGE_TOOL_NAME]: tool({
       description:
-        "Open an interactive challenge configuration card in chat to collect missing language, difficulty, and focus topic, then generate the custom challenge inline. Pre-fill any fields the user already stated and provide 3-4 suggestedTopics grounded in their weak spots.",
+        "Open an interactive 3-step challenge configuration wizard in chat to let the user pick language, difficulty, and focus topic, then generate the custom challenge inline. Supply 3-4 suggestedTopics grounded in their weak spots, and omit language, difficulty, and topic unless the user explicitly named them.",
       inputSchema: ConfigureChallengeInputSchema,
       outputSchema: ConfigureChallengeOutputSchema,
     }),
