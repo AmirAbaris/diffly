@@ -762,6 +762,54 @@ def run_auth_isolation(runner: VerificationRunner) -> None:
             predicate=lambda d, _: d.get("total_attempted") == 1,
         )
 
+        valid_jwt = login_a_res.cookies.get("diffly_access_token") or ""
+        bearer_fallback_res = anon.get(
+            "/api/auth/me",
+            cookies={"diffly_access_token": "forged.invalid.jwt"},
+            headers={"Authorization": f"Bearer {valid_jwt}"},
+        )
+        runner.check_response(
+            step="bearer_fallback_succeeds_with_invalid_cookie",
+            actor="user_a_bearer_fallback",
+            response=bearer_fallback_res,
+            expected_status=200,
+            assertion=(
+                "Valid Authorization: Bearer token succeeds when auth cookie is invalid"
+            ),
+            predicate=lambda d, _: d.get("id") == user_a_id,
+        )
+        anon.cookies.clear()
+
+        ua_coach_res = client_a.get("/api/user/coach-patterns")
+        runner.check_response(
+            step="user_a_reads_own_coach_patterns",
+            actor="user_a",
+            response=ua_coach_res,
+            expected_status=200,
+            assertion="User A coach-patterns reflects own submission history",
+            predicate=lambda d, _: d.get("total_submissions", 0) >= 1,
+        )
+
+        ub_coach_res = client_b.get("/api/user/coach-patterns")
+        runner.check_response(
+            step="user_b_isolated_from_user_a_coach_patterns",
+            actor="user_b",
+            response=ub_coach_res,
+            expected_status=200,
+            assertion="User B coach-patterns is isolated from User A submissions",
+            predicate=lambda d, _: d.get("total_submissions") == 0,
+        )
+
+        providers_res = anon.get("/api/auth/providers")
+        runner.check_response(
+            step="auth_providers_endpoint_available",
+            actor="anonymous",
+            response=providers_res,
+            expected_status=200,
+            assertion="GET /api/auth/providers reports OAuth provider availability",
+            predicate=lambda d, _: isinstance(d.get("github"), bool),
+        )
+
         forged_cookie_res = anon.get(
             "/api/auth/me",
             cookies={"diffly_access_token": "forged.invalid.jwt"},
@@ -1248,6 +1296,57 @@ def run_challenge_ownership(runner: VerificationRunner) -> None:
             predicate=lambda d, _: isinstance(d, list) and len(d) == 0,
         )
 
+        ub_shared_hints = client_b.get(
+            f"/api/challenges/{custom_slug}/hints?share_token={share_token}"
+        )
+        runner.check_response(
+            step="recipient_reads_shared_custom_challenge_hints",
+            actor="user_b_with_share_token",
+            response=ub_shared_hints,
+            expected_status=200,
+            assertion="Valid share_token grants hints access to recipient",
+        )
+
+        ub_shared_sol = client_b.get(
+            f"/api/challenges/{custom_slug}/solution"
+            f"?reveal=true&share_token={share_token}"
+        )
+        runner.check_response(
+            step="recipient_reads_shared_custom_challenge_solution",
+            actor="user_b_with_share_token",
+            response=ub_shared_sol,
+            expected_status=200,
+            assertion="Valid share_token grants revealed solution access to recipient",
+        )
+
+        ub_shared_eval = client_b.post(
+            f"/api/challenges/{custom_slug}/review?share_token={share_token}",
+            json={
+                "flagged_lines": [2],
+                "comments": "Recipient review via valid unlisted share_token.",
+            },
+        )
+        runner.check_response(
+            step="recipient_evaluates_shared_custom_challenge",
+            actor="user_b_with_share_token",
+            response=ub_shared_eval,
+            expected_status=200,
+            assertion="Valid share_token allows recipient to submit review",
+            predicate=lambda d, _: d.get("submission_id", 0) > 0,
+        )
+
+        next_drill_res = anon.get("/api/challenges/next")
+        runner.check_response(
+            step="next_drill_excludes_private_and_shared_custom_challenges",
+            actor="anonymous",
+            response=next_drill_res,
+            expected_status=200,
+            assertion="GET /api/challenges/next recommends only public challenges",
+            predicate=lambda d, _: (
+                d.get("challenge") is None or d["challenge"].get("slug") != custom_slug
+            ),
+        )
+
         non_ascii_res = anon.get(f"/api/challenges/{custom_slug}?share_token=%C3%BC")
         runner.check_response(
             step="non_ascii_share_token_rejected",
@@ -1334,6 +1433,44 @@ def run_challenge_ownership(runner: VerificationRunner) -> None:
             response=revoked_read,
             expected_status=404,
             assertion="Revoked share_token immediately returns 404",
+        )
+
+        revoked_hints = anon.get(
+            f"/api/challenges/{custom_slug}/hints?share_token={share_token}"
+        )
+        runner.check_response(
+            step="revoked_share_token_hints_returns_404",
+            actor="anonymous_recipient",
+            response=revoked_hints,
+            expected_status=404,
+            assertion="Revoked share_token returns 404 on hints",
+        )
+
+        revoked_sol = anon.get(
+            f"/api/challenges/{custom_slug}/solution"
+            f"?reveal=true&share_token={share_token}"
+        )
+        runner.check_response(
+            step="revoked_share_token_solution_returns_404",
+            actor="anonymous_recipient",
+            response=revoked_sol,
+            expected_status=404,
+            assertion="Revoked share_token returns 404 on solution",
+        )
+
+        revoked_eval = anon.post(
+            f"/api/challenges/{custom_slug}/review?share_token={share_token}",
+            json={
+                "flagged_lines": [2],
+                "comments": "Revoked share_token review attempt.",
+            },
+        )
+        runner.check_response(
+            step="revoked_share_token_review_returns_404",
+            actor="anonymous_recipient",
+            response=revoked_eval,
+            expected_status=404,
+            assertion="Revoked share_token returns 404 on review",
         )
 
         pub_share_res = client_a.patch(
