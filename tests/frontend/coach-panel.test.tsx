@@ -49,21 +49,23 @@ vi.mock("@ai-sdk/react", () => ({
   }),
 }))
 
-let mockConnectionState: {
-  isConnected: boolean
-  provider: AIProviderId | null
-  model: string | null
-  baseUrl: string | null
-  maskedKey: string | null
-  isLoading: boolean
-  isValidating: boolean
-  isSaving: boolean
-  isDisconnecting: boolean
-  error: Error | null
-  saveConnection: ReturnType<typeof vi.fn>
-  disconnect: ReturnType<typeof vi.fn>
-  mutate: ReturnType<typeof vi.fn>
-}
+const createConnectionState = () => ({
+  isConnected: true,
+  provider: "anthropic" as AIProviderId | null,
+  model: "claude-sonnet-5-5" as string | null,
+  baseUrl: null as string | null,
+  maskedKey: "sk-a••••1234" as string | null,
+  isLoading: false,
+  isValidating: false,
+  isSaving: false,
+  isDisconnecting: false,
+  error: null as Error | null,
+  saveConnection: vi.fn(),
+  disconnect: vi.fn(),
+  mutate: vi.fn(),
+})
+
+let mockConnectionState = createConnectionState()
 
 vi.mock("@/hooks/use-ai-connection", () => ({
   useAIConnection: () => mockConnectionState,
@@ -78,6 +80,17 @@ let mockPatternsState: {
 
 vi.mock("@/hooks/use-coach-patterns", () => ({
   useCoachPatterns: () => mockPatternsState,
+}))
+
+vi.mock("@/hooks/use-custom-challenges", () => ({
+  useCustomChallenges: () => ({
+    customChallenges: [],
+    total: 2,
+    quotaLimit: 5,
+    quotaRemaining: 3,
+    isQuotaFull: false,
+    isLoading: false,
+  }),
 }))
 
 describe("Agent Coach UI components", () => {
@@ -96,21 +109,7 @@ describe("Agent Coach UI components", () => {
       error: undefined,
     }
 
-    mockConnectionState = {
-      isConnected: true,
-      provider: "anthropic",
-      model: "claude-sonnet-5-5",
-      baseUrl: null,
-      maskedKey: "sk-a••••1234",
-      isLoading: false,
-      isValidating: false,
-      isSaving: false,
-      isDisconnecting: false,
-      error: null,
-      saveConnection: vi.fn(),
-      disconnect: vi.fn(),
-      mutate: vi.fn(),
-    }
+    mockConnectionState = createConnectionState()
 
     mockPatternsState = {
       patterns: {
@@ -258,12 +257,14 @@ describe("Agent Coach UI components", () => {
 
     const reasoningToggle = screen.getByTestId("coach-reasoning-toggle")
     expect(reasoningToggle).toHaveAttribute("aria-expanded", "false")
+    expect(screen.getByTestId("coach-reasoning-content")).not.toBeVisible()
     expect(
-      screen.queryByTestId("coach-reasoning-content")
+      screen.queryByText("Checking recall drop on Rust concurrency challenges.")
     ).not.toBeInTheDocument()
 
     await user.click(reasoningToggle)
     expect(reasoningToggle).toHaveAttribute("aria-expanded", "true")
+    expect(screen.getByTestId("coach-reasoning-content")).toBeVisible()
     expect(screen.getByTestId("coach-reasoning-content")).toHaveTextContent(
       "Checking recall drop on Rust concurrency challenges."
     )
@@ -360,5 +361,24 @@ describe("Agent Coach UI components", () => {
     expect(
       screen.getByTestId("coach-quick-prompt-missed-defects")
     ).toBeInTheDocument()
+  })
+
+  it("opens custom challenge modal from CoachWorkspace top bar and context rail", async () => {
+    const user = userEvent.setup()
+
+    render(<CoachWorkspace />)
+
+    expect(screen.getByTestId("coach-rail-quota-badge")).toHaveTextContent(
+      "2/5"
+    )
+
+    await user.click(screen.getByTestId("coach-top-generate-button"))
+    expect(useCustomChallengeModalStore.getState().isOpen).toBe(true)
+    expect(useCustomChallengeModalStore.getState().initialTab).toBe("generate")
+
+    useCustomChallengeModalStore.setState({ isOpen: false })
+    await user.click(screen.getByTestId("coach-rail-manage-library-button"))
+    expect(useCustomChallengeModalStore.getState().isOpen).toBe(true)
+    expect(useCustomChallengeModalStore.getState().initialTab).toBe("manage")
   })
 })

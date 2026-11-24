@@ -4,7 +4,7 @@ import * as React from "react"
 import dynamic from "next/dynamic"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
-import { AlertCircle, Key, Settings, Sparkles } from "lucide-react"
+import { AlertCircle, Key, Plus, Settings, Sparkles } from "lucide-react"
 import { CoachContextRail } from "@/components/coach/coach-context-rail"
 import { CoachConversation } from "@/components/coach/coach-conversation"
 import { CoachMessageList } from "@/components/coach/coach-message-list"
@@ -18,9 +18,10 @@ import {
 } from "@/components/coach/use-coach-chat"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import { MessageScrollerItem } from "@/components/ui/message-scroller"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useCoachPatterns } from "@/hooks/use-coach-patterns"
-import type { CoachUIMessage, TargetedDrillSuggestion } from "@/lib/ai/coach"
+import type { TargetedDrillSuggestion } from "@/lib/ai/coach"
 import { useCustomChallengeModalStore } from "@/stores/custom-challenge-modal-store"
 
 const CustomChallengeModal = dynamic(
@@ -46,19 +47,6 @@ const WORKSPACE_SUGGESTIONS: readonly CoachQuickPrompt[] = [
       "Based on my recurring misses, draft a concise 5-point code review checklist I should run before submitting my next diff.",
   },
 ]
-
-function buildScrollKey(
-  messages: CoachUIMessage[],
-  isStreaming: boolean
-): string {
-  const last = messages[messages.length - 1]
-  if (!last) return `empty:${isStreaming}`
-  const textLen = last.parts.reduce(
-    (sum, part) => sum + ("text" in part ? part.text.length : 0),
-    0
-  )
-  return `${messages.length}:${last.parts.length}:${textLen}:${isStreaming}`
-}
 
 function WorkspaceDisconnectedCard() {
   return (
@@ -100,46 +88,48 @@ function WorkspaceZeroState({
   onSelectPrompt: (prompt: string) => void
 }) {
   return (
-    <div
-      data-testid="coach-workspace-zero-state"
-      className="mx-auto flex w-full max-w-2xl flex-col items-center gap-6 py-10 text-center"
-    >
-      <div className="flex flex-col items-center gap-2.5">
-        <div className="flex size-10 items-center justify-center rounded-xl border border-border bg-muted/40 text-foreground">
-          <Sparkles aria-hidden="true" className="size-4" />
-        </div>
-        <h1 className="font-pixel text-2xl tracking-tight text-balance text-foreground">
-          Agent Coach
-        </h1>
-        <p className="max-w-md text-sm leading-relaxed text-pretty text-muted-foreground">
-          Analyze your review blind spots, break down missed defects, and launch
-          targeted practice drills grounded in your history.
-        </p>
-      </div>
-
+    <MessageScrollerItem messageId="coach-workspace-zero-state">
       <div
-        data-testid="coach-quick-prompts"
-        className="grid w-full grid-cols-1 gap-2.5 sm:grid-cols-2"
+        data-testid="coach-workspace-zero-state"
+        className="mx-auto flex w-full max-w-2xl flex-col items-center gap-6 py-10 text-center"
       >
-        {WORKSPACE_SUGGESTIONS.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            disabled={disabled}
-            onClick={() => onSelectPrompt(item.prompt)}
-            data-testid={`coach-quick-prompt-${item.id}`}
-            className="flex flex-col gap-1 rounded-xl border border-border/80 bg-card p-3.5 text-left transition-colors hover:border-border hover:bg-muted/30 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50"
-          >
-            <span className="text-xs font-medium text-foreground">
-              {item.label}
-            </span>
-            <span className="line-clamp-2 text-xs leading-relaxed text-muted-foreground">
-              {item.prompt}
-            </span>
-          </button>
-        ))}
+        <div className="flex flex-col items-center gap-2.5">
+          <div className="flex size-10 items-center justify-center rounded-xl border border-border bg-muted/40 text-foreground">
+            <Sparkles aria-hidden="true" className="size-4" />
+          </div>
+          <h1 className="font-pixel text-2xl tracking-tight text-balance text-foreground">
+            Agent Coach
+          </h1>
+          <p className="max-w-md text-sm leading-relaxed text-pretty text-muted-foreground">
+            Analyze your review blind spots, break down missed defects, and
+            launch targeted practice drills grounded in your history.
+          </p>
+        </div>
+
+        <div
+          data-testid="coach-quick-prompts"
+          className="grid w-full grid-cols-1 gap-2.5 sm:grid-cols-2"
+        >
+          {WORKSPACE_SUGGESTIONS.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              disabled={disabled}
+              onClick={() => onSelectPrompt(item.prompt)}
+              data-testid={`coach-quick-prompt-${item.id}`}
+              className="flex flex-col gap-1 rounded-xl border border-border/80 bg-card p-3.5 text-left transition-colors hover:border-border hover:bg-muted/30 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50"
+            >
+              <span className="text-xs font-medium text-foreground">
+                {item.label}
+              </span>
+              <span className="line-clamp-2 text-xs leading-relaxed text-muted-foreground">
+                {item.prompt}
+              </span>
+            </button>
+          ))}
+        </div>
       </div>
-    </div>
+    </MessageScrollerItem>
   )
 }
 
@@ -162,10 +152,7 @@ function WorkspaceConnectedColumn({
 
   return (
     <>
-      <CoachConversation
-        scrollKey={buildScrollKey(messages, isStreaming)}
-        contentClassName="mx-auto w-full max-w-3xl px-4 py-6 sm:px-6"
-      >
+      <CoachConversation contentClassName="mx-auto w-full max-w-3xl px-4 py-6 sm:px-6">
         {messages.length === 0 ? (
           <WorkspaceZeroState
             disabled={isStreaming}
@@ -261,6 +248,14 @@ export function CoachWorkspace() {
     }
   }, [initialPrompt, sendPrompt, state.kind])
 
+  const handleOpenCustomModal = React.useCallback(
+    (tab: "generate" | "manage") => {
+      setHasMountedChallengeModal(true)
+      openCustomChallengeModal(tab)
+    },
+    [openCustomChallengeModal]
+  )
+
   const handleGenerateDrill = React.useCallback(
     (drill: TargetedDrillSuggestion) => {
       setHasMountedChallengeModal(true)
@@ -290,9 +285,33 @@ export function CoachWorkspace() {
         isLoading={patternsLoading}
         disabled={state.kind !== "ready"}
         onSelectPrompt={sendPrompt}
+        onOpenCustomModal={handleOpenCustomModal}
       />
 
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-4 py-2.5 sm:px-6">
+          <div className="flex min-w-0 items-center gap-2">
+            <Sparkles
+              aria-hidden="true"
+              className="size-4 shrink-0 text-muted-foreground"
+            />
+            <span className="truncate text-xs font-semibold tracking-tight text-foreground">
+              Agent Coach
+            </span>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => handleOpenCustomModal("generate")}
+            data-testid="coach-top-generate-button"
+            className="h-8 text-xs"
+          >
+            <Plus data-icon="inline-start" aria-hidden="true" />
+            <span>Generate Challenge</span>
+          </Button>
+        </div>
+
         {state.kind === "checking-connection" ? (
           <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col justify-center gap-4 px-4 py-8 sm:px-6">
             <Skeleton

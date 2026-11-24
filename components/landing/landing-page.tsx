@@ -1,18 +1,9 @@
 "use client"
 
 import * as React from "react"
-import dynamic from "next/dynamic"
 import { InteractiveDiffSandbox } from "@/components/landing/interactive-diff-sandbox"
 import { LandingTaxonomyGrid } from "@/components/landing/landing-taxonomy-grid"
 import { ReactiveShaderStage } from "@/components/landing/reactive-shader-stage"
-
-const CustomChallengeModal = dynamic(
-  () =>
-    import("@/components/challenges/generator-modal/custom-challenge-modal").then(
-      (mod) => mod.CustomChallengeModal
-    ),
-  { ssr: false }
-)
 import {
   evaluateSandboxSelection,
   toggleSandboxLine,
@@ -149,7 +140,6 @@ export function LandingPage({
       </section>
 
       <LandingTaxonomyGrid />
-      <CustomChallengeModal />
     </main>
   )
 }

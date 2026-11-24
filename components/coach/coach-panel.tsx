@@ -13,7 +13,7 @@ import {
 } from "@/components/coach/use-coach-chat"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
-import type { CoachUIMessage, TargetedDrillSuggestion } from "@/lib/ai/coach"
+import type { TargetedDrillSuggestion } from "@/lib/ai/coach"
 
 export interface CoachPanelProps {
   chatId?: string
@@ -23,19 +23,6 @@ export interface CoachPanelProps {
   emptyDescription?: string
   placeholder?: string
   onGenerateDrill: (drill: TargetedDrillSuggestion) => void
-}
-
-function buildPanelScrollKey(
-  messages: CoachUIMessage[],
-  isStreaming: boolean
-): string {
-  const last = messages[messages.length - 1]
-  if (!last) return `empty:${isStreaming}`
-  const textLen = last.parts.reduce(
-    (sum, part) => sum + ("text" in part ? part.text.length : 0),
-    0
-  )
-  return `${messages.length}:${last.parts.length}:${textLen}:${isStreaming}`
 }
 
 export function CoachPanel({
@@ -60,7 +47,6 @@ export function CoachPanel({
 
   const isStreaming = state.kind === "streaming"
   const statusPhase = state.kind === "streaming" ? state.phase : undefined
-  const scrollKey = buildPanelScrollKey(messages, isStreaming)
 
   const handleSubmit = () => {
     if (isStreaming) return
@@ -151,7 +137,7 @@ export function CoachPanel({
         </div>
       ) : (
         <div className="flex max-h-96 flex-col overflow-hidden rounded-xl border border-border/70 bg-muted/15">
-          <CoachConversation scrollKey={scrollKey} contentClassName="p-4">
+          <CoachConversation contentClassName="p-4">
             <CoachMessageList
               messages={messages}
               isStreaming={isStreaming}

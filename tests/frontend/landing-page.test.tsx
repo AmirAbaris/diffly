@@ -113,6 +113,10 @@ describe("LandingPage & Sandbox Engine", () => {
     render(<LandingPage />)
 
     expect(screen.getByTestId("diffly-landing-page")).toBeInTheDocument()
+    expect(screen.getByTestId("landing-generate-ai-cta")).toHaveAttribute(
+      "href",
+      "/coach"
+    )
     expect(
       screen.getByRole("heading", {
         name: /Audit Agent Diffs Before They Ship to Production/i,

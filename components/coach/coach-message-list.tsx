@@ -1,12 +1,28 @@
 "use client"
 
 import * as React from "react"
-import { AlertCircle, Check, Copy, Loader2, Sparkles } from "lucide-react"
-import { CoachReasoning } from "@/components/coach/coach-reasoning"
+import { AlertCircle, Brain, Check, Copy, Sparkles } from "lucide-react"
 import { MarkdownPreview } from "@/components/review/markdown-preview"
 import { Badge } from "@/components/ui/badge"
+import { Bubble, BubbleContent } from "@/components/ui/bubble"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import {
+  Message,
+  MessageContent,
+  MessageFooter,
+  MessageHeader,
+} from "@/components/ui/message"
+import { MessageScrollerItem } from "@/components/ui/message-scroller"
+import {
+  Trace,
+  TraceCollapsible,
+  TraceCollapsibleContent,
+  TraceCollapsibleTrigger,
+  TraceIcon,
+  TraceLine,
+  TraceTitle,
+} from "@/components/ui/trace"
 import { useClipboard } from "@/hooks/use-clipboard"
 import type { CoachUIMessage, TargetedDrillSuggestion } from "@/lib/ai/coach"
 import { formatLanguageLabel } from "@/types/challenge"
@@ -89,7 +105,7 @@ function AssistantMessageParts({
   onGenerateDrill: (drill: TargetedDrillSuggestion) => void
 }) {
   return (
-    <div className="flex flex-col gap-2.5">
+    <>
       {message.parts.map((part, index) => {
         const partKey = `${message.id}-part-${index}`
 
@@ -100,24 +116,43 @@ function AssistantMessageParts({
           const isPartStreaming =
             isActiveStream && (part.state === "streaming" || !hasFollowingText)
 
+          if (!part.text.trim() && !isPartStreaming) return null
+
           return (
-            <CoachReasoning
-              key={partKey}
-              text={part.text}
-              isStreaming={isPartStreaming}
-            />
+            <Trace key={partKey} data-testid="coach-reasoning">
+              <TraceCollapsible defaultOpen={isPartStreaming}>
+                <TraceCollapsibleTrigger data-testid="coach-reasoning-toggle">
+                  <TraceLine status={isPartStreaming ? "running" : undefined}>
+                    <TraceIcon>
+                      <Brain />
+                    </TraceIcon>
+                    <TraceTitle>
+                      {isPartStreaming ? "Thinking" : "Thought process"}
+                    </TraceTitle>
+                  </TraceLine>
+                </TraceCollapsibleTrigger>
+                <TraceCollapsibleContent
+                  data-testid="coach-reasoning-content"
+                  className="text-xs whitespace-pre-wrap"
+                >
+                  {part.text}
+                </TraceCollapsibleContent>
+              </TraceCollapsible>
+            </Trace>
           )
         }
 
         if (part.type === "text") {
           if (!part.text.trim()) return null
           return (
-            <div key={partKey} className="text-sm text-foreground">
-              <MarkdownPreview
-                content={part.text}
-                className="border-0 bg-transparent p-0 shadow-none"
-              />
-            </div>
+            <Bubble key={partKey} variant="ghost" align="start">
+              <BubbleContent className="w-full">
+                <MarkdownPreview
+                  content={part.text}
+                  className="border-0 bg-transparent p-0 shadow-none"
+                />
+              </BubbleContent>
+            </Bubble>
           )
         }
 
@@ -127,17 +162,14 @@ function AssistantMessageParts({
             part.state === "input-available"
           ) {
             return (
-              <div
-                key={part.toolCallId}
-                data-testid="coach-drill-loading"
-                className="flex items-center gap-2 rounded-lg border border-border/70 bg-muted/30 px-3 py-2 text-xs text-muted-foreground"
-              >
-                <Loader2
-                  aria-hidden="true"
-                  className="size-3.5 shrink-0 animate-spin motion-reduce:animate-none"
-                />
-                <span>Preparing targeted drill…</span>
-              </div>
+              <Trace key={part.toolCallId} data-testid="coach-drill-loading">
+                <TraceLine status="running">
+                  <TraceIcon>
+                    <Sparkles />
+                  </TraceIcon>
+                  <TraceTitle>Preparing targeted drill</TraceTitle>
+                </TraceLine>
+              </Trace>
             )
           }
 
@@ -153,24 +185,23 @@ function AssistantMessageParts({
 
           if (part.state === "output-error") {
             return (
-              <div
-                key={part.toolCallId}
-                role="alert"
-                className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive"
-              >
-                <AlertCircle aria-hidden="true" className="size-3.5 shrink-0" />
-                <span>
-                  {part.errorText ||
-                    "Could not prepare targeted drill suggestion."}
-                </span>
-              </div>
+              <Trace key={part.toolCallId} role="alert">
+                <TraceLine status="error">
+                  <TraceIcon>
+                    <AlertCircle />
+                  </TraceIcon>
+                  <TraceTitle>
+                    {part.errorText || "Could not prepare targeted drill"}
+                  </TraceTitle>
+                </TraceLine>
+              </Trace>
             )
           }
         }
 
         return null
       })}
-    </div>
+    </>
   )
 }
 
@@ -187,41 +218,42 @@ function AssistantMessageItem({
   const plainText = extractMessageText(message)
 
   return (
-    <article
-      data-testid="coach-message-assistant"
-      className="flex w-full flex-col gap-2"
-    >
-      <div className="flex items-center justify-between gap-2">
-        <div className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-          <Sparkles aria-hidden="true" className="size-3.5" />
-          <span>Agent Coach</span>
-        </div>
+    <MessageScrollerItem messageId={message.id}>
+      <Message align="start" data-testid="coach-message-assistant">
+        <MessageContent>
+          <MessageHeader className="gap-1.5">
+            <Sparkles aria-hidden="true" className="size-3.5" />
+            <span>Agent Coach</span>
+          </MessageHeader>
 
-        {!isActiveStream && plainText ? (
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-xs"
-            onClick={() => void copy(plainText)}
-            aria-label={copied ? "Copied response" : "Copy response"}
-            data-testid="coach-copy-message-button"
-            className="text-muted-foreground hover:text-foreground"
-          >
-            {copied ? (
-              <Check aria-hidden="true" className="size-3" />
-            ) : (
-              <Copy aria-hidden="true" className="size-3" />
-            )}
-          </Button>
-        ) : null}
-      </div>
+          <AssistantMessageParts
+            message={message}
+            isActiveStream={isActiveStream}
+            onGenerateDrill={onGenerateDrill}
+          />
 
-      <AssistantMessageParts
-        message={message}
-        isActiveStream={isActiveStream}
-        onGenerateDrill={onGenerateDrill}
-      />
-    </article>
+          {!isActiveStream && plainText ? (
+            <MessageFooter>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                onClick={() => void copy(plainText)}
+                aria-label={copied ? "Copied response" : "Copy response"}
+                data-testid="coach-copy-message-button"
+                className="text-muted-foreground hover:text-foreground"
+              >
+                {copied ? (
+                  <Check aria-hidden="true" className="size-3" />
+                ) : (
+                  <Copy aria-hidden="true" className="size-3" />
+                )}
+              </Button>
+            </MessageFooter>
+          ) : null}
+        </MessageContent>
+      </Message>
+    </MessageScrollerItem>
   )
 }
 
@@ -234,17 +266,25 @@ export function CoachMessageList({
   const showSubmittedPulse = statusPhase === "submitted"
 
   return (
-    <div data-testid="coach-message-list" className="flex flex-col gap-6">
+    <>
       {messages.map((message, index) => {
         if (message.role === "user") {
           return (
-            <div
+            <MessageScrollerItem
               key={message.id}
-              data-testid="coach-message-user"
-              className="ml-auto max-w-[82%] rounded-2xl bg-muted/70 px-4 py-2.5 text-sm whitespace-pre-wrap text-foreground"
+              messageId={message.id}
+              scrollAnchor
             >
-              {extractMessageText(message)}
-            </div>
+              <Message align="end" data-testid="coach-message-user">
+                <MessageContent>
+                  <Bubble variant="secondary" align="end">
+                    <BubbleContent className="whitespace-pre-wrap">
+                      {extractMessageText(message)}
+                    </BubbleContent>
+                  </Bubble>
+                </MessageContent>
+              </Message>
+            </MessageScrollerItem>
           )
         }
 
@@ -260,17 +300,21 @@ export function CoachMessageList({
       })}
 
       {showSubmittedPulse ? (
-        <div
-          data-testid="coach-streaming-indicator"
-          className="flex items-center gap-2 text-xs text-muted-foreground"
-        >
-          <Sparkles
-            aria-hidden="true"
-            className="size-3.5 shrink-0 animate-pulse motion-reduce:animate-none"
-          />
-          <span>Thinking…</span>
-        </div>
+        <MessageScrollerItem messageId="coach-streaming-indicator">
+          <Message align="start" data-testid="coach-streaming-indicator">
+            <MessageContent>
+              <Trace>
+                <TraceLine status="running">
+                  <TraceIcon>
+                    <Sparkles />
+                  </TraceIcon>
+                  <TraceTitle>Thinking</TraceTitle>
+                </TraceLine>
+              </Trace>
+            </MessageContent>
+          </Message>
+        </MessageScrollerItem>
       ) : null}
-    </div>
+    </>
   )
 }

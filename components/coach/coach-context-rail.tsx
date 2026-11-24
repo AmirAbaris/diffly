@@ -2,10 +2,19 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { AlertTriangle, ArrowUpRight, Target } from "lucide-react"
+import {
+  AlertTriangle,
+  ArrowUpRight,
+  FolderOpen,
+  Plus,
+  Sparkles,
+  Target,
+} from "lucide-react"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { Skeleton } from "@/components/ui/skeleton"
+import { useCustomChallenges } from "@/hooks/use-custom-challenges"
 import type {
   CoachMissedSubmission,
   CoachPatternSlice,
@@ -18,6 +27,7 @@ export interface CoachContextRailProps {
   isLoading: boolean
   disabled?: boolean
   onSelectPrompt: (prompt: string) => void
+  onOpenCustomModal?: (tab: "generate" | "manage") => void
 }
 
 function WeakSliceCard({
@@ -112,11 +122,69 @@ function RailSkeleton() {
   )
 }
 
+function CustomChallengesSection({
+  onOpenCustomModal,
+}: {
+  onOpenCustomModal: (tab: "generate" | "manage") => void
+}) {
+  const { total, quotaLimit } = useCustomChallenges()
+
+  return (
+    <section
+      data-testid="coach-rail-custom-challenges"
+      className="flex flex-col gap-2.5 border-t border-border p-4"
+    >
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 text-xs font-medium text-foreground">
+          <Sparkles
+            aria-hidden="true"
+            className="size-3.5 text-muted-foreground"
+          />
+          <span>Custom Challenges</span>
+        </div>
+        <Badge
+          variant="secondary"
+          size="sm"
+          data-testid="coach-rail-quota-badge"
+          className="font-mono tabular-nums"
+        >
+          {total}/{quotaLimit}
+        </Badge>
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => onOpenCustomModal("generate")}
+          data-testid="coach-rail-new-challenge-button"
+          className="w-full justify-start text-xs"
+        >
+          <Plus data-icon="inline-start" aria-hidden="true" />
+          <span>New Custom Challenge</span>
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={() => onOpenCustomModal("manage")}
+          data-testid="coach-rail-manage-library-button"
+          className="w-full justify-start text-xs text-muted-foreground hover:text-foreground"
+        >
+          <FolderOpen data-icon="inline-start" aria-hidden="true" />
+          <span>Manage Library</span>
+        </Button>
+      </div>
+    </section>
+  )
+}
+
 export function CoachContextRail({
   patterns,
   isLoading,
   disabled = false,
   onSelectPrompt,
+  onOpenCustomModal,
 }: CoachContextRailProps) {
   return (
     <aside
@@ -213,6 +281,10 @@ export function CoachContextRail({
           ) : null}
         </div>
       )}
+
+      {onOpenCustomModal ? (
+        <CustomChallengesSection onOpenCustomModal={onOpenCustomModal} />
+      ) : null}
     </aside>
   )
 }

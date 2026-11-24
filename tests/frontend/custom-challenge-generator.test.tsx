@@ -136,31 +136,19 @@ describe("Custom Challenge Generator & Quota Flow", () => {
   })
 
   describe("CustomChallengeButton Component", () => {
-    it("renders 'Generate with AI' button and current quota badge", () => {
+    it("renders 'AI Coach & Generate' link to /coach and current quota badge", () => {
       mockTotal = 2
       mockQuotaLimit = 5
       render(<CustomChallengeButton />)
 
       const btn = screen.getByTestId("generate-ai-challenge-btn")
       expect(btn).toBeInTheDocument()
-      expect(btn).toHaveTextContent(/generate with ai/i)
+      expect(btn).toHaveTextContent(/ai coach & generate/i)
+      expect(btn).toHaveAttribute("href", "/coach")
 
       const badge = screen.getByTestId("custom-challenges-quota-badge")
       expect(badge).toBeInTheDocument()
       expect(badge).toHaveTextContent("Custom: 2/5")
-    })
-
-    it("opens modal with 'generate' tab when clicking generate button", async () => {
-      const user = userEvent.setup()
-      render(<CustomChallengeButton />)
-
-      const btn = screen.getByTestId("generate-ai-challenge-btn")
-      await user.click(btn)
-
-      expect(useCustomChallengeModalStore.getState().isOpen).toBe(true)
-      expect(useCustomChallengeModalStore.getState().initialTab).toBe(
-        "generate"
-      )
     })
 
     it("opens modal with 'manage' tab when clicking quota badge", async () => {
