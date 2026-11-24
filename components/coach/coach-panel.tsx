@@ -39,6 +39,7 @@ export function CoachPanel({
     state,
     messages,
     connectionSummary,
+    challengeTool,
     sendPrompt,
     stop,
     clearError,
@@ -143,6 +144,7 @@ export function CoachPanel({
               isStreaming={isStreaming}
               statusPhase={statusPhase}
               onGenerateDrill={onGenerateDrill}
+              challengeTool={challengeTool}
             />
           </CoachConversation>
         </div>

@@ -2,7 +2,9 @@
 
 import * as React from "react"
 import { AlertCircle, Brain, Check, Copy, Sparkles } from "lucide-react"
+import { CoachChallengeConfigCard } from "@/components/coach/coach-challenge-config-card"
 import { CoachDrillCard } from "@/components/coach/coach-drill-card"
+import type { CoachChallengeToolController } from "@/components/coach/use-coach-challenge-tool"
 import { MarkdownPreview } from "@/components/review/markdown-preview"
 import { Bubble, BubbleContent } from "@/components/ui/bubble"
 import { Button } from "@/components/ui/button"
@@ -30,6 +32,7 @@ export interface CoachMessageListProps {
   isStreaming: boolean
   statusPhase?: "submitted" | "streaming"
   onGenerateDrill?: (drill: TargetedDrillSuggestion) => void
+  challengeTool?: CoachChallengeToolController
 }
 
 function extractMessageText(message: CoachUIMessage): string {
@@ -47,10 +50,12 @@ function AssistantMessageParts({
   message,
   isActiveStream,
   onGenerateDrill,
+  challengeTool,
 }: {
   message: CoachUIMessage
   isActiveStream: boolean
   onGenerateDrill?: (drill: TargetedDrillSuggestion) => void
+  challengeTool?: CoachChallengeToolController
 }) {
   return (
     <>
@@ -147,6 +152,52 @@ function AssistantMessageParts({
           }
         }
 
+        if (part.type === "tool-configure_challenge") {
+          if (part.state === "input-streaming") {
+            return (
+              <Trace
+                key={part.toolCallId}
+                data-testid="coach-configure-loading"
+              >
+                <TraceLine status="running">
+                  <TraceIcon>
+                    <Sparkles />
+                  </TraceIcon>
+                  <TraceTitle>Preparing challenge options</TraceTitle>
+                </TraceLine>
+              </Trace>
+            )
+          }
+
+          if (
+            part.state === "input-available" ||
+            part.state === "output-available"
+          ) {
+            return (
+              <CoachChallengeConfigCard
+                key={part.toolCallId}
+                part={part}
+                controller={challengeTool}
+              />
+            )
+          }
+
+          if (part.state === "output-error") {
+            return (
+              <Trace key={part.toolCallId} role="alert">
+                <TraceLine status="error">
+                  <TraceIcon>
+                    <AlertCircle />
+                  </TraceIcon>
+                  <TraceTitle>
+                    {part.errorText || "Could not prepare challenge options"}
+                  </TraceTitle>
+                </TraceLine>
+              </Trace>
+            )
+          }
+        }
+
         return null
       })}
     </>
@@ -157,10 +208,12 @@ function AssistantMessageItem({
   message,
   isActiveStream,
   onGenerateDrill,
+  challengeTool,
 }: {
   message: CoachUIMessage
   isActiveStream: boolean
   onGenerateDrill?: (drill: TargetedDrillSuggestion) => void
+  challengeTool?: CoachChallengeToolController
 }) {
   const { copied, copy } = useClipboard()
   const plainText = extractMessageText(message)
@@ -178,6 +231,7 @@ function AssistantMessageItem({
             message={message}
             isActiveStream={isActiveStream}
             onGenerateDrill={onGenerateDrill}
+            challengeTool={challengeTool}
           />
 
           {!isActiveStream && plainText ? (
@@ -210,6 +264,7 @@ export function CoachMessageList({
   isStreaming,
   statusPhase,
   onGenerateDrill,
+  challengeTool,
 }: CoachMessageListProps) {
   const showSubmittedPulse = statusPhase === "submitted"
 
@@ -243,6 +298,7 @@ export function CoachMessageList({
             message={message}
             isActiveStream={isStreaming && isLastMessage}
             onGenerateDrill={onGenerateDrill}
+            challengeTool={challengeTool}
           />
         )
       })}
