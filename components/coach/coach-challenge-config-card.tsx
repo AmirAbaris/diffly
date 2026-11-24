@@ -1,34 +1,27 @@
 "use client"
 
 import * as React from "react"
-import { AlertCircle, AlertTriangle, RotateCcw, Sparkles } from "lucide-react"
+import {
+  CoachChallengeConfigFooter,
+  CoachChallengeConfigHeader,
+  CoachChallengeConfigStatus,
+} from "@/components/coach/coach-challenge-config-chrome"
 import {
   ChallengeConfigFields,
   CUSTOM_TOPIC_VALUE,
 } from "@/components/coach/coach-challenge-config-fields"
 import { CoachChallengeConfigResolved } from "@/components/coach/coach-challenge-config-resolved"
 import type { CoachChallengeToolController } from "@/components/coach/use-coach-challenge-tool"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
+import { Card, CardContent } from "@/components/ui/card"
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
-import { Trace, TraceIcon, TraceLine, TraceTitle } from "@/components/ui/trace"
-import {
+  getTopicsForLanguage,
   normalizeConfigureChallengeInput,
   type ConfigureChallengeInput,
   type ConfigureChallengeOutput,
+  type NormalizedChallengeConfigInput,
+  type WizardStep,
 } from "@/lib/ai/coach"
-import {
-  formatLanguageLabel,
-  type Difficulty,
-  type Language,
-} from "@/types/challenge"
+import type { Difficulty, Language } from "@/types/challenge"
 
 export interface ConfigureChallengeToolPart {
   toolCallId: string
@@ -42,6 +35,59 @@ export interface CoachChallengeConfigCardProps {
   controller?: CoachChallengeToolController
 }
 
+function deriveWizardView(params: {
+  normalized: NormalizedChallengeConfigInput
+  step: WizardStep
+  language: Language | null
+  difficulty: Difficulty | null
+  selectedTopicOption: string
+  customTopic: string
+  hasController: boolean
+  isGenerating: boolean
+  isQuotaFull: boolean
+}) {
+  const availableTopics = params.language
+    ? getTopicsForLanguage(params.normalized, params.language)
+    : params.normalized.suggestedTopics
+
+  const matchesAvailable = availableTopics.some(
+    (item) => item.topic === params.selectedTopicOption
+  )
+  const effectiveTopicOption =
+    params.selectedTopicOption === CUSTOM_TOPIC_VALUE || matchesAvailable
+      ? params.selectedTopicOption
+      : (availableTopics[0]?.topic ?? CUSTOM_TOPIC_VALUE)
+
+  const resolvedTopic = (
+    effectiveTopicOption === CUSTOM_TOPIC_VALUE
+      ? params.customTopic
+      : effectiveTopicOption
+  ).trim()
+
+  const canAdvance =
+    (params.step === "language" && params.language !== null) ||
+    (params.step === "difficulty" && params.difficulty !== null)
+
+  const canSubmit =
+    params.hasController &&
+    !params.isGenerating &&
+    !params.isQuotaFull &&
+    params.language !== null &&
+    params.difficulty !== null &&
+    resolvedTopic.length >= 3 &&
+    resolvedTopic.length <= 200
+
+  return {
+    availableTopics,
+    effectiveTopicOption,
+    resolvedTopic,
+    canAdvance,
+    canSubmit,
+  }
+}
+
+const IDLE_STATUS = { kind: "idle" as const }
+
 export function CoachChallengeConfigCard({
   part,
   controller,
@@ -51,17 +97,11 @@ export function CoachChallengeConfigCard({
     [part.input]
   )
 
-  const [language, setLanguage] = React.useState<Language>(
-    normalized.prefilled.language ?? "python"
-  )
-  const [difficulty, setDifficulty] = React.useState<Difficulty>(
-    normalized.prefilled.difficulty ?? "Medium"
-  )
+  const [step, setStep] = React.useState<WizardStep>("language")
+  const [language, setLanguage] = React.useState<Language | null>(null)
+  const [difficulty, setDifficulty] = React.useState<Difficulty | null>(null)
   const [selectedTopicOption, setSelectedTopicOption] = React.useState<string>(
-    () =>
-      normalized.prefilled.topic ??
-      normalized.suggestedTopics[0]?.topic ??
-      CUSTOM_TOPIC_VALUE
+    () => normalized.suggestedTopics[0]?.topic ?? CUSTOM_TOPIC_VALUE
   )
   const [customTopic, setCustomTopic] = React.useState("")
 
@@ -69,38 +109,47 @@ export function CoachChallengeConfigCard({
     return <CoachChallengeConfigResolved output={part.output} />
   }
 
-  const callStatus = controller?.getCallStatus(part.toolCallId) ?? {
-    kind: "idle" as const,
-  }
+  const callStatus = controller?.getCallStatus(part.toolCallId) ?? IDLE_STATUS
   const isGenerating = callStatus.kind === "generating"
   const quota = controller?.quota
   const isQuotaFull = quota?.isQuotaFull ?? false
 
-  const needsLanguage = normalized.missingFields.includes("language")
-  const needsDifficulty = normalized.missingFields.includes("difficulty")
-  const needsTopic = normalized.missingFields.includes("topic")
+  const view = deriveWizardView({
+    normalized,
+    step,
+    language,
+    difficulty,
+    selectedTopicOption,
+    customTopic,
+    hasController: Boolean(controller),
+    isGenerating,
+    isQuotaFull,
+  })
 
-  const resolvedLanguage = normalized.prefilled.language ?? language
-  const resolvedDifficulty = normalized.prefilled.difficulty ?? difficulty
-  const isCustomTopic = needsTopic && selectedTopicOption === CUSTOM_TOPIC_VALUE
-  const resolvedTopic = (
-    normalized.prefilled.topic ??
-    (isCustomTopic ? customTopic : selectedTopicOption)
-  ).trim()
+  const handleSelectLanguage = (nextLanguage: Language) => {
+    setLanguage(nextLanguage)
+    setStep("difficulty")
+  }
 
-  const canSubmit =
-    Boolean(controller) &&
-    !isGenerating &&
-    !isQuotaFull &&
-    resolvedTopic.length >= 3 &&
-    resolvedTopic.length <= 200
+  const handleSelectDifficulty = (nextDifficulty: Difficulty) => {
+    setDifficulty(nextDifficulty)
+    setStep("topic")
+  }
 
-  const handleContinue = () => {
-    if (!canSubmit || !controller) return
+  const handleBack = () => {
+    setStep((prev) => (prev === "topic" ? "difficulty" : "language"))
+  }
+
+  const handleNext = () => {
+    setStep((prev) => (prev === "language" ? "difficulty" : "topic"))
+  }
+
+  const handleSubmit = () => {
+    if (!view.canSubmit || !controller || !language || !difficulty) return
     void controller.submitConfig(part.toolCallId, {
-      language: resolvedLanguage,
-      difficulty: resolvedDifficulty,
-      topic: resolvedTopic,
+      language,
+      difficulty,
+      topic: view.resolvedTopic,
     })
   }
 
@@ -110,156 +159,50 @@ export function CoachChallengeConfigCard({
       data-testid="coach-challenge-config-card"
       className="border-border bg-card shadow-none"
     >
-      <CardHeader className="gap-2">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-            <Sparkles aria-hidden="true" className="size-3.5 shrink-0" />
-            <span>Custom Challenge</span>
-          </div>
-          {normalized.prefilled.language || normalized.prefilled.difficulty ? (
-            <div className="flex flex-wrap items-center gap-1.5">
-              {normalized.prefilled.language ? (
-                <Badge
-                  variant="secondary"
-                  size="sm"
-                  data-testid="coach-config-prefilled-language"
-                  className="font-mono"
-                >
-                  {formatLanguageLabel(normalized.prefilled.language)}
-                </Badge>
-              ) : null}
-              {normalized.prefilled.difficulty ? (
-                <Badge
-                  variant="outline"
-                  size="sm"
-                  data-testid="coach-config-prefilled-difficulty"
-                >
-                  {normalized.prefilled.difficulty}
-                </Badge>
-              ) : null}
-            </div>
-          ) : null}
-        </div>
-        <CardTitle className="text-sm text-balance">
-          {normalized.prompt}
-        </CardTitle>
-        {normalized.prefilled.topic ? (
-          <CardDescription
-            data-testid="coach-config-prefilled-topic"
-            className="text-xs text-pretty"
-          >
-            Topic: {normalized.prefilled.topic}
-          </CardDescription>
-        ) : null}
-      </CardHeader>
+      <CoachChallengeConfigHeader
+        prompt={normalized.prompt}
+        step={step}
+        language={language}
+        difficulty={difficulty}
+        disabled={isGenerating}
+        onJumpToStep={setStep}
+      />
 
       <CardContent className="flex flex-col gap-3.5 text-xs">
-        {isQuotaFull && quota ? (
-          <div
-            role="alert"
-            data-testid="coach-config-quota-alert"
-            className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-foreground"
-          >
-            <AlertTriangle
-              aria-hidden="true"
-              className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400"
-            />
-            <span className="leading-relaxed text-pretty tabular-nums">
-              Library full ({quota.total}/{quota.quotaLimit}). Delete a custom
-              challenge in the sidebar to continue.
-            </span>
-          </div>
-        ) : null}
-
         <ChallengeConfigFields
-          needsLanguage={needsLanguage}
-          needsDifficulty={needsDifficulty}
-          needsTopic={needsTopic}
+          step={step}
           language={language}
           difficulty={difficulty}
-          selectedTopicOption={selectedTopicOption}
+          recommendedLanguage={normalized.recommended.language}
+          recommendedDifficulty={normalized.recommended.difficulty}
+          selectedTopicOption={view.effectiveTopicOption}
           customTopic={customTopic}
-          suggestedTopics={normalized.suggestedTopics}
+          availableTopics={view.availableTopics}
           disabled={isGenerating}
-          onLanguageChange={setLanguage}
-          onDifficultyChange={setDifficulty}
+          onSelectLanguage={handleSelectLanguage}
+          onSelectDifficulty={handleSelectDifficulty}
           onTopicOptionChange={setSelectedTopicOption}
           onCustomTopicChange={setCustomTopic}
         />
 
-        {isGenerating ? (
-          <Trace data-testid="coach-config-generating">
-            <TraceLine status="running">
-              <TraceIcon>
-                <Sparkles />
-              </TraceIcon>
-              <TraceTitle>Generating challenge…</TraceTitle>
-            </TraceLine>
-          </Trace>
-        ) : null}
-
-        {callStatus.kind === "error" ? (
-          <Trace role="alert" data-testid="coach-config-error">
-            <TraceLine status="error">
-              <TraceIcon>
-                <AlertCircle />
-              </TraceIcon>
-              <TraceTitle>{callStatus.message}</TraceTitle>
-            </TraceLine>
-          </Trace>
-        ) : null}
+        <CoachChallengeConfigStatus quota={quota} callStatus={callStatus} />
       </CardContent>
 
-      <CardFooter className="flex flex-wrap items-center justify-end gap-2">
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          disabled={isGenerating || !controller}
-          onClick={() => controller?.cancelConfig(part.toolCallId)}
-          data-testid="coach-config-cancel-button"
-        >
-          Cancel
-        </Button>
-
-        {isQuotaFull ? (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={isGenerating || !controller}
-            onClick={() => controller?.reportQuotaFull(part.toolCallId)}
-            data-testid="coach-config-quota-dismiss-button"
-          >
-            Dismiss (Library Full)
-          </Button>
-        ) : null}
-
-        {callStatus.kind === "error" ? (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={!canSubmit}
-            onClick={handleContinue}
-            data-testid="coach-config-retry-button"
-          >
-            <RotateCcw data-icon="inline-start" aria-hidden="true" />
-            <span>Try Again</span>
-          </Button>
-        ) : (
-          <Button
-            type="button"
-            size="sm"
-            disabled={!canSubmit}
-            onClick={handleContinue}
-            data-testid="coach-config-continue-button"
-          >
-            <Sparkles data-icon="inline-start" aria-hidden="true" />
-            <span>Continue</span>
-          </Button>
-        )}
-      </CardFooter>
+      <CoachChallengeConfigFooter
+        step={step}
+        canGoBack={step !== "language"}
+        canAdvance={view.canAdvance}
+        canSubmit={view.canSubmit}
+        isGenerating={isGenerating}
+        isQuotaFull={isQuotaFull}
+        isError={callStatus.kind === "error"}
+        hasController={Boolean(controller)}
+        onBack={handleBack}
+        onNext={handleNext}
+        onCancel={() => controller?.cancelConfig(part.toolCallId)}
+        onDismissQuota={() => controller?.reportQuotaFull(part.toolCallId)}
+        onSubmit={handleSubmit}
+      />
     </Card>
   )
 }
