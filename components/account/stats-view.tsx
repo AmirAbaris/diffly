@@ -8,6 +8,7 @@ import { ActivityHeatmap } from "@/components/account/activity-heatmap"
 import { CategoryMasteryCard } from "@/components/account/category-mastery-card"
 import { CustomChallengeStatsCard } from "@/components/account/custom-challenge-stats-card"
 import { PrecisionRecallChart } from "@/components/account/precision-recall-chart"
+import { PatternsCoachDrawer } from "@/components/coach/patterns-coach-drawer"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -251,6 +252,8 @@ export function StatsView() {
           )}
         </div>
       </div>
+
+      <PatternsCoachDrawer />
 
       {body}
     </AccountShell>

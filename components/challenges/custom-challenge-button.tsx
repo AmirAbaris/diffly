@@ -1,7 +1,8 @@
 "use client"
 
 import * as React from "react"
-import { Plus } from "lucide-react"
+import Link from "next/link"
+import { Sparkles } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useCustomChallenges } from "@/hooks/use-custom-challenges"
 import { cn } from "@/lib/utils"
@@ -22,15 +23,16 @@ export function CustomChallengeButton({
   return (
     <div className="flex items-center gap-2">
       <Button
-        type="button"
+        asChild
         variant="default"
         size="sm"
-        onClick={() => openModal("generate")}
         className={cn("h-8 text-xs", className)}
         data-testid="generate-ai-challenge-btn"
       >
-        <Plus aria-hidden="true" data-icon="inline-start" />
-        <span>Generate with AI</span>
+        <Link href="/coach">
+          <Sparkles aria-hidden="true" data-icon="inline-start" />
+          <span>AI Coach &amp; Generate</span>
+        </Link>
       </Button>
 
       <button

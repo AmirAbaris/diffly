@@ -174,6 +174,7 @@ export function ReviewResultModal({
           <div data-testid="canonical-solution-panel" className="w-full">
             <ComparisonView
               challengeSlug={challengeSlug}
+              challengeTitle={challengeTitle}
               userFlaggedLines={userFlaggedLines ?? result.flagged_lines ?? []}
               userComments={userComments ?? result.comments ?? ""}
               canonicalSolution={propSolution}

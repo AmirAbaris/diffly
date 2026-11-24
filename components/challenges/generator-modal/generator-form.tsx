@@ -1,16 +1,9 @@
 "use client"
 
 import * as React from "react"
-import Link from "next/link"
-import {
-  AlertCircle,
-  AlertTriangle,
-  Key,
-  Loader2,
-  Settings,
-} from "lucide-react"
+import { AlertCircle, AlertTriangle, Loader2 } from "lucide-react"
+import { GeneratorConnectionBanner } from "@/components/challenges/generator-modal/generator-connection-banner"
 import { GeneratorLoadingPhase } from "@/components/challenges/generator-modal/generator-loading-phase"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -21,11 +14,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Skeleton } from "@/components/ui/skeleton"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { useAIConnection } from "@/hooks/use-ai-connection"
 import { formatAIConnectionSummary } from "@/lib/ai/catalog"
-import { useCustomChallengeModalStore } from "@/stores/custom-challenge-modal-store"
+import {
+  useCustomChallengeModalStore,
+  type CustomChallengePrefill,
+} from "@/stores/custom-challenge-modal-store"
 import {
   CHALLENGE_DIFFICULTIES,
   CHALLENGE_LANGUAGES,
@@ -40,6 +35,7 @@ export interface GeneratorFormValues {
 }
 
 export interface GeneratorFormProps {
+  initialValues?: CustomChallengePrefill
   isQuotaFull: boolean
   isGenerating: boolean
   errorMessage: string | null
@@ -57,6 +53,7 @@ const EXAMPLE_TOPICS = [
 ] as const
 
 export function GeneratorForm({
+  initialValues,
   isQuotaFull,
   isGenerating,
   errorMessage,
@@ -64,9 +61,13 @@ export function GeneratorForm({
   onSwitchToManage,
   onCloseModal,
 }: GeneratorFormProps) {
-  const [topic, setTopic] = React.useState("")
-  const [language, setLanguage] = React.useState<Language>("python")
-  const [difficulty, setDifficulty] = React.useState<Difficulty>("Medium")
+  const [topic, setTopic] = React.useState(initialValues?.topic ?? "")
+  const [language, setLanguage] = React.useState<Language>(
+    initialValues?.language ?? "python"
+  )
+  const [difficulty, setDifficulty] = React.useState<Difficulty>(
+    initialValues?.difficulty ?? "Medium"
+  )
 
   const storeSetIsOpen = useCustomChallengeModalStore((s) => s.setIsOpen)
   const conn = useAIConnection()
@@ -135,67 +136,12 @@ export function GeneratorForm({
         </div>
       ) : null}
 
-      {!conn.isLoading ? (
-        conn.isConnected && summary ? (
-          <div
-            data-testid="generator-ai-connected-banner"
-            className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/70 bg-muted/20 px-3 py-2.5"
-          >
-            <Badge
-              variant="success"
-              data-testid="generator-ai-status-pill"
-              className="font-mono"
-            >
-              Connected: {summary}
-            </Badge>
-            <Link
-              href="/settings"
-              onClick={handleNavigateSettings}
-              data-testid="generator-manage-settings-link"
-              className="flex items-center gap-1 font-medium text-muted-foreground hover:text-foreground hover:underline"
-            >
-              <Settings aria-hidden="true" className="size-3.5" />
-              <span>Manage in Settings</span>
-            </Link>
-          </div>
-        ) : (
-          <div
-            data-testid="generator-ai-disconnected-cta"
-            className="flex flex-col justify-between gap-3 rounded-lg border border-border/70 bg-muted/20 p-3 sm:flex-row sm:items-center"
-          >
-            <div className="flex items-start gap-2.5">
-              <Key
-                aria-hidden="true"
-                className="mt-0.5 size-4 shrink-0 text-muted-foreground"
-              />
-              <div className="flex flex-col gap-0.5">
-                <span className="font-medium text-foreground">
-                  Connect an AI provider to generate challenges
-                </span>
-                <p className="leading-relaxed text-muted-foreground">
-                  Configure Google Gemini, OpenAI, Anthropic, or an
-                  OpenAI-compatible key once in Settings.
-                </p>
-              </div>
-            </div>
-            <Button variant="outline" size="xs" asChild className="shrink-0">
-              <Link
-                href="/settings"
-                onClick={handleNavigateSettings}
-                data-testid="generator-configure-settings-link"
-              >
-                <Settings data-icon="inline-start" aria-hidden="true" />
-                <span>Configure in Settings</span>
-              </Link>
-            </Button>
-          </div>
-        )
-      ) : (
-        <Skeleton
-          data-testid="generator-ai-status-skeleton"
-          className="h-14 w-full rounded-lg"
-        />
-      )}
+      <GeneratorConnectionBanner
+        isLoading={conn.isLoading}
+        isConnected={conn.isConnected}
+        summary={summary}
+        onNavigateSettings={handleNavigateSettings}
+      />
 
       <div className="flex flex-col gap-1.5">
         <label

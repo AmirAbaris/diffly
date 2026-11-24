@@ -16,7 +16,6 @@ import type {
   ShaderSignalBridge,
 } from "@/lib/landing/shader-signal-bridge"
 import { cn } from "@/lib/utils"
-import { useCustomChallengeModalStore } from "@/stores/custom-challenge-modal-store"
 
 export interface ReactiveShaderStageProps {
   readonly bridge: ShaderSignalBridge
@@ -46,9 +45,6 @@ export function ReactiveShaderStage({
 }: ReactiveShaderStageProps) {
   const { resolvedTheme } = useTheme()
   const isDark = resolvedTheme !== "light"
-  const openModal = useCustomChallengeModalStore(
-    (s) => s.openCustomChallengeModal
-  )
 
   const { canvasRef, status, isPaused, togglePause, triggerSingleFrame } =
     useReactiveDiffShader({ bridge, isDark, maxFps: 60 })
@@ -168,15 +164,16 @@ export function ReactiveShaderStage({
           </Button>
 
           <Button
-            type="button"
+            asChild
             variant="outline"
             size="lg"
-            onClick={() => openModal("generate")}
             data-testid="landing-generate-ai-cta"
             className="bg-background/85 backdrop-blur-xs"
           >
-            <Sparkles aria-hidden="true" data-icon="inline-start" />
-            <span>Generate with AI BYOK</span>
+            <Link href="/coach">
+              <Sparkles aria-hidden="true" data-icon="inline-start" />
+              <span>Open AI Coach</span>
+            </Link>
           </Button>
         </div>
       </div>

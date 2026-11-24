@@ -1,4 +1,4 @@
-import { type NextRequest, type NextResponse } from "next/server"
+import { type NextRequest } from "next/server"
 
 import { resolveBackendUrl } from "@/lib/config/api-rewrites"
 
@@ -46,7 +46,7 @@ export function buildAllowlistedBackendCookieHeader(
 
 export function propagateBackendSetCookies(
   backendHeaders: Headers,
-  response: NextResponse
+  response: Response
 ): void {
   const setCookies = backendHeaders.getSetCookie?.() ?? []
   for (const cookie of setCookies) {
