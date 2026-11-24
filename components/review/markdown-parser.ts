@@ -117,6 +117,20 @@ export function parseInlineTokens(text: string, prefix: string): InlineToken[] {
   return tokens
 }
 
+const HEADING_REGEX = /^(#{1,6})\s+(.+)$/
+
+function isBlockBoundary(line: string): boolean {
+  const trimmed = line.trim()
+  return (
+    !trimmed ||
+    trimmed.startsWith("```") ||
+    HEADING_REGEX.test(line) ||
+    line.startsWith(">") ||
+    /^[-*]\s+/.test(line) ||
+    /^\d+\.\s+/.test(line)
+  )
+}
+
 export function parseMarkdownBlocks(raw: string): MarkdownBlock[] {
   const blocks: MarkdownBlock[] = []
   const lines = raw.replace(/\r\n/g, "\n").split("\n")
@@ -158,9 +172,9 @@ export function parseMarkdownBlocks(raw: string): MarkdownBlock[] {
     }
 
     if (line.startsWith("#")) {
-      const match = line.match(/^(#{1,4})\s+(.+)$/)
+      const match = line.match(HEADING_REGEX)
       if (match) {
-        const level = match[1].length as 1 | 2 | 3 | 4
+        const level = Math.min(match[1].length, 4) as 1 | 2 | 3 | 4
         blocks.push({
           id: blockId,
           type: "heading",
@@ -235,16 +249,9 @@ export function parseMarkdownBlocks(raw: string): MarkdownBlock[] {
       continue
     }
 
-    const paragraphLines: string[] = []
-    while (
-      lineIdx < lines.length &&
-      lines[lineIdx].trim() &&
-      !lines[lineIdx].trim().startsWith("```") &&
-      !lines[lineIdx].startsWith("#") &&
-      !lines[lineIdx].startsWith(">") &&
-      !/^[-*]\s+/.test(lines[lineIdx]) &&
-      !/^\d+\.\s+/.test(lines[lineIdx])
-    ) {
+    const paragraphLines: string[] = [lines[lineIdx]]
+    lineIdx++
+    while (lineIdx < lines.length && !isBlockBoundary(lines[lineIdx])) {
       paragraphLines.push(lines[lineIdx])
       lineIdx++
     }
