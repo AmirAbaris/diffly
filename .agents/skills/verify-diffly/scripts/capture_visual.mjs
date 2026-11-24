@@ -76,9 +76,24 @@ function buildSpecs(baseUrl) {
     [
       "custom_modal",
       "/challenges",
-      hasSel('[data-testid="generate-ai-challenge-btn"]'),
-      '[data-testid="generate-ai-challenge-btn"]',
+      hasSel('[data-testid="custom-challenges-quota-badge"]'),
+      '[data-testid="custom-challenges-quota-badge"]',
       '[data-testid="custom-challenge-modal-content"]',
+    ],
+    [
+      "coach",
+      "/coach",
+      `${hasSel('[data-testid="coach-disconnected-state"]')} || ${hasSel('[data-testid="coach-workspace-zero-state"]')}`,
+    ],
+    [
+      "settings",
+      "/settings",
+      'document.body?.innerText.includes("Settings") && !document.querySelector(\'[data-testid="settings-loading"]\')',
+    ],
+    [
+      "stats",
+      "/stats",
+      `${hasSel('[data-testid="stats-view"]')} && !document.querySelector('[data-testid="stats-loading"]')`,
     ],
   ].map(([name, route, readyExpr, triggerSel, modalSel]) => ({
     name,

@@ -4,13 +4,14 @@ This directory documents the active features of **Diffly**.
 
 ## Index of Features
 
-| Feature                                                         | Surface                                                                   | Description                                                                   | Proven In                              |
-| --------------------------------------------------------------- | ------------------------------------------------------------------------- | ----------------------------------------------------------------------------- | -------------------------------------- |
-| [System Health & Readiness](system-health.md)                   | REST API (`/api/health`)                                                  | Verifies service liveness and seeded challenge readiness                      | `scripts/drive.sh health`              |
-| [Auth & Session Isolation](auth-and-session-isolation.md)       | REST API (`/api/auth/*`, `/api/challenges/*`, `/api/user/*`)              | Verifies cookie auth, guest/user isolation, claim-on-register, and revocation | `scripts/drive.sh auth-isolation`      |
-| [Custom Challenge Ownership](custom-challenge-ownership.md)     | REST API (`/api/challenges/custom*`, `/api/challenges/{slug}/*`)          | Verifies owner-only CRUD, review, hints, solution, and deletion boundaries    | `scripts/drive.sh challenge-ownership` |
-| [Visual Review](visual-review.md)                               | Next.js UI + Headless Chrome CDP                                          | Captures desktop/mobile PNGs, overflow, overlays, and fresh-agent audit       | `scripts/drive.sh visual`              |
-| [Strict Code Hygiene & Spacing](code-hygiene-and-formatting.md) | Multi-tier Linter & CI (Ruff + Oxlint + React Doctor + ESLint + Prettier) | Enforces PEP 8 spacing, React best practices, and CI hygiene only             | `scripts/drive.sh formatting`          |
+| Feature                                                         | Surface                                                                   | Description                                                                             | Proven In                                    |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | -------------------------------------------- |
+| [System Health & Readiness](system-health.md)                   | REST API (`/api/health`)                                                  | Verifies service liveness, DB connectivity, seeded count, and 503 failure mode          | `scripts/drive.sh health`                    |
+| [Auth & Session Isolation](auth-and-session-isolation.md)       | REST API (`/api/auth/*`, `/api/challenges/*`, `/api/user/*`, `/api/ai/*`) | Verifies cookie/Bearer auth, guest/user isolation, OAuth, coach patterns, and BYOK seal | `scripts/drive.sh auth-isolation`            |
+| [Custom Challenge Ownership](custom-challenge-ownership.md)     | REST API (`/api/challenges/custom*`, `/api/challenges/{slug}/*`, `/next`) | Verifies owner-only CRUD, unlisted share tokens, hints/solution/review, and deletion    | `scripts/drive.sh challenge-ownership`       |
+| [Agent Coach & BYOK AI](agent-coach-and-byok-ai.md)             | Next.js (`/coach`, `/settings`, `/api/coach`, `/api/ai/*`) + FastAPI      | Verifies sealed BYOK cookie boundaries, coach-patterns isolation, and Coach UI          | `scripts/drive.sh visual` + `auth-isolation` |
+| [Visual Review](visual-review.md)                               | Next.js UI + Headless Chrome CDP                                          | Captures desktop/mobile PNGs across 8 states, overflow, overlays, and fresh-agent audit | `scripts/drive.sh visual`                    |
+| [Strict Code Hygiene & Spacing](code-hygiene-and-formatting.md) | Multi-tier Linter & CI (Ruff + Oxlint + React Doctor + ESLint + Prettier) | Enforces PEP 8 spacing, color tokens, React best practices, typecheck, and CI hygiene   | `scripts/drive.sh formatting`                |
 
 ## Verification Guidance
 
