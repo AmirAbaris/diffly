@@ -1,6 +1,13 @@
 import { tool, type InferUITools, type UIDataTypes, type UIMessage } from "ai"
 import { z } from "zod"
 
+import {
+  COACH_CONFIGURE_CHALLENGE_TOOL_NAME,
+  ConfigureChallengeInputSchema,
+  ConfigureChallengeOutputSchema,
+  matchChoice,
+  stripControlChars,
+} from "@/lib/ai/coach-challenge-config"
 import type {
   CoachPatternsSnapshot,
   DebriefContext,
@@ -13,12 +20,18 @@ import {
   type Language,
 } from "@/types/challenge"
 
+export * from "@/lib/ai/coach-challenge-config"
+export { parseCoachErrorMessage } from "@/lib/ai/coach-errors"
 export * from "@/lib/ai/coach-prompts"
 
 export type CoachMode = "patterns" | "debrief"
 export const COACH_MAX_STEPS = 3
 export const COACH_STREAM_TIMEOUT_MS = 50_000
 export const COACH_SUGGEST_DRILL_TOOL_NAME = "suggest_targeted_drill" as const
+export const COACH_TOOL_NAMES = [
+  COACH_SUGGEST_DRILL_TOOL_NAME,
+  COACH_CONFIGURE_CHALLENGE_TOOL_NAME,
+] as const
 
 const LANGUAGES = CHALLENGE_LANGUAGES.map((l) => l.value) as [
   Language,
@@ -74,6 +87,12 @@ export function createCoachTools() {
         return clamped.value
       },
     }),
+    [COACH_CONFIGURE_CHALLENGE_TOOL_NAME]: tool({
+      description:
+        "Open an interactive challenge configuration card in chat to collect missing language, difficulty, and focus topic, then generate the custom challenge inline. Pre-fill any fields the user already stated and provide 3-4 suggestedTopics grounded in their weak spots.",
+      inputSchema: ConfigureChallengeInputSchema,
+      outputSchema: ConfigureChallengeOutputSchema,
+    }),
   }
 }
 
@@ -105,13 +124,10 @@ const optText = (max: number) => z.string().max(max).nullable().optional()
 const textLikePart = (type: "text" | "reasoning") =>
   z.looseObject({ type: z.literal(type), text: z.string().max(8_000) })
 
-const CoachPartSchema = z.union([
-  textLikePart("text"),
-  textLikePart("reasoning"),
-  z.looseObject({ type: z.literal("step-start") }),
+const CoachToolPartSchemas = COACH_TOOL_NAMES.map((name) =>
   z
     .looseObject({
-      type: z.literal(`tool-${COACH_SUGGEST_DRILL_TOOL_NAME}`),
+      type: z.literal(`tool-${name}`),
       toolCallId: nonEmpty(200),
       state: z.enum(TOOL_STATES),
       errorText: z.string().max(8_000).optional(),
@@ -119,7 +135,14 @@ const CoachPartSchema = z.union([
     .refine(
       (p) => JSON.stringify(p).length <= 16_000,
       "Tool payload too large."
-    ),
+    )
+)
+
+const CoachPartSchema = z.union([
+  textLikePart("text"),
+  textLikePart("reasoning"),
+  z.looseObject({ type: z.literal("step-start") }),
+  ...CoachToolPartSchemas,
 ])
 
 const CoachMessagesSchema = z
@@ -254,25 +277,12 @@ function parseWithSchema<T>(
   }
 }
 
-function stripControlChars(value: string): string {
-  // Normalize line breaks to spaces before stripping control chars so words stay separated.
-  const withoutBreaks = value.replace(/[\r\n]+/g, " ")
-  let out = ""
-  for (let i = 0; i < withoutBreaks.length; i += 1) {
-    const code = withoutBreaks.charCodeAt(i)
-    if (code >= 0x20 && code !== 0x7f) out += withoutBreaks[i]
-  }
-  return out.trim()
-}
-
 function normalizeChoice<T extends string>(
   raw: unknown,
   allowed: readonly T[],
   fallback: T
 ): T {
-  if (typeof raw !== "string") return fallback
-  const norm = raw.trim().toLowerCase()
-  return allowed.find((item) => item.toLowerCase() === norm) ?? fallback
+  return matchChoice(raw, allowed) ?? fallback
 }
 
 export function parseCoachRequest(body: unknown): ParseResult<CoachRequest> {
@@ -344,39 +354,4 @@ export function clampTargetedDrillSuggestion(
       ...(rationale ? { rationale } : {}),
     },
   }
-}
-
-function unwrapErrorPayload(value: unknown, depth = 0): string | null {
-  if (depth > 3 || value === null || value === undefined) return null
-  if (typeof value === "string") {
-    const trimmed = value.trim()
-    if (!trimmed) return null
-    if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
-      try {
-        return unwrapErrorPayload(JSON.parse(trimmed), depth + 1) ?? trimmed
-      } catch {
-        return trimmed
-      }
-    }
-    return trimmed
-  }
-  if (typeof value === "object") {
-    const record = value as Record<string, unknown>
-    if (Array.isArray(record.detail) && record.detail.length > 0) {
-      const msg = (record.detail[0] as { msg?: unknown } | undefined)?.msg
-      if (typeof msg === "string" && msg.trim()) return msg.trim()
-    }
-    for (const candidate of [record.detail, record.error, record.message]) {
-      const extracted = unwrapErrorPayload(candidate, depth + 1)
-      if (extracted) return extracted
-    }
-  }
-  return null
-}
-
-export function parseCoachErrorMessage(
-  error: unknown,
-  fallback = "Failed to reach the AI coach. Please try again."
-): string {
-  return unwrapErrorPayload(error) ?? fallback
 }
