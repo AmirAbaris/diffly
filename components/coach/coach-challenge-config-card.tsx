@@ -2,6 +2,10 @@
 
 import * as React from "react"
 import { AlertCircle, AlertTriangle, RotateCcw, Sparkles } from "lucide-react"
+import {
+  ChallengeConfigFields,
+  CUSTOM_TOPIC_VALUE,
+} from "@/components/coach/coach-challenge-config-fields"
 import { CoachChallengeConfigResolved } from "@/components/coach/coach-challenge-config-resolved"
 import type { CoachChallengeToolController } from "@/components/coach/use-coach-challenge-tool"
 import { Badge } from "@/components/ui/badge"
@@ -14,8 +18,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { Trace, TraceIcon, TraceLine, TraceTitle } from "@/components/ui/trace"
 import {
   normalizeConfigureChallengeInput,
@@ -23,14 +25,10 @@ import {
   type ConfigureChallengeOutput,
 } from "@/lib/ai/coach"
 import {
-  CHALLENGE_DIFFICULTIES,
-  CHALLENGE_LANGUAGES,
   formatLanguageLabel,
   type Difficulty,
   type Language,
 } from "@/types/challenge"
-
-const CUSTOM_TOPIC_VALUE = "__custom__"
 
 export interface ConfigureChallengeToolPart {
   toolCallId: string
@@ -48,11 +46,6 @@ export function CoachChallengeConfigCard({
   part,
   controller,
 }: CoachChallengeConfigCardProps) {
-  const languageLabelId = React.useId()
-  const difficultyLabelId = React.useId()
-  const topicLabelId = React.useId()
-  const customTopicId = React.useId()
-
   const normalized = React.useMemo(
     () => normalizeConfigureChallengeInput(part.input),
     [part.input]
@@ -94,12 +87,6 @@ export function CoachChallengeConfigCard({
     normalized.prefilled.topic ??
     (isCustomTopic ? customTopic : selectedTopicOption)
   ).trim()
-
-  const activeSuggestion = needsTopic
-    ? normalized.suggestedTopics.find(
-        (item) => item.topic === selectedTopicOption
-      )
-    : undefined
 
   const canSubmit =
     Boolean(controller) &&
@@ -184,118 +171,21 @@ export function CoachChallengeConfigCard({
           </div>
         ) : null}
 
-        {needsLanguage ? (
-          <div className="flex flex-col gap-1.5">
-            <span id={languageLabelId} className="font-medium text-foreground">
-              Language
-            </span>
-            <ToggleGroup
-              type="single"
-              variant="outline"
-              size="sm"
-              spacing={1}
-              value={language}
-              onValueChange={(val) => {
-                if (val) setLanguage(val as Language)
-              }}
-              disabled={isGenerating}
-              aria-labelledby={languageLabelId}
-              className="flex-wrap justify-start"
-              data-testid="coach-config-language-group"
-            >
-              {CHALLENGE_LANGUAGES.map((lang) => (
-                <ToggleGroupItem key={lang.value} value={lang.value}>
-                  {lang.label}
-                </ToggleGroupItem>
-              ))}
-            </ToggleGroup>
-          </div>
-        ) : null}
-
-        {needsDifficulty ? (
-          <div className="flex flex-col gap-1.5">
-            <span
-              id={difficultyLabelId}
-              className="font-medium text-foreground"
-            >
-              Difficulty
-            </span>
-            <ToggleGroup
-              type="single"
-              variant="outline"
-              size="sm"
-              spacing={1}
-              value={difficulty}
-              onValueChange={(val) => {
-                if (val) setDifficulty(val as Difficulty)
-              }}
-              disabled={isGenerating}
-              aria-labelledby={difficultyLabelId}
-              className="flex-wrap justify-start"
-              data-testid="coach-config-difficulty-group"
-            >
-              {CHALLENGE_DIFFICULTIES.map((diff) => (
-                <ToggleGroupItem key={diff} value={diff}>
-                  {diff}
-                </ToggleGroupItem>
-              ))}
-            </ToggleGroup>
-          </div>
-        ) : null}
-
-        {needsTopic ? (
-          <div className="flex flex-col gap-1.5">
-            <span id={topicLabelId} className="font-medium text-foreground">
-              Focus Topic
-            </span>
-            <ToggleGroup
-              type="single"
-              variant="outline"
-              size="sm"
-              spacing={1}
-              value={selectedTopicOption}
-              onValueChange={(val) => {
-                if (val) setSelectedTopicOption(val)
-              }}
-              disabled={isGenerating}
-              aria-labelledby={topicLabelId}
-              className="flex-wrap justify-start"
-              data-testid="coach-config-topic-group"
-            >
-              {normalized.suggestedTopics.map((item) => (
-                <ToggleGroupItem key={item.topic} value={item.topic}>
-                  {item.label}
-                </ToggleGroupItem>
-              ))}
-              <ToggleGroupItem
-                value={CUSTOM_TOPIC_VALUE}
-                data-testid="coach-config-topic-custom-toggle"
-              >
-                Custom
-              </ToggleGroupItem>
-            </ToggleGroup>
-
-            {activeSuggestion?.rationale ? (
-              <p className="text-xs leading-relaxed text-pretty text-muted-foreground">
-                {activeSuggestion.rationale}
-              </p>
-            ) : null}
-
-            {isCustomTopic ? (
-              <Input
-                id={customTopicId}
-                value={customTopic}
-                onChange={(e) => setCustomTopic(e.target.value)}
-                placeholder="e.g. FastAPI JWT auth bypass, Go mutex deadlock…"
-                aria-label="Custom focus topic"
-                minLength={3}
-                maxLength={200}
-                disabled={isGenerating}
-                data-testid="coach-config-custom-topic-input"
-              />
-            ) : null}
-          </div>
-        ) : null}
+        <ChallengeConfigFields
+          needsLanguage={needsLanguage}
+          needsDifficulty={needsDifficulty}
+          needsTopic={needsTopic}
+          language={language}
+          difficulty={difficulty}
+          selectedTopicOption={selectedTopicOption}
+          customTopic={customTopic}
+          suggestedTopics={normalized.suggestedTopics}
+          disabled={isGenerating}
+          onLanguageChange={setLanguage}
+          onDifficultyChange={setDifficulty}
+          onTopicOptionChange={setSelectedTopicOption}
+          onCustomTopicChange={setCustomTopic}
+        />
 
         {isGenerating ? (
           <Trace data-testid="coach-config-generating">
