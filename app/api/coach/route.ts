@@ -1,4 +1,11 @@
-import { convertToModelMessages, stepCountIs, streamText } from "ai"
+import {
+  convertToModelMessages,
+  createUIMessageStreamResponse,
+  smoothStream,
+  stepCountIs,
+  streamText,
+  toUIMessageStream,
+} from "ai"
 import { NextRequest, NextResponse } from "next/server"
 
 import {
@@ -167,17 +174,24 @@ export async function POST(request: NextRequest): Promise<Response> {
     })
     const result = streamText({
       model: createBYOKModel(unsealed.credential),
-      system: buildCoachSystemPrompt(promptInput),
+      instructions: buildCoachSystemPrompt(promptInput),
       messages: modelMessages,
       tools,
       stopWhen: stepCountIs(COACH_MAX_STEPS),
       maxRetries: 0,
       abortSignal,
+      experimental_transform: smoothStream({ chunking: "word" }),
     })
 
-    const response = result.toUIMessageStreamResponse({
-      headers: { "Cache-Control": "no-store", Vary: "Cookie" },
+    const uiStream = toUIMessageStream({
+      stream: result.stream,
+      tools,
+      sendReasoning: true,
       onError: (error) => mapError(error).message,
+    })
+    const response = createUIMessageStreamResponse({
+      stream: uiStream,
+      headers: { "Cache-Control": "no-store", Vary: "Cookie" },
     })
     if (upstreamHeaders) propagateBackendSetCookies(upstreamHeaders, response)
     return response

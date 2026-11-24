@@ -2,11 +2,20 @@ import { NextRequest } from "next/server"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 const mockStreamText = vi.hoisted(() => vi.fn())
+const mockToUIMessageStream = vi.hoisted(() => vi.fn())
+const mockCreateUIMessageStreamResponse = vi.hoisted(() => vi.fn())
+const mockSmoothStream = vi.hoisted(() => vi.fn())
 const mockFetch = vi.hoisted(() => vi.fn())
 
 vi.mock("ai", async (importOriginal) => {
   const actual = await importOriginal<typeof import("ai")>()
-  return { ...actual, streamText: mockStreamText }
+  return {
+    ...actual,
+    streamText: mockStreamText,
+    toUIMessageStream: mockToUIMessageStream,
+    createUIMessageStreamResponse: mockCreateUIMessageStreamResponse,
+    smoothStream: mockSmoothStream,
+  }
 })
 
 import { POST } from "@/app/api/coach/route"
@@ -101,28 +110,27 @@ async function expectError(res: Response, status: number, message?: string) {
 }
 
 describe("app/api/coach/route", () => {
+  const mockTransform = () => new TransformStream()
+
   beforeEach(() => {
     vi.stubGlobal("fetch", mockFetch)
     vi.stubEnv("BACKEND_URL", "http://127.0.0.1:8000")
-    mockStreamText.mockImplementation(() => ({
-      toUIMessageStreamResponse: (options?: {
-        headers?: Record<string, string>
-      }) =>
+    mockSmoothStream.mockImplementation(() => mockTransform)
+    mockStreamText.mockImplementation(() => ({ stream: new ReadableStream() }))
+    mockToUIMessageStream.mockImplementation(() => new ReadableStream())
+    mockCreateUIMessageStreamResponse.mockImplementation(
+      ({ headers }: { headers?: Record<string, string> } = {}) =>
         new Response('data: {"type":"start"}\n\n', {
           status: 200,
-          headers: {
-            "content-type": "text/event-stream",
-            ...options?.headers,
-          },
-        }),
-    }))
+          headers: { "content-type": "text/event-stream", ...headers },
+        })
+    )
   })
 
   afterEach(() => {
     vi.unstubAllEnvs()
     vi.unstubAllGlobals()
-    mockStreamText.mockReset()
-    mockFetch.mockReset()
+    vi.resetAllMocks()
   })
 
   it("rejects cross-site, non-JSON, malformed JSON, invalid payload, and missing/invalid BYOK cookies", async () => {
@@ -193,22 +201,10 @@ describe("app/api/coach/route", () => {
       jsonRes(VALID_PATTERNS, 200, upstreamHeaders)
     )
 
-    let capturedOnError: ((error: unknown) => string) | undefined
-    mockStreamText.mockImplementationOnce(() => ({
-      toUIMessageStreamResponse: (options?: {
-        headers?: Record<string, string>
-        onError?: (error: unknown) => string
-      }) => {
-        capturedOnError = options?.onError
-        return new Response('data: {"type":"start"}\n\n', {
-          status: 200,
-          headers: {
-            "content-type": "text/event-stream",
-            ...options?.headers,
-          },
-        })
-      },
-    }))
+    const fakeModelStream = new ReadableStream()
+    const fakeUiStream = new ReadableStream()
+    mockStreamText.mockImplementationOnce(() => ({ stream: fakeModelStream }))
+    mockToUIMessageStream.mockImplementationOnce(() => fakeUiStream)
 
     const controller = new AbortController()
     const res = await postCoach({
@@ -248,31 +244,50 @@ describe("app/api/coach/route", () => {
     expect(forwardedHeaders.cookie).not.toContain(BYOK_COOKIE_NAME)
     expect(forwardedHeaders.authorization).toBe("Bearer jwt-coach")
 
+    expect(mockSmoothStream).toHaveBeenCalledWith({ chunking: "word" })
     const streamArgs = mockStreamText.mock.calls[0][0] as {
-      system: string
+      instructions: string
       messages: unknown[]
       tools: Record<string, unknown>
       stopWhen: (ctx: { steps: unknown[] }) => boolean
       maxRetries: number
       abortSignal: AbortSignal
+      experimental_transform: unknown
     }
-    expect(streamArgs.system).toContain("Deferred Mutex Unlock Leak")
-    expect(streamArgs.system).toContain("Concurrency / go / Medium")
+    expect(streamArgs.instructions).toContain("Deferred Mutex Unlock Leak")
+    expect(streamArgs.instructions).toContain("Concurrency / go / Medium")
     expect(streamArgs.tools).toHaveProperty("suggest_targeted_drill")
     expect(streamArgs.messages).toHaveLength(1)
     expect(streamArgs.maxRetries).toBe(0)
+    expect(streamArgs.experimental_transform).toBe(mockTransform)
     expect(streamArgs.stopWhen({ steps: [{}] })).toBe(false)
     expect(streamArgs.stopWhen({ steps: [{}, {}, {}] })).toBe(true)
     expect(streamArgs.abortSignal).toBeInstanceOf(AbortSignal)
 
-    const mappedErr = capturedOnError!(new Error(`Provider failed ${rawKey}`))
+    const uiStreamArgs = mockToUIMessageStream.mock.calls[0][0] as {
+      stream: ReadableStream
+      tools: Record<string, unknown>
+      sendReasoning: boolean
+      onError: (error: unknown) => string
+    }
+    expect(uiStreamArgs.stream).toBe(fakeModelStream)
+    expect(uiStreamArgs.sendReasoning).toBe(true)
+    expect(uiStreamArgs.tools).toHaveProperty("suggest_targeted_drill")
+    expect(mockCreateUIMessageStreamResponse).toHaveBeenCalledWith({
+      stream: fakeUiStream,
+      headers: { "Cache-Control": "no-store", Vary: "Cookie" },
+    })
+
+    const mappedErr = uiStreamArgs.onError(
+      new Error(`Provider failed ${rawKey}`)
+    )
     expect(mappedErr).toBe("Failed to connect to the AI provider.")
     expect(mappedErr).not.toContain(rawKey)
-    expect(capturedOnError!({ statusCode: 401 })).toBe(
+    expect(uiStreamArgs.onError({ statusCode: 401 })).toBe(
       "Authentication failed. Check your API key and permissions."
     )
     controller.abort()
-    expect(capturedOnError!(new Error("aborted"))).toBe(
+    expect(uiStreamArgs.onError(new Error("aborted"))).toBe(
       "Coach response was cancelled."
     )
   })
@@ -337,17 +352,25 @@ describe("app/api/coach/route", () => {
     expect(res.headers.get("vary")).toBe("Cookie")
     expect(mockFetch).not.toHaveBeenCalled()
     expect(mockStreamText).toHaveBeenCalledTimes(1)
+    expect(mockToUIMessageStream).toHaveBeenCalledTimes(1)
+    expect(mockCreateUIMessageStreamResponse).toHaveBeenCalledTimes(1)
+    expect(mockSmoothStream).toHaveBeenCalledWith({ chunking: "word" })
 
     const streamArgs = mockStreamText.mock.calls[0][0] as {
-      system: string
+      instructions: string
       tools: Record<string, unknown>
+      experimental_transform: unknown
     }
-    expect(streamArgs.system).toContain("<code_under_review>")
-    expect(streamArgs.system).toContain("cache[k] = v // unsynchronized")
-    expect(streamArgs.system).toContain("<user_critique>")
-    expect(streamArgs.system).toContain("Missing mutex around map write")
-    expect(streamArgs.system).toContain("<canonical_review>")
-    expect(streamArgs.system).toContain("Protect map writes with sync.RWMutex.")
+    expect(streamArgs.instructions).toContain("<code_under_review>")
+    expect(streamArgs.instructions).toContain("cache[k] = v // unsynchronized")
+    expect(streamArgs.instructions).toContain("<user_critique>")
+    expect(streamArgs.instructions).toContain("Missing mutex around map write")
+    expect(streamArgs.instructions).toContain("<canonical_review>")
+    expect(streamArgs.instructions).toContain(
+      "Protect map writes with sync.RWMutex."
+    )
     expect(streamArgs.tools).toHaveProperty("suggest_targeted_drill")
+    expect(streamArgs.experimental_transform).toBe(mockTransform)
+    expect(mockToUIMessageStream.mock.calls[0][0].sendReasoning).toBe(true)
   })
 })
