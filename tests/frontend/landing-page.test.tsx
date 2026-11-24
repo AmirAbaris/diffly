@@ -45,7 +45,6 @@ describe("LandingPage & Sandbox Engine", () => {
   beforeEach(() => {
     useCustomChallengeModalStore.setState({
       isOpen: false,
-      initialTab: "generate",
     })
   })
 

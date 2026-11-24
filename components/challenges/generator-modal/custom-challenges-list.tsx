@@ -10,9 +10,11 @@ import {
   Link2Off,
   Loader2,
   Share2,
+  Sparkles,
   Trash2,
 } from "lucide-react"
 import { DifficultyBadge } from "@/components/challenges/catalog-grid"
+import { CREATE_CHALLENGE_PROMPT } from "@/components/coach/use-coach-chat"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -32,6 +34,8 @@ import {
   type ShareChallengeResponse,
 } from "@/types/challenge"
 
+export const COACH_CREATE_CHALLENGE_HREF = `/coach?prompt=${encodeURIComponent(CREATE_CHALLENGE_PROMPT)}`
+
 export interface CustomChallengesListProps {
   challenges: ChallengeSummary[]
   isLoading: boolean
@@ -40,7 +44,6 @@ export interface CustomChallengesListProps {
     id: number | string,
     enabled: boolean
   ) => Promise<ShareChallengeResponse>
-  onSwitchToGenerate: () => void
   onCloseModal?: () => void
 }
 
@@ -49,7 +52,6 @@ export function CustomChallengesList({
   isLoading,
   onDelete,
   onToggleShare,
-  onSwitchToGenerate,
   onCloseModal,
 }: CustomChallengesListProps) {
   const [deletingId, setDeletingId] = React.useState<number | string | null>(
@@ -168,12 +170,11 @@ export function CustomChallengesList({
           </EmptyDescription>
         </EmptyHeader>
         <EmptyContent>
-          <Button
-            size="sm"
-            onClick={onSwitchToGenerate}
-            data-testid="create-first-challenge-btn"
-          >
-            Create Your First Challenge
+          <Button asChild size="sm" data-testid="create-first-challenge-btn">
+            <Link href={COACH_CREATE_CHALLENGE_HREF} onClick={onCloseModal}>
+              <Sparkles data-icon="inline-start" aria-hidden="true" />
+              <span>Create in Agent Coach</span>
+            </Link>
           </Button>
         </EmptyContent>
       </Empty>

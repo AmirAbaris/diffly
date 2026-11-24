@@ -1,48 +1,18 @@
 import * as React from "react"
 import { cleanup, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
-import { AxiosError } from "axios"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { CustomChallengeButton } from "@/components/challenges/custom-challenge-button"
-import { CustomChallengeModal } from "@/components/challenges/generator-modal/custom-challenge-modal"
-import type { QuotaSyncState } from "@/hooks/use-custom-challenges"
-import type { AIProviderId } from "@/lib/ai/catalog"
+import {
+  COACH_CREATE_CHALLENGE_HREF,
+  CustomChallengeModal,
+} from "@/components/challenges/generator-modal/custom-challenge-modal"
+import { CREATE_CHALLENGE_PROMPT } from "@/components/coach/use-coach-chat"
 import { useCustomChallengeModalStore } from "@/stores/custom-challenge-modal-store"
 import type { ChallengeSummary } from "@/types/challenge"
 
-const mockPush = vi.fn()
-vi.mock("next/navigation", () => ({
-  useRouter: () => ({
-    push: mockPush,
-    replace: vi.fn(),
-  }),
-  usePathname: () => "/challenges",
-  useSearchParams: () => new URLSearchParams(),
-}))
-
-let mockAIConnectionState = {
-  isConnected: true,
-  provider: "google" as AIProviderId | null,
-  model: "gemini-2.5-flash" as string | null,
-  baseUrl: null as string | null,
-  maskedKey: "AIza••••1234" as string | null,
-  isLoading: false,
-  isValidating: false,
-  isSaving: false,
-  isDisconnecting: false,
-  error: null as Error | null,
-  saveConnection: vi.fn(),
-  disconnect: vi.fn(),
-  mutate: vi.fn(),
-}
-
-vi.mock("@/hooks/use-ai-connection", () => ({
-  useAIConnection: () => mockAIConnectionState,
-}))
-
 const mockDeleteCustomChallenge = vi.fn()
 const mockToggleChallengeShare = vi.fn()
-const mockGenerateCustomChallenge = vi.fn()
 
 let mockCustomChallenges: ChallengeSummary[] = []
 let mockTotal = 0
@@ -50,8 +20,6 @@ let mockQuotaLimit = 5
 let mockQuotaRemaining = 5
 let mockIsQuotaFull = false
 let mockIsLoading = false
-let mockQuotaSyncState: QuotaSyncState = "idle"
-const mockResetQuotaSyncState = vi.fn()
 
 vi.mock("@/hooks/use-custom-challenges", async () => {
   const actual = await vi.importActual<
@@ -66,44 +34,25 @@ vi.mock("@/hooks/use-custom-challenges", async () => {
       quotaRemaining: mockQuotaRemaining,
       isQuotaFull: mockIsQuotaFull,
       isLoading: mockIsLoading,
-      quotaSyncState: mockQuotaSyncState,
-      isSyncingQuota: mockQuotaSyncState === "syncing",
-      resetQuotaSyncState: mockResetQuotaSyncState,
+      quotaSyncState: "idle",
+      isSyncingQuota: false,
+      resetQuotaSyncState: vi.fn(),
       deleteCustomChallenge: mockDeleteCustomChallenge,
       toggleChallengeShare: mockToggleChallengeShare,
-      generateCustomChallenge: mockGenerateCustomChallenge,
+      generateCustomChallenge: vi.fn(),
       mutate: vi.fn(),
     }),
   }
 })
 
-describe("Custom Challenge Generator & Quota Flow", () => {
+describe("Custom Challenge Library & Quota Flow", () => {
   beforeEach(() => {
     window.localStorage.clear()
     useCustomChallengeModalStore.setState({
       isOpen: false,
-      initialTab: "generate",
     })
-    mockPush.mockReset()
     mockDeleteCustomChallenge.mockReset()
     mockToggleChallengeShare.mockReset()
-    mockGenerateCustomChallenge.mockReset()
-
-    mockAIConnectionState = {
-      isConnected: true,
-      provider: "google",
-      model: "gemini-2.5-flash",
-      baseUrl: null,
-      maskedKey: "AIza••••1234",
-      isLoading: false,
-      isValidating: false,
-      isSaving: false,
-      isDisconnecting: false,
-      error: null,
-      saveConnection: vi.fn(),
-      disconnect: vi.fn(),
-      mutate: vi.fn(),
-    }
 
     mockCustomChallenges = [
       {
@@ -126,8 +75,6 @@ describe("Custom Challenge Generator & Quota Flow", () => {
     mockQuotaRemaining = 4
     mockIsQuotaFull = false
     mockIsLoading = false
-    mockQuotaSyncState = "idle"
-    mockResetQuotaSyncState.mockReset()
   })
 
   afterEach(() => {
@@ -151,7 +98,7 @@ describe("Custom Challenge Generator & Quota Flow", () => {
       expect(badge).toHaveTextContent("Custom: 2/5")
     })
 
-    it("opens modal with 'manage' tab when clicking quota badge", async () => {
+    it("opens the library modal when clicking quota badge", async () => {
       const user = userEvent.setup()
       render(<CustomChallengeButton />)
 
@@ -159,11 +106,12 @@ describe("Custom Challenge Generator & Quota Flow", () => {
       await user.click(badge)
 
       expect(useCustomChallengeModalStore.getState().isOpen).toBe(true)
-      expect(useCustomChallengeModalStore.getState().initialTab).toBe("manage")
     })
   })
 
   describe("CustomChallengeModal Component", () => {
+    const expectedCoachHref = `/coach?prompt=${encodeURIComponent(CREATE_CHALLENGE_PROMPT)}`
+
     it("renders closed when open=false", () => {
       render(<CustomChallengeModal open={false} />)
       expect(
@@ -171,81 +119,63 @@ describe("Custom Challenge Generator & Quota Flow", () => {
       ).not.toBeInTheDocument()
     })
 
-    it("renders modal with header, tabs, connected provider pill, and Manage in Settings link", async () => {
+    it("renders single-purpose Library modal without tabs or legacy generator form", async () => {
       render(<CustomChallengeModal open={true} />)
 
       expect(
         await screen.findByTestId("custom-challenge-modal-content")
       ).toBeInTheDocument()
-      expect(screen.getByText("Custom Challenge Generator")).toBeInTheDocument()
+      expect(screen.getByText("Custom Challenge Library")).toBeInTheDocument()
+      expect(
+        screen.getByText(
+          "Manage your private AI-generated challenges. Create new challenges in Agent Coach."
+        )
+      ).toBeInTheDocument()
       expect(screen.getByTestId("modal-quota-badge")).toHaveTextContent(
         "1/5 Used"
       )
 
-      expect(screen.getByTestId("generator-ai-status-pill")).toHaveTextContent(
-        "Connected: Google Gemini (gemini-2.5-flash)"
-      )
-      const manageLink = screen.getByTestId("generator-manage-settings-link")
-      expect(manageLink).toHaveAttribute("href", "/settings")
+      expect(
+        screen.queryByTestId("tab-generate-trigger")
+      ).not.toBeInTheDocument()
+      expect(screen.queryByTestId("tab-manage-trigger")).not.toBeInTheDocument()
+      expect(screen.queryByRole("tab")).not.toBeInTheDocument()
+      expect(
+        screen.queryByTestId("generator-topic-input")
+      ).not.toBeInTheDocument()
+      expect(
+        screen.queryByTestId("generate-challenge-submit-btn")
+      ).not.toBeInTheDocument()
     })
 
-    it("renders disconnected CTA when no AI provider is connected", async () => {
-      mockAIConnectionState = {
-        ...mockAIConnectionState,
-        isConnected: false,
-        provider: null,
-        model: null,
-        maskedKey: null,
-      }
-
-      render(<CustomChallengeModal open={true} />)
-
-      expect(
-        await screen.findByTestId("generator-ai-disconnected-cta")
-      ).toBeInTheDocument()
-      expect(screen.getByTestId("generate-challenge-submit-btn")).toBeDisabled()
-    })
-
-    it("enforces strict 5-challenge quota: disables generate button and displays banner", async () => {
-      mockTotal = 5
-      mockQuotaLimit = 5
-      mockQuotaRemaining = 0
-      mockIsQuotaFull = true
-
-      render(<CustomChallengeModal open={true} />)
-
-      const banner = await screen.findByTestId("quota-limit-banner")
-      expect(banner).toBeInTheDocument()
-      expect(
-        screen.getByText(/you have reached your limit of 5 custom challenges/i)
-      ).toBeInTheDocument()
-
-      const submitBtn = screen.getByTestId("generate-challenge-submit-btn")
-      expect(submitBtn).toBeDisabled()
-
+    it("links 'Create in Agent Coach' footer button to /coach?prompt=... and closes modal", async () => {
       const user = userEvent.setup()
-      const manageBtn = screen.getByTestId("quota-manage-btn")
-      await user.click(manageBtn)
+      useCustomChallengeModalStore.setState({ isOpen: true })
 
-      expect(screen.getByTestId("tab-manage-trigger")).toHaveAttribute(
-        "data-state",
-        "active"
+      render(<CustomChallengeModal />)
+
+      const coachCreateBtn = await screen.findByTestId(
+        "modal-open-coach-create-btn"
       )
+      expect(COACH_CREATE_CHALLENGE_HREF).toBe(expectedCoachHref)
+      expect(coachCreateBtn).toHaveTextContent("Create in Agent Coach")
+      expect(coachCreateBtn).toHaveAttribute("href", expectedCoachHref)
+
+      await user.click(coachCreateBtn)
+
+      expect(useCustomChallengeModalStore.getState().isOpen).toBe(false)
     })
 
-    it("manages custom challenges library: lists items and calls delete", async () => {
+    it("lists custom challenges and calls delete", async () => {
       const user = userEvent.setup()
       mockDeleteCustomChallenge.mockResolvedValueOnce({
         detail: "Custom challenge deleted successfully",
       })
 
-      render(<CustomChallengeModal open={true} initialTab="manage" />)
-
-      const manageTab = await screen.findByTestId("tab-manage-trigger")
-      expect(manageTab).toHaveAttribute("data-state", "active")
+      render(<CustomChallengeModal open={true} />)
 
       expect(
-        screen.getByTestId("custom-challenge-item-101")
+        await screen.findByTestId("custom-challenge-item-101")
       ).toBeInTheDocument()
       expect(screen.getByText("FastAPI JWT Auth Bypass")).toBeInTheDocument()
 
@@ -255,7 +185,7 @@ describe("Custom Challenge Generator & Quota Flow", () => {
       expect(mockDeleteCustomChallenge).toHaveBeenCalledWith(101)
     })
 
-    it("toggles unlisted share and copies link from Manage Library list", async () => {
+    it("toggles unlisted share and copies link from Library list", async () => {
       const user = userEvent.setup()
       const writeTextSpy = vi.spyOn(navigator.clipboard, "writeText")
       mockToggleChallengeShare.mockResolvedValueOnce({
@@ -265,7 +195,7 @@ describe("Custom Challenge Generator & Quota Flow", () => {
         share_token: "tok_modal_101",
       })
 
-      render(<CustomChallengeModal open={true} initialTab="manage" />)
+      render(<CustomChallengeModal open={true} />)
 
       const shareBtn = await screen.findByTestId("toggle-share-challenge-101")
       await user.click(shareBtn)
@@ -280,101 +210,24 @@ describe("Custom Challenge Generator & Quota Flow", () => {
       })
     })
 
-    it("successfully generates challenge and routes to /challenges/[slug]", async () => {
+    it("renders provider-neutral empty state with 'Create in Agent Coach' link", async () => {
       const user = userEvent.setup()
-      mockGenerateCustomChallenge.mockResolvedValueOnce({
-        id: 102,
-        slug: "nextjs-csrf-action-defect",
-        title: "Next.js CSRF Action Defect",
-        difficulty: "Medium",
-        category: "Security",
-        language: "typescript",
-        description: "CSRF issue in Next.js Server Action",
-        threat_model: "Attacker triggers state mutation",
-        defect_target: "Server Action lacks token check",
-        code_snippet: "export async function mutate() {}",
-        estimated_minutes: 5,
-        line_count: 20,
-        total_hints: 3,
-        is_solved: false,
-        best_score: null,
-      })
-
-      render(<CustomChallengeModal open={true} />)
-
-      const topicInput = await screen.findByTestId("generator-topic-input")
-      await user.type(topicInput, "Next.js Server Actions CSRF")
-
-      const submitBtn = screen.getByTestId("generate-challenge-submit-btn")
-      expect(submitBtn).toBeEnabled()
-      await user.click(submitBtn)
-
-      await waitFor(() => {
-        expect(mockGenerateCustomChallenge).toHaveBeenCalledWith({
-          topic: "Next.js Server Actions CSRF",
-          language: "python",
-          difficulty: "Medium",
-        })
-        expect(mockPush).toHaveBeenCalledWith(
-          "/challenges/nextjs-csrf-action-defect"
-        )
-      })
-    })
-
-    it("displays error banner when generation fails", async () => {
-      const user = userEvent.setup()
-      mockGenerateCustomChallenge.mockRejectedValueOnce(
-        new Error("AI provider authentication failed.")
-      )
-
-      render(<CustomChallengeModal open={true} />)
-
-      const topicInput = await screen.findByTestId("generator-topic-input")
-      await user.type(topicInput, "Go mutex deadlock")
-
-      const submitBtn = screen.getByTestId("generate-challenge-submit-btn")
-      await user.click(submitBtn)
-
-      const errorBanner = await screen.findByTestId("generator-error-banner")
-      expect(errorBanner).toBeInTheDocument()
-      expect(
-        screen.getByText(/ai provider authentication failed/i)
-      ).toBeInTheDocument()
-    })
-
-    it("surfaces timeout message and quota-sync badge when generation times out", async () => {
-      const user = userEvent.setup()
-      mockQuotaSyncState = "synced"
-      mockGenerateCustomChallenge.mockRejectedValueOnce(
-        new AxiosError("timeout of 60000ms exceeded", "ECONNABORTED")
-      )
-
-      render(<CustomChallengeModal open={true} />)
-
-      const topicInput = await screen.findByTestId("generator-topic-input")
-      await user.type(topicInput, "FastAPI SSRF bypass")
-
-      const submitBtn = screen.getByTestId("generate-challenge-submit-btn")
-      await user.click(submitBtn)
-
-      const errorBanner = await screen.findByTestId("generator-error-banner")
-      expect(errorBanner).toHaveTextContent(
-        /timed out waiting for the ai provider.*synced/i
-      )
-      expect(screen.getByTestId("quota-sync-status-badge")).toHaveTextContent(
-        "Quota synced"
-      )
-    })
-
-    it("uses provider-neutral copy in the empty custom challenges library state", async () => {
       mockCustomChallenges = []
       mockTotal = 0
+      useCustomChallengeModalStore.setState({ isOpen: true })
 
-      render(<CustomChallengeModal open={true} initialTab="manage" />)
+      render(<CustomChallengeModal />)
 
       const empty = await screen.findByTestId("custom-challenges-empty")
       expect(empty).toHaveTextContent(/connected ai provider/i)
       expect(empty).not.toHaveTextContent(/gemini/i)
+
+      const createBtn = screen.getByTestId("create-first-challenge-btn")
+      expect(createBtn).toHaveTextContent("Create in Agent Coach")
+      expect(createBtn).toHaveAttribute("href", expectedCoachHref)
+
+      await user.click(createBtn)
+      expect(useCustomChallengeModalStore.getState().isOpen).toBe(false)
     })
   })
 })

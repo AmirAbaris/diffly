@@ -1,107 +1,41 @@
 "use client"
 
 import * as React from "react"
-import { useRouter } from "next/navigation"
-import axios from "axios"
+import Link from "next/link"
+import { Sparkles } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { CustomChallengesList } from "@/components/challenges/generator-modal/custom-challenges-list"
 import {
-  GeneratorForm,
-  type GeneratorFormValues,
-} from "@/components/challenges/generator-modal/generator-form"
-import {
-  isRequestTimeoutError,
-  useCustomChallenges,
-  type QuotaSyncState,
-} from "@/hooks/use-custom-challenges"
-import { toast } from "@/hooks/use-toast"
-import {
-  useCustomChallengeModalStore,
-  type CustomChallengeTab,
-} from "@/stores/custom-challenge-modal-store"
+  COACH_CREATE_CHALLENGE_HREF,
+  CustomChallengesList,
+} from "@/components/challenges/generator-modal/custom-challenges-list"
+import { useCustomChallenges } from "@/hooks/use-custom-challenges"
+import { useCustomChallengeModalStore } from "@/stores/custom-challenge-modal-store"
 
-export type GeneratorLifecycleState =
-  | { status: "idle" }
-  | { status: "generating" }
-  | { status: "error"; message: string }
+export { COACH_CREATE_CHALLENGE_HREF }
 
 export interface CustomChallengeModalProps {
   open?: boolean
   onOpenChange?: (open: boolean) => void
-  initialTab?: CustomChallengeTab
-}
-
-function resolveGenerationErrorMessage(err: unknown): string {
-  if (isRequestTimeoutError(err)) {
-    return "Generation timed out waiting for the AI provider. Your quota and custom library have been synced — check Manage Library in case it finished on the server."
-  }
-  if (axios.isAxiosError(err)) {
-    const data = err.response?.data as
-      { detail?: unknown; error?: unknown } | undefined
-    if (typeof data?.detail === "string" && data.detail.trim()) {
-      return data.detail
-    }
-    if (typeof data?.error === "string" && data.error.trim()) {
-      return data.error
-    }
-    if (err.response?.status === 401) {
-      return "AI provider authentication failed or no key is connected. Please check your API key in Settings."
-    }
-    if (err.response?.status === 429) {
-      return "AI provider rate limit reached. Please wait a minute and try again."
-    }
-    if (err.response?.status === 400) {
-      return "Quota limit reached. Please delete an existing custom challenge first."
-    }
-  } else if (err instanceof Error) {
-    return err.message
-  }
-  return "Failed to generate challenge. Please check your AI provider connection in Settings and try again."
-}
-
-const QUOTA_SYNC_BADGE_MAP: Record<
-  Exclude<QuotaSyncState, "idle">,
-  { variant: "info" | "success" | "warning"; label: string }
-> = {
-  syncing: { variant: "info", label: "Syncing quota…" },
-  synced: { variant: "success", label: "Quota synced" },
-  error: { variant: "warning", label: "Quota sync failed" },
 }
 
 export function CustomChallengeModal({
   open,
   onOpenChange,
-  initialTab,
 }: CustomChallengeModalProps) {
-  const router = useRouter()
   const storeIsOpen = useCustomChallengeModalStore((s) => s.isOpen)
-  const storeInitialTab = useCustomChallengeModalStore((s) => s.initialTab)
   const storeSetIsOpen = useCustomChallengeModalStore((s) => s.setIsOpen)
-  const storePrefill = useCustomChallengeModalStore((s) => s.prefill)
-  const prefillNonce = useCustomChallengeModalStore((s) => s.prefillNonce)
 
   const isControlled = open !== undefined
   const isModalOpen = isControlled ? open : storeIsOpen
-  const defaultTab = initialTab ?? storeInitialTab
-
-  const [tabOverride, setTabOverride] =
-    React.useState<CustomChallengeTab | null>(null)
-  const activeTab = tabOverride ?? defaultTab
-
-  const [lifecycle, setLifecycle] = React.useState<GeneratorLifecycleState>({
-    status: "idle",
-  })
-
-  const isGenerating = lifecycle.status === "generating"
-  const errorMessage = lifecycle.status === "error" ? lifecycle.message : null
 
   const {
     customChallenges,
@@ -109,23 +43,11 @@ export function CustomChallengeModal({
     quotaLimit,
     isQuotaFull,
     isLoading,
-    quotaSyncState = "idle",
-    resetQuotaSyncState,
     deleteCustomChallenge,
     toggleChallengeShare,
-    generateCustomChallenge,
   } = useCustomChallenges()
 
-  const quotaSyncBadge =
-    quotaSyncState !== "idle" ? QUOTA_SYNC_BADGE_MAP[quotaSyncState] : null
-
   const handleOpenChange = (newOpen: boolean) => {
-    if (isGenerating) {
-      return
-    }
-    setTabOverride(null)
-    setLifecycle({ status: "idle" })
-    resetQuotaSyncState?.()
     if (isControlled) {
       onOpenChange?.(newOpen)
     } else {
@@ -137,38 +59,6 @@ export function CustomChallengeModal({
     handleOpenChange(false)
   }
 
-  const handleGenerate = async (values: GeneratorFormValues) => {
-    try {
-      setLifecycle({ status: "generating" })
-
-      const generated = await generateCustomChallenge({
-        topic: values.topic,
-        language: values.language,
-        difficulty: values.difficulty,
-      })
-
-      toast({
-        title: "Challenge generated",
-        description: `"${generated.title}" is ready for code review.`,
-        variant: "default",
-      })
-
-      setLifecycle({ status: "idle" })
-      setTabOverride(null)
-      if (isControlled) {
-        onOpenChange?.(false)
-      } else {
-        storeSetIsOpen(false)
-      }
-      router.push(`/challenges/${generated.slug}`)
-    } catch (err: unknown) {
-      setLifecycle({
-        status: "error",
-        message: resolveGenerationErrorMessage(err),
-      })
-    }
-  }
-
   return (
     <Dialog open={isModalOpen} onOpenChange={handleOpenChange}>
       <DialogContent
@@ -177,8 +67,8 @@ export function CustomChallengeModal({
       >
         <DialogHeader className="gap-1">
           <div className="flex flex-wrap items-center gap-2 pr-8">
-            <DialogTitle className="text-base font-semibold tracking-tight">
-              Custom Challenge Generator
+            <DialogTitle className="text-base font-semibold tracking-tight text-balance">
+              Custom Challenge Library
             </DialogTitle>
             <Badge
               variant={isQuotaFull ? "warning" : "secondary"}
@@ -187,74 +77,29 @@ export function CustomChallengeModal({
             >
               {total}/{quotaLimit} Used
             </Badge>
-            {quotaSyncBadge ? (
-              <Badge
-                variant={quotaSyncBadge.variant}
-                data-testid="quota-sync-status-badge"
-              >
-                {quotaSyncBadge.label}
-              </Badge>
-            ) : null}
           </div>
-          <DialogDescription className="text-xs text-muted-foreground">
-            Generate custom code review scenarios powered by your connected AI
-            provider (BYOK) and persisted to your private library.
+          <DialogDescription className="text-xs text-pretty text-muted-foreground">
+            Manage your private AI-generated challenges. Create new challenges
+            in Agent Coach.
           </DialogDescription>
         </DialogHeader>
 
-        <Tabs
-          value={activeTab}
-          onValueChange={(val) => {
-            if (isGenerating) return
-            setTabOverride(val as CustomChallengeTab)
-            setLifecycle({ status: "idle" })
-            resetQuotaSyncState?.()
-          }}
-          className="w-full"
-        >
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger
-              value="generate"
-              disabled={isGenerating}
-              data-testid="tab-generate-trigger"
-              className="text-xs"
-            >
-              Create Challenge
-            </TabsTrigger>
-            <TabsTrigger
-              value="manage"
-              disabled={isGenerating}
-              data-testid="tab-manage-trigger"
-              className="text-xs text-nowrap tabular-nums"
-            >
-              Manage Library ({total}/{quotaLimit})
-            </TabsTrigger>
-          </TabsList>
+        <CustomChallengesList
+          challenges={customChallenges}
+          isLoading={isLoading}
+          onDelete={deleteCustomChallenge}
+          onToggleShare={toggleChallengeShare}
+          onCloseModal={handleClose}
+        />
 
-          <TabsContent value="generate" className="mt-4">
-            <GeneratorForm
-              key={storePrefill ? `prefill-${prefillNonce}` : "default"}
-              initialValues={storePrefill ?? undefined}
-              isQuotaFull={isQuotaFull}
-              isGenerating={isGenerating}
-              errorMessage={errorMessage}
-              onSubmit={handleGenerate}
-              onSwitchToManage={() => setTabOverride("manage")}
-              onCloseModal={handleClose}
-            />
-          </TabsContent>
-
-          <TabsContent value="manage" className="mt-4">
-            <CustomChallengesList
-              challenges={customChallenges}
-              isLoading={isLoading}
-              onDelete={deleteCustomChallenge}
-              onToggleShare={toggleChallengeShare}
-              onSwitchToGenerate={() => setTabOverride("generate")}
-              onCloseModal={handleClose}
-            />
-          </TabsContent>
-        </Tabs>
+        <DialogFooter>
+          <Button asChild size="sm" data-testid="modal-open-coach-create-btn">
+            <Link href={COACH_CREATE_CHALLENGE_HREF} onClick={handleClose}>
+              <Sparkles data-icon="inline-start" aria-hidden="true" />
+              <span>Create in Agent Coach</span>
+            </Link>
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   )
