@@ -2,8 +2,23 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { ArrowUp, RotateCcw, Settings, Square } from "lucide-react"
-import { Badge } from "@/components/ui/badge"
+import {
+  ArrowUpIcon,
+  PlusIcon,
+  RotateCcwIcon,
+  SettingsIcon,
+  SparklesIcon,
+  SquareIcon,
+} from "lucide-react"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import {
   InputGroup,
   InputGroupAddon,
@@ -21,6 +36,7 @@ export interface CoachPromptInputProps {
   placeholder?: string
   hasMessages?: boolean
   onReset?: () => void
+  onOpenGenerator?: () => void
 }
 
 export function CoachPromptInput({
@@ -33,25 +49,33 @@ export function CoachPromptInput({
   placeholder = "Ask Agent Coach anything about your reviews…",
   hasMessages = false,
   onReset,
+  onOpenGenerator,
 }: CoachPromptInputProps) {
+  const formRef = React.useRef<HTMLFormElement>(null)
+  const canSend = !isStreaming && value.trim().length > 0
+
   const handleFormSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (isStreaming || value.trim().length === 0) return
+    if (!canSend) return
     onSubmit()
   }
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault()
-      if (!isStreaming && value.trim().length > 0) {
-        onSubmit()
+      if (canSend) {
+        formRef.current?.requestSubmit()
       }
     }
   }
 
   return (
-    <form onSubmit={handleFormSubmit} data-testid="coach-prompt-input">
-      <InputGroup className="rounded-2xl bg-card shadow-xs">
+    <form
+      ref={formRef}
+      onSubmit={handleFormSubmit}
+      data-testid="coach-prompt-input"
+    >
+      <InputGroup className="bg-card">
         <InputGroupTextarea
           value={value}
           onChange={(event) => onChange(event.target.value)}
@@ -61,72 +85,103 @@ export function CoachPromptInput({
           disabled={isStreaming}
           rows={1}
           data-testid="coach-composer-input"
-          className="max-h-40 min-h-11 px-4 pt-3 pb-1 text-sm"
+          className="max-h-40 min-h-11 p-3 text-sm"
         />
 
-        <InputGroupAddon
-          align="block-end"
-          className="justify-between gap-2 px-3 pt-1 pb-2.5"
-        >
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            {connectionSummary ? (
-              <Badge
-                variant="success"
-                size="sm"
-                data-testid="coach-connected-badge"
-                className="max-w-full truncate font-mono"
-              >
-                Connected: {connectionSummary}
-              </Badge>
-            ) : null}
-            <Link
-              href="/settings"
-              className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
-            >
-              <Settings aria-hidden="true" className="size-3.5" />
-              <span>Settings</span>
-            </Link>
-            {hasMessages && onReset ? (
+        <InputGroupAddon align="block-end">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
               <InputGroupButton
                 type="button"
-                variant="ghost"
-                size="xs"
-                onClick={onReset}
-                data-testid="coach-reset-button"
-              >
-                <RotateCcw aria-hidden="true" />
-                <span>Reset</span>
-              </InputGroupButton>
-            ) : null}
-          </div>
-
-          <div className="flex shrink-0 items-center gap-1.5">
-            {isStreaming ? (
-              <InputGroupButton
-                type="button"
+                size="icon-sm"
                 variant="outline"
-                size="icon-sm"
-                onClick={onStop}
-                aria-label="Stop generating"
-                data-testid="coach-stop-button"
-                className="rounded-xl"
+                className="rounded-full"
+                aria-label="Coach actions"
+                data-testid="coach-actions-menu-trigger"
               >
-                <Square aria-hidden="true" className="size-3.5 fill-current" />
+                <PlusIcon aria-hidden="true" />
               </InputGroupButton>
-            ) : (
-              <InputGroupButton
-                type="submit"
-                variant="default"
-                size="icon-sm"
-                disabled={value.trim().length === 0}
-                aria-label="Send message"
-                data-testid="coach-send-button"
-                className="rounded-xl"
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-52">
+              <DropdownMenuGroup>
+                <DropdownMenuLabel>Coach Actions</DropdownMenuLabel>
+                {onOpenGenerator ? (
+                  <DropdownMenuItem
+                    onClick={onOpenGenerator}
+                    data-testid="coach-menu-generate-challenge"
+                  >
+                    <SparklesIcon aria-hidden="true" />
+                    <span>Generate Custom Challenge</span>
+                  </DropdownMenuItem>
+                ) : null}
+                {hasMessages && onReset ? (
+                  <DropdownMenuItem
+                    onClick={onReset}
+                    data-testid="coach-reset-button"
+                  >
+                    <RotateCcwIcon aria-hidden="true" />
+                    <span>Reset Conversation</span>
+                  </DropdownMenuItem>
+                ) : null}
+              </DropdownMenuGroup>
+              <DropdownMenuSeparator />
+              <DropdownMenuGroup>
+                <DropdownMenuItem asChild>
+                  <Link href="/settings">
+                    <SettingsIcon aria-hidden="true" />
+                    <span>AI Provider Settings</span>
+                  </Link>
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {connectionSummary ? (
+            <InputGroupButton
+              asChild
+              size="sm"
+              variant="outline"
+              className="ml-auto max-w-[14rem] truncate font-mono text-xs"
+              data-testid="coach-connected-badge"
+            >
+              <Link
+                href="/settings"
+                aria-label={`Connected model: ${connectionSummary}`}
               >
-                <ArrowUp aria-hidden="true" className="size-4" />
-              </InputGroupButton>
-            )}
-          </div>
+                <span className="truncate">{connectionSummary}</span>
+              </Link>
+            </InputGroupButton>
+          ) : null}
+
+          {isStreaming ? (
+            <InputGroupButton
+              type="button"
+              size="icon-sm"
+              variant="outline"
+              onClick={onStop}
+              aria-label="Stop generating"
+              data-testid="coach-stop-button"
+              className={
+                connectionSummary ? "rounded-full" : "ml-auto rounded-full"
+              }
+            >
+              <SquareIcon aria-hidden="true" className="size-3 fill-current" />
+            </InputGroupButton>
+          ) : (
+            <InputGroupButton
+              type="submit"
+              size="icon-sm"
+              variant="default"
+              disabled={!canSend}
+              aria-label="Send message"
+              data-testid="coach-send-button"
+              className={
+                connectionSummary ? "rounded-full" : "ml-auto rounded-full"
+              }
+            >
+              <ArrowUpIcon aria-hidden="true" />
+            </InputGroupButton>
+          )}
         </InputGroupAddon>
       </InputGroup>
     </form>

@@ -162,7 +162,7 @@ describe("Agent Coach UI components", () => {
     )
 
     expect(screen.getByTestId("coach-connected-badge")).toHaveTextContent(
-      "Connected: Anthropic (claude-sonnet-5-5)"
+      "Anthropic (claude-sonnet-5-5)"
     )
 
     const chip = screen.getByTestId("coach-quick-prompt-blind-spots")

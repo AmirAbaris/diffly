@@ -128,11 +128,13 @@ function WorkspaceConnectedColumn({
   draft,
   onDraftChange,
   onSubmit,
+  onOpenGenerator,
 }: {
   chat: UseCoachChatResult
   draft: string
   onDraftChange: (value: string) => void
   onSubmit: () => void
+  onOpenGenerator: () => void
 }) {
   const { state, messages, connectionSummary, sendPrompt, stop } = chat
   const isStreaming = state.kind === "streaming"
@@ -196,6 +198,7 @@ function WorkspaceConnectedColumn({
             connectionSummary={connectionSummary}
             hasMessages={messages.length > 0}
             onReset={chat.resetConversation}
+            onOpenGenerator={onOpenGenerator}
           />
         </div>
       </div>
@@ -303,6 +306,7 @@ export function CoachWorkspace() {
             draft={draft}
             onDraftChange={setDraft}
             onSubmit={handleSubmit}
+            onOpenGenerator={handleToggleGenerator}
           />
         )}
       </div>
