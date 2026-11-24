@@ -27,7 +27,7 @@ export interface CoachContextRailProps {
   isLoading: boolean
   disabled?: boolean
   onSelectPrompt: (prompt: string) => void
-  onToggleGenerator?: () => void
+  onCreateChallenge?: () => void
 }
 
 function WeakSliceCard({
@@ -123,9 +123,11 @@ function RailSkeleton() {
 }
 
 function CustomChallengesSection({
-  onToggleGenerator,
+  disabled,
+  onCreateChallenge,
 }: {
-  onToggleGenerator: () => void
+  disabled: boolean
+  onCreateChallenge: () => void
 }) {
   const { customChallenges, total, quotaLimit, deleteCustomChallenge } =
     useCustomChallenges()
@@ -167,7 +169,8 @@ function CustomChallengesSection({
         type="button"
         variant="outline"
         size="sm"
-        onClick={onToggleGenerator}
+        disabled={disabled}
+        onClick={onCreateChallenge}
         data-testid="coach-rail-new-challenge-button"
         className="w-full justify-start text-xs"
       >
@@ -215,7 +218,7 @@ export function CoachContextRail({
   isLoading,
   disabled = false,
   onSelectPrompt,
-  onToggleGenerator,
+  onCreateChallenge,
 }: CoachContextRailProps) {
   return (
     <aside
@@ -313,8 +316,11 @@ export function CoachContextRail({
         </div>
       )}
 
-      {onToggleGenerator ? (
-        <CustomChallengesSection onToggleGenerator={onToggleGenerator} />
+      {onCreateChallenge ? (
+        <CustomChallengesSection
+          disabled={disabled}
+          onCreateChallenge={onCreateChallenge}
+        />
       ) : null}
     </aside>
   )

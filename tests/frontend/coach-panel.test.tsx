@@ -5,7 +5,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { CoachPanel } from "@/components/coach/coach-panel"
 import { CoachWorkspace } from "@/components/coach/coach-workspace"
 import { PatternsCoachDrawer } from "@/components/coach/patterns-coach-drawer"
-import { PATTERNS_QUICK_PROMPTS } from "@/components/coach/use-coach-chat"
+import {
+  CREATE_CHALLENGE_PROMPT,
+  PATTERNS_QUICK_PROMPTS,
+} from "@/components/coach/use-coach-chat"
 import { ComparisonView } from "@/components/review/comparison-view"
 import type { CoachPatternsSnapshot, CoachUIMessage } from "@/lib/ai/coach"
 import type { ChallengeSummary } from "@/types/challenge"
@@ -19,6 +22,7 @@ import {
 const mockPush = vi.fn()
 const mockReplace = vi.fn()
 const mockSendMessage = vi.fn()
+const mockAddToolOutput = vi.fn()
 const mockStop = vi.fn()
 const mockSetMessages = vi.fn()
 const mockClearError = vi.fn()
@@ -50,6 +54,7 @@ vi.mock("@ai-sdk/react", () => ({
     status: mockChatState.status,
     error: mockChatState.error,
     sendMessage: mockSendMessage,
+    addToolOutput: mockAddToolOutput,
     stop: mockStop,
     setMessages: mockSetMessages,
     clearError: mockClearError,
@@ -168,10 +173,9 @@ describe("Agent Coach UI components", () => {
     const chip = screen.getByTestId("coach-quick-prompt-blind-spots")
     await user.click(chip)
 
-    expect(mockSendMessage).toHaveBeenCalledWith(
-      { text: PATTERNS_QUICK_PROMPTS[0].prompt },
-      { body: { mode: "patterns", sliceLimit: 5, missedLimit: 10 } }
-    )
+    expect(mockSendMessage).toHaveBeenCalledWith({
+      text: PATTERNS_QUICK_PROMPTS[0].prompt,
+    })
   })
 
   it("renders reasoning block, text prose, and suggest_targeted_drill handoff in CoachWorkspace", async () => {
@@ -233,10 +237,9 @@ describe("Agent Coach UI components", () => {
 
     render(<CoachWorkspace />)
 
-    expect(mockSendMessage).toHaveBeenCalledWith(
-      { text: "Analyze my blind spots" },
-      { body: { mode: "patterns", sliceLimit: 5, missedLimit: 10 } }
-    )
+    expect(mockSendMessage).toHaveBeenCalledWith({
+      text: "Analyze my blind spots",
+    })
     expect(replaceStateSpy).toHaveBeenCalledWith(
       window.history.state,
       "",
@@ -302,12 +305,8 @@ describe("Agent Coach UI components", () => {
     ).toBeInTheDocument()
   })
 
-  it("opens inline challenge generator from top bar and deletes custom challenges in context rail", async () => {
+  it("routes top bar, sidebar rail, and composer menu triggers to in-chat challenge creation and deletes custom challenges", async () => {
     const user = userEvent.setup()
-    mockGenerateCustomChallenge.mockResolvedValue({
-      slug: "go-mutex-deadlock-drill",
-      title: "Go Mutex Deadlock in Cache",
-    })
     mockDeleteCustomChallenge.mockResolvedValue({ deleted: true })
 
     render(<CoachWorkspace />)
@@ -315,31 +314,18 @@ describe("Agent Coach UI components", () => {
     expect(screen.getByTestId("coach-rail-quota-badge")).toHaveTextContent(
       "2/5"
     )
-    expect(
-      screen.queryByTestId("coach-inline-generator")
-    ).not.toBeInTheDocument()
 
     await user.click(screen.getByTestId("coach-top-generate-button"))
-    expect(screen.getByTestId("coach-inline-generator")).toBeInTheDocument()
-
-    await user.type(
-      screen.getByTestId("coach-inline-topic-input"),
-      "Go mutex deadlock in cache"
-    )
-    await user.click(screen.getByTestId("coach-inline-submit-button"))
-
-    expect(mockGenerateCustomChallenge).toHaveBeenCalledWith({
-      topic: "Go mutex deadlock in cache",
-      language: "python",
-      difficulty: "Medium",
+    expect(mockSendMessage).toHaveBeenCalledWith({
+      text: CREATE_CHALLENGE_PROMPT,
     })
 
-    const createdLink = await screen.findByTestId("coach-inline-open-challenge")
-    expect(createdLink).toHaveTextContent("Start Review in Arena")
-    expect(createdLink).toHaveAttribute(
-      "href",
-      "/challenges/go-mutex-deadlock-drill"
-    )
+    await user.click(screen.getByTestId("coach-rail-new-challenge-button"))
+    expect(mockSendMessage).toHaveBeenCalledTimes(2)
+
+    await user.click(screen.getByTestId("coach-actions-menu-trigger"))
+    await user.click(screen.getByTestId("coach-menu-generate-challenge"))
+    expect(mockSendMessage).toHaveBeenCalledTimes(3)
 
     await user.click(screen.getByTestId("coach-rail-delete-custom-jwt-bypass"))
     expect(mockDeleteCustomChallenge).toHaveBeenCalledWith("custom-jwt-bypass")
