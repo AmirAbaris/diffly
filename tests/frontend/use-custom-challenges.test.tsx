@@ -213,4 +213,51 @@ describe("useCustomChallenges timeout and quota-sync behavior", () => {
     expect(mockGlobalMutate).toHaveBeenCalledWith(AI_CONNECTION_SWR_KEY)
     postSpy.mockRestore()
   })
+
+  it("revalidates coach patterns and user stats caches immediately when deleting a custom challenge", async () => {
+    const deleteSpy = vi.spyOn(apiClient, "delete").mockResolvedValueOnce({
+      data: {
+        detail: "Custom challenge deleted successfully",
+        id: 12,
+        slug: "custom-race-bug",
+      },
+    })
+
+    const { result } = renderHook(() => useCustomChallenges())
+
+    await act(async () => {
+      await result.current.deleteCustomChallenge("custom-race-bug")
+    })
+
+    expect(deleteSpy).toHaveBeenCalledWith(
+      "/api/challenges/custom/custom-race-bug"
+    )
+    expect(mockMutate).toHaveBeenCalledTimes(1)
+
+    const predicates = mockGlobalMutate.mock.calls
+      .map((call) => call[0])
+      .filter(
+        (arg): arg is (key: unknown) => boolean => typeof arg === "function"
+      )
+
+    expect(
+      predicates.some((pred) =>
+        pred("/api/user/coach-patterns?slice_limit=5&missed_limit=6")
+      )
+    ).toBe(true)
+    expect(predicates.some((pred) => pred("/api/user/coach-patterns"))).toBe(
+      true
+    )
+    expect(predicates.some((pred) => pred("/api/challenges"))).toBe(true)
+    expect(predicates.some((pred) => pred("/api/user/progress?tz=UTC"))).toBe(
+      true
+    )
+    expect(
+      predicates.some((pred) => pred("/api/user/analytics?tz=UTC&days=90"))
+    ).toBe(true)
+    expect(
+      predicates.some((pred) => pred("/api/challenges/next?exclude=1"))
+    ).toBe(true)
+    deleteSpy.mockRestore()
+  })
 })

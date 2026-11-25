@@ -45,6 +45,23 @@ function isChallengeDetailKey(key: unknown, slug: string): boolean {
   )
 }
 
+function isCoachPatternsKey(key: unknown): boolean {
+  return (
+    typeof key === "string" &&
+    (key === "/api/user/coach-patterns" ||
+      key.startsWith("/api/user/coach-patterns?"))
+  )
+}
+
+function isUserStatsKey(key: unknown): boolean {
+  return (
+    typeof key === "string" &&
+    (key.startsWith("/api/user/progress") ||
+      key.startsWith("/api/user/analytics") ||
+      key.startsWith("/api/challenges/next"))
+  )
+}
+
 export function useCustomChallenges(options?: { enabled?: boolean }) {
   const enabled = options?.enabled ?? true
   const { mutate: cacheMutate } = useSWRConfig()
@@ -79,8 +96,12 @@ export function useCustomChallenges(options?: { enabled?: boolean }) {
       const response = await apiClient.delete(
         `/api/challenges/custom/${identifier}`
       )
-      await revalidateCustomLibrary()
+      await Promise.all([
+        revalidateCustomLibrary(),
+        cacheMutate(isCoachPatternsKey),
+      ])
       void cacheMutate(isCatalogChallengesKey)
+      void cacheMutate(isUserStatsKey)
       return response.data
     },
     [revalidateCustomLibrary, cacheMutate]
