@@ -10,15 +10,19 @@ import { NextRequest, NextResponse } from "next/server"
 
 import {
   buildCoachSystemPrompt,
+  COACH_CONFIGURE_CHALLENGE_TOOL_NAME,
   COACH_MAX_STEPS,
   COACH_STREAM_TIMEOUT_MS,
+  COACH_SUGGEST_DRILL_TOOL_NAME,
   type CoachPatternsSnapshot,
   type CoachPromptInput,
+  CoachToolError,
   createCoachTools,
   parseCoachErrorMessage,
   parseCoachPatternsSnapshot,
   parseCoachRequest,
   type PatternsCoachRequest,
+  type SubmissionDebriefFetcher,
 } from "@/lib/ai/coach"
 import { BYOK_COOKIE_NAME, unsealAICredential } from "@/lib/ai/cookie"
 import {
@@ -109,6 +113,70 @@ async function fetchPatterns(
   return { patterns: snapshot.value, headers: res.headers }
 }
 
+function isAbortOrTimeoutError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false
+  const { name } = error as { name?: unknown }
+  return name === "AbortError" || name === "TimeoutError"
+}
+
+function createSubmissionDebriefFetcher(
+  request: NextRequest,
+  signal: AbortSignal
+): SubmissionDebriefFetcher {
+  return async (challengeSlug, options) => {
+    const origin = resolveInternalBackendOrigin(request)
+    if (!origin) {
+      throw new CoachToolError("Backend service origin could not be resolved.")
+    }
+
+    const fetchSignal =
+      options?.abortSignal && options.abortSignal !== signal
+        ? typeof AbortSignal.any === "function"
+          ? AbortSignal.any([signal, options.abortSignal])
+          : options.abortSignal
+        : signal
+
+    const url = `${origin}/api/user/coach-submissions/${encodeURIComponent(challengeSlug)}`
+    let res: Response
+    try {
+      res = await fetch(url, {
+        method: "GET",
+        headers: buildBackendHeaders(request),
+        cache: "no-store",
+        redirect: "error",
+        signal: fetchSignal,
+      })
+    } catch (error) {
+      if (fetchSignal.aborted || isAbortOrTimeoutError(error)) {
+        throw error
+      }
+      throw new CoachToolError("Failed to load submission debrief.")
+    }
+
+    if (res.status === 404) {
+      throw new CoachToolError("No prior submission found for this challenge.")
+    }
+
+    let data: unknown = null
+    try {
+      data = await res.json()
+    } catch (error) {
+      if (fetchSignal.aborted || isAbortOrTimeoutError(error)) {
+        throw error
+      }
+      data = null
+    }
+
+    if (!res.ok) {
+      throw new CoachToolError(
+        parseCoachErrorMessage(data, "Failed to load submission debrief.")
+      )
+    }
+
+    return data
+  }
+}
+
 export async function POST(request: NextRequest): Promise<Response> {
   if (isCrossSiteRequest(request)) {
     return noStoreJson({ error: "Cross-site requests are not allowed." }, 403)
@@ -168,7 +236,15 @@ export async function POST(request: NextRequest): Promise<Response> {
   }
 
   try {
-    const tools = createCoachTools()
+    const tools =
+      parsed.value.mode === "patterns"
+        ? createCoachTools({
+            fetchSubmissionDebrief: createSubmissionDebriefFetcher(
+              request,
+              abortSignal
+            ),
+          })
+        : createCoachTools()
     const modelMessages = await convertToModelMessages(parsed.value.messages, {
       tools,
     })
@@ -177,6 +253,14 @@ export async function POST(request: NextRequest): Promise<Response> {
       instructions: buildCoachSystemPrompt(promptInput),
       messages: modelMessages,
       tools,
+      ...(parsed.value.mode === "debrief"
+        ? {
+            activeTools: [
+              COACH_SUGGEST_DRILL_TOOL_NAME,
+              COACH_CONFIGURE_CHALLENGE_TOOL_NAME,
+            ],
+          }
+        : {}),
       stopWhen: stepCountIs(COACH_MAX_STEPS),
       maxRetries: 0,
       abortSignal,
@@ -187,7 +271,10 @@ export async function POST(request: NextRequest): Promise<Response> {
       stream: result.stream,
       tools,
       sendReasoning: true,
-      onError: (error) => mapError(error).message,
+      onError: (error) =>
+        error instanceof CoachToolError
+          ? error.message
+          : mapError(error).message,
     })
     const response = createUIMessageStreamResponse({
       stream: uiStream,
