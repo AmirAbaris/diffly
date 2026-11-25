@@ -24,6 +24,7 @@ import {
   type PatternsCoachRequest,
   type SubmissionDebriefFetcher,
 } from "@/lib/ai/coach"
+import { sliceCoachMessageWindow } from "@/lib/ai/coach-window"
 import { BYOK_COOKIE_NAME, unsealAICredential } from "@/lib/ai/cookie"
 import {
   isCrossSiteRequest,
@@ -32,10 +33,17 @@ import {
 } from "@/lib/ai/http"
 import { createBYOKModel, mapProviderError } from "@/lib/ai/provider"
 import {
-  buildAllowlistedBackendCookieHeader,
   propagateBackendSetCookies,
   resolveInternalBackendOrigin,
 } from "@/lib/server/backend-client"
+import {
+  buildCoachBackendHeaders,
+  COACH_PERSISTENCE_HEADER,
+  COACH_THREAD_ID_HEADER,
+  ensureCoachThread,
+  persistCoachTurn,
+} from "@/lib/server/coach-threads"
+import type { CoachPersistenceDegradationReason } from "@/types/coach-thread"
 
 export const maxDuration = 60
 
@@ -46,20 +54,16 @@ const MISSING_KEY_MESSAGE =
 function jsonError(
   msg: string,
   status: number,
-  upstream?: Headers
+  upstream?: Headers | readonly Headers[]
 ): NextResponse {
   const res = noStoreJson({ error: msg }, status)
-  if (upstream) propagateBackendSetCookies(upstream, res)
+  if (upstream) {
+    const list = Array.isArray(upstream) ? upstream : [upstream]
+    for (const headers of list) {
+      propagateBackendSetCookies(headers, res)
+    }
+  }
   return res
-}
-
-function buildBackendHeaders(request: NextRequest): Record<string, string> {
-  const headers: Record<string, string> = {}
-  const cookie = buildAllowlistedBackendCookieHeader(request.cookies.getAll())
-  if (cookie) headers.cookie = cookie
-  const auth = request.headers.get("authorization")
-  if (auth && !/[\r\n\0]/.test(auth)) headers.authorization = auth
-  return headers
 }
 
 async function fetchPatterns(
@@ -79,7 +83,7 @@ async function fetchPatterns(
     const url = `${origin}/api/user/coach-patterns?slice_limit=${req.sliceLimit}&missed_limit=${req.missedLimit}`
     res = await fetch(url, {
       method: "GET",
-      headers: buildBackendHeaders(request),
+      headers: buildCoachBackendHeaders(request),
       cache: "no-store",
       redirect: "error",
       signal: abortSignal,
@@ -141,7 +145,7 @@ function createSubmissionDebriefFetcher(
     try {
       res = await fetch(url, {
         method: "GET",
-        headers: buildBackendHeaders(request),
+        headers: buildCoachBackendHeaders(request),
         cache: "no-store",
         redirect: "error",
         signal: fetchSignal,
@@ -220,7 +224,10 @@ export async function POST(request: NextRequest): Promise<Response> {
     })
 
   let promptInput: CoachPromptInput
-  let upstreamHeaders: Headers | undefined
+  const upstreamHeaders: Headers[] = []
+  let activeThreadId: string | undefined
+  let degradationReason: CoachPersistenceDegradationReason | undefined
+
   if (parsed.value.mode === "patterns") {
     const fetched = await fetchPatterns(
       request,
@@ -229,8 +236,20 @@ export async function POST(request: NextRequest): Promise<Response> {
       mapError
     )
     if (fetched instanceof Response) return fetched
-    upstreamHeaders = fetched.headers
+    upstreamHeaders.push(fetched.headers)
     promptInput = { mode: "patterns", patterns: fetched.patterns }
+
+    if (parsed.value.threadId) {
+      activeThreadId = parsed.value.threadId
+    } else {
+      const ensured = await ensureCoachThread({ request, abortSignal })
+      if (ensured.headers) upstreamHeaders.push(ensured.headers)
+      if (ensured.status === "created") {
+        activeThreadId = ensured.threadId
+      } else {
+        degradationReason = ensured.reason
+      }
+    }
   } else {
     promptInput = { mode: "debrief", context: parsed.value.context }
   }
@@ -245,7 +264,8 @@ export async function POST(request: NextRequest): Promise<Response> {
             ),
           })
         : createCoachTools()
-    const modelMessages = await convertToModelMessages(parsed.value.messages, {
+    const windowedMessages = sliceCoachMessageWindow(parsed.value.messages)
+    const modelMessages = await convertToModelMessages(windowedMessages, {
       tools,
     })
     const result = streamText({
@@ -275,12 +295,38 @@ export async function POST(request: NextRequest): Promise<Response> {
         error instanceof CoachToolError
           ? error.message
           : mapError(error).message,
+      ...(activeThreadId
+        ? {
+            originalMessages: parsed.value.messages,
+            generateMessageId: () => crypto.randomUUID(),
+            onEnd: async (event) => {
+              await persistCoachTurn({
+                request,
+                threadId: activeThreadId,
+                originalMessages: parsed.value.messages,
+                event,
+              })
+            },
+          }
+        : {}),
     })
+    const responseHeaders: Record<string, string> = {
+      "Cache-Control": "no-store",
+      Vary: "Cookie",
+    }
+    if (activeThreadId) {
+      responseHeaders[COACH_THREAD_ID_HEADER] = activeThreadId
+    }
+    if (degradationReason) {
+      responseHeaders[COACH_PERSISTENCE_HEADER] = degradationReason
+    }
     const response = createUIMessageStreamResponse({
       stream: uiStream,
-      headers: { "Cache-Control": "no-store", Vary: "Cookie" },
+      headers: responseHeaders,
     })
-    if (upstreamHeaders) propagateBackendSetCookies(upstreamHeaders, response)
+    for (const headers of upstreamHeaders) {
+      propagateBackendSetCookies(headers, response)
+    }
     return response
   } catch (error) {
     const mapped = mapError(error)
