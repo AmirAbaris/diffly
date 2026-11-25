@@ -3,6 +3,7 @@
 import * as React from "react"
 import { AlertCircle, Brain, Check, Copy } from "lucide-react"
 import { CoachChallengeConfigCard } from "@/components/coach/coach-challenge-config-card"
+import { CoachDebriefTrace } from "@/components/coach/coach-debrief-trace"
 import { CoachDrillCard } from "@/components/coach/coach-drill-card"
 import type { CoachChallengeToolController } from "@/components/coach/use-coach-challenge-tool"
 import { MarkdownPreview } from "@/components/review/markdown-preview"
@@ -190,6 +191,10 @@ function AssistantMessageParts({
               </Trace>
             )
           }
+        }
+
+        if (part.type === "tool-get_submission_debrief") {
+          return <CoachDebriefTrace key={part.toolCallId} part={part} />
         }
 
         return null

@@ -75,7 +75,7 @@ function MissedReviewRow({
   disabled: boolean
   onSelectPrompt: (prompt: string) => void
 }) {
-  const prompt = `Break down my missed review on "${item.title}" (${item.category}, ${item.language}, score ${item.score}%, ${item.missed_line_count} missed lines, ${item.false_positive_count} false positives) and tell me what to look for next time.`
+  const prompt = `Break down my missed review on "${item.title}" (slug: ${item.challenge_slug}, ${item.category}, ${item.language}, score ${item.score}%, ${item.missed_line_count} missed lines, ${item.false_positive_count} false positives) and tell me what to look for next time.`
 
   return (
     <button

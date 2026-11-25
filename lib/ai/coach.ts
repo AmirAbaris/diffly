@@ -12,6 +12,12 @@ import type {
   CoachPatternsSnapshot,
   DebriefContext,
 } from "@/lib/ai/coach-prompts"
+import {
+  COACH_GET_SUBMISSION_DEBRIEF_TOOL_NAME,
+  CoachToolError,
+  createSubmissionDebriefTool,
+  type SubmissionDebriefFetcher,
+} from "@/lib/ai/coach-submission-debrief"
 import { hasControlChars } from "@/lib/ai/url-validation"
 import {
   CHALLENGE_DIFFICULTIES,
@@ -23,6 +29,7 @@ import {
 export * from "@/lib/ai/coach-challenge-config"
 export { parseCoachErrorMessage } from "@/lib/ai/coach-errors"
 export * from "@/lib/ai/coach-prompts"
+export * from "@/lib/ai/coach-submission-debrief"
 
 export type CoachMode = "patterns" | "debrief"
 export const COACH_MAX_STEPS = 3
@@ -31,6 +38,7 @@ export const COACH_SUGGEST_DRILL_TOOL_NAME = "suggest_targeted_drill" as const
 export const COACH_TOOL_NAMES = [
   COACH_SUGGEST_DRILL_TOOL_NAME,
   COACH_CONFIGURE_CHALLENGE_TOOL_NAME,
+  COACH_GET_SUBMISSION_DEBRIEF_TOOL_NAME,
 ] as const
 
 const LANGUAGES = CHALLENGE_LANGUAGES.map((l) => l.value) as [
@@ -70,7 +78,11 @@ export interface TargetedDrillSuggestion {
   rationale?: string
 }
 
-export function createCoachTools() {
+export interface CreateCoachToolsOptions {
+  fetchSubmissionDebrief?: SubmissionDebriefFetcher
+}
+
+export function createCoachTools(options?: CreateCoachToolsOptions) {
   return {
     [COACH_SUGGEST_DRILL_TOOL_NAME]: tool({
       description:
@@ -83,7 +95,7 @@ export function createCoachTools() {
       }),
       execute: async (input): Promise<TargetedDrillSuggestion> => {
         const clamped = clampTargetedDrillSuggestion(input)
-        if (!clamped.ok) throw new Error(clamped.message)
+        if (!clamped.ok) throw new CoachToolError(clamped.message)
         return clamped.value
       },
     }),
@@ -93,6 +105,9 @@ export function createCoachTools() {
       inputSchema: ConfigureChallengeInputSchema,
       outputSchema: ConfigureChallengeOutputSchema,
     }),
+    [COACH_GET_SUBMISSION_DEBRIEF_TOOL_NAME]: createSubmissionDebriefTool(
+      options?.fetchSubmissionDebrief
+    ),
   }
 }
 

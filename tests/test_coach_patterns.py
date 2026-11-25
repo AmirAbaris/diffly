@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi.testclient import TestClient
+from sqlalchemy import text
 from sqlmodel import Session
 
 from backend.core.config import settings
@@ -14,15 +15,22 @@ from backend.models.challenge import (
     Category,
     Challenge,
     Difficulty,
+    FlaggedLineRef,
     Language,
 )
 from backend.models.submission import Submission
 from backend.models.user import User
 from backend.services.analytics_service import compute_submission_precision_recall
 from backend.services.coach_service import (
+    DebriefIssueItem,
     FailureMode,
+    _clip_debrief_issues,
+    _normalize_submission_issue,
     aggregate_coach_patterns,
+    build_submission_debrief,
+    get_actor_submission_debrief,
 )
+from backend.services.ownership import Actor
 
 
 def _make_challenge(
@@ -38,7 +46,26 @@ def _make_challenge(
     session_id: str | None = None,
     share_token: str | None = None,
     challenge_id: int | None = None,
+    code_snippet: str = "secret_code_snippet = 'never-leak'\n",
+    files: list[dict[str, Any]] | None = None,
+    expected_issues: list[dict[str, Any]] | None = None,
+    canonical_review: str = "Canonical secret review",
+    recommended_fix_diff: str = "- secret\n+ fixed_secret",
 ) -> Challenge:
+    issues_payload = (
+        expected_issues
+        if expected_issues is not None
+        else [
+            {
+                "id": "issue-1",
+                "title": "Secret expected issue",
+                "severity": "high",
+                "lines": [1],
+                "keywords": ["secret"],
+                "explanation": "Never leak expected_issues",
+            }
+        ]
+    )
     ch = Challenge(
         slug=slug,
         title=title or f"Title {slug}",
@@ -46,21 +73,11 @@ def _make_challenge(
         category=category,
         language=language,
         description=f"Description for {slug}",
-        code_snippet="secret_code_snippet = 'never-leak'\n",
-        expected_issues=json.dumps(
-            [
-                {
-                    "id": "issue-1",
-                    "title": "Secret expected issue",
-                    "severity": "high",
-                    "lines": [1],
-                    "keywords": ["secret"],
-                    "explanation": "Never leak expected_issues",
-                }
-            ]
-        ),
-        canonical_review="Canonical secret review",
-        recommended_fix_diff="- secret\n+ fixed_secret",
+        code_snippet=code_snippet,
+        files=json.dumps(files or []),
+        expected_issues=json.dumps(issues_payload),
+        canonical_review=canonical_review,
+        recommended_fix_diff=recommended_fix_diff,
         is_public=is_public,
         user_id=user_id,
         session_id=session_id,
@@ -86,6 +103,7 @@ def _make_submission(
     concept_score: float = 0.0,
     flagged_lines: list[Any] | None = None,
     false_positive_lines: list[Any] | None = None,
+    findings: list[dict[str, Any]] | None = None,
     detected_issues: list[Any] | None = None,
     missed_issues: list[Any] | None = None,
     comments: str = "Review comment secret",
@@ -98,6 +116,7 @@ def _make_submission(
         session_id=session_id,
         flagged_lines=flagged_lines if flagged_lines is not None else [1],
         false_positive_lines=false_positive_lines or [],
+        findings=findings or [],
         detected_issues=detected_issues or [],
         missed_issues=missed_issues or [],
         comments=comments,
@@ -901,3 +920,810 @@ def test_failing_score_with_high_submetrics_and_malformed_expected_lines():
     )
     res_malformed = aggregate_coach_patterns([(malformed_sub, ch)])
     assert res_malformed.recent_missed[0].missed_line_count == 1
+
+
+def test_submission_debrief_slug_validation_and_findings_synthesis_guard(
+    session: Session,
+):
+    """Blank/control slugs return None; empty findings add no placeholders."""
+    ch = _make_challenge(
+        session,
+        slug="debrief-unit-ch",
+        is_public=True,
+        code_snippet="x = eval(raw)\n",
+        expected_issues=[
+            {
+                "id": "i1",
+                "title": "Unsafe eval",
+                "severity": "critical",
+                "lines": [1],
+                "keywords": ["eval", "code-execution"],
+                "explanation": "eval executes arbitrary code",
+            }
+        ],
+    )
+    _make_submission(
+        session,
+        challenge_id=ch.id,
+        user_id=101,
+        score=60,
+        flagged_lines=[1],
+        findings=[],
+        comments="Summary only comment",
+        missed_issues=[
+            {
+                "id": "i1",
+                "title": "Unsafe eval",
+                "severity": "critical",
+                "expected_lines": [],
+                "missing_keywords": [],
+                "explanation": "",
+            }
+        ],
+    )
+    actor = Actor(user_id=101)
+    for bad_slug in ("", "   ", "debrief-unit-ch\n", "debrief\x00slug"):
+        assert get_actor_submission_debrief(session, actor, bad_slug) is None
+
+    assert get_actor_submission_debrief(session, Actor(), ch.slug) is None
+
+    debrief = get_actor_submission_debrief(session, actor, ch.slug)
+    assert debrief is not None
+    assert debrief.comments == "Summary only comment"
+    assert debrief.truncated is False
+    assert len(debrief.missed_issues) == 1
+    assert debrief.missed_issues[0].lines == [1]
+    assert debrief.missed_issues[0].keywords == ["eval", "code-execution"]
+    assert debrief.missed_issues[0].explanation == "eval executes arbitrary code"
+
+
+def test_submission_debrief_multifile_priority_and_truncation_bounds():
+    """Verify file prioritization, patch preference, and all prompt-safety bounds."""
+    large_lines = "\n".join(f"line_{i:04d} = {i}" for i in range(1, 600))
+    files = [
+        {
+            "path": f"src/extra_{idx}.py",
+            "language": "python",
+            "content": f"# extra {idx}\n" + ("x" * 900),
+            "patch": None,
+        }
+        for idx in range(7)
+    ]
+    files.append(
+        {
+            "path": "src/flagged.py",
+            "language": "python",
+            "content": "full_content_should_not_be_used\n" * 20,
+            "patch": "@@ -1 +1 @@\n-old\n+flagged_patch",
+        }
+    )
+    files.append(
+        {
+            "path": "src/missed.py",
+            "language": "python",
+            "content": "missed_content\n" + ("m" * 2200),
+            "patch": None,
+        }
+    )
+
+    expected_issues = [
+        {
+            "id": f"exp-{idx}",
+            "title": f"Expected {idx}",
+            "severity": "high",
+            "lines": list(range(1, 36)) if idx == 0 else [idx + 1],
+            "keywords": [f"kw-{k}" for k in range(15)] if idx == 0 else ["kw"],
+            "explanation": ("exp_word\n" * 60) if idx == 0 else f"Explanation {idx}",
+        }
+        for idx in range(17)
+    ]
+    expected_issues.append(
+        {
+            "id": "exp-missed-target",
+            "title": "Missed in missed.py",
+            "severity": "critical",
+            "lines": [{"file_path": "src/missed.py", "line_number": 3}],
+            "keywords": ["missed-kw"],
+            "explanation": "Missed issue beyond index 15 still enriches",
+        }
+    )
+
+    ch = _make_challenge(
+        None,
+        slug="trunc-ch",
+        code_snippet=large_lines,
+        files=files,
+        expected_issues=expected_issues,
+        canonical_review=large_lines,
+        recommended_fix_diff=large_lines,
+        challenge_id=77,
+    )
+    sub = _make_submission(
+        None,
+        challenge_id=77,
+        submission_id=88,
+        score=45,
+        flagged_lines=[
+            {"file_path": "src/flagged.py", "line_number": ln} for ln in range(1, 110)
+        ],
+        false_positive_lines=[
+            {"file_path": "src/flagged.py", "line_number": ln} for ln in range(1, 105)
+        ],
+        comments="Summary " + ("c\n" * 900),
+        findings=[
+            {
+                "id": "f1",
+                "anchor": {
+                    "file_path": "src/flagged.py",
+                    "start_line": 2,
+                    "end_line": 4,
+                },
+                "severity": "high",
+                "body": "Inline body",
+            },
+            {
+                "id": "f2",
+                "anchor": {
+                    "file_path": "src/flagged.py",
+                    "start_line": 5,
+                    "end_line": 5,
+                },
+                "severity": None,
+                "body": "",
+            },
+        ],
+        detected_issues=[
+            {
+                "id": f"det-{idx}",
+                "title": f"Detected {idx}",
+                "severity": "medium",
+                "matched_lines": list(range(1, 35)) if idx == 0 else [1],
+                "matched_keywords": (
+                    [f"dk-{k}" for k in range(14)] if idx == 0 else ["k"]
+                ),
+                "explanation": ("det_line\n" * 60) if idx == 0 else "ok",
+            }
+            for idx in range(16)
+        ],
+        missed_issues=[
+            {
+                "id": "exp-missed-target",
+                "title": "Missed in missed.py",
+                "severity": "critical",
+                "expected_lines": [],
+                "missing_keywords": [],
+                "explanation": "",
+            },
+            *[
+                {
+                    "id": f"miss-{idx}",
+                    "title": f"Miss {idx}",
+                    "severity": "low",
+                    "expected_lines": [idx + 1],
+                    "missing_keywords": ["mk"],
+                    "explanation": "miss",
+                }
+                for idx in range(16)
+            ],
+        ],
+    )
+
+    debrief = build_submission_debrief(sub, ch)
+    assert debrief.truncated is True
+    assert debrief.code_snippet.endswith("\n... [truncated]")
+    assert len(debrief.code_snippet) <= 6000
+    assert "\n... [truncated]" in debrief.comments
+    assert "[src/flagged.py:L2-L4] (high) Inline body" in debrief.comments
+    assert len(debrief.comments) <= 1500
+    assert debrief.canonical_review.endswith("\n... [truncated]")
+    assert len(debrief.canonical_review) <= 2500
+    assert debrief.recommended_fix_diff.endswith("\n... [truncated]")
+    assert len(debrief.recommended_fix_diff) <= 2500
+
+    assert len(debrief.flagged_lines) == 100
+    assert len(debrief.false_positive_lines) == 100
+    assert len(debrief.detected_issues) == 15
+    assert len(debrief.missed_issues) == 15
+    assert len(debrief.expected_issues) == 15
+
+    assert len(debrief.expected_issues[0].lines) == 30
+    assert len(debrief.expected_issues[0].keywords) == 12
+    assert len(debrief.expected_issues[0].explanation) <= 400
+    assert debrief.expected_issues[0].explanation.endswith("\n... [truncated]")
+
+    assert len(debrief.detected_issues[0].lines) == 30
+    assert len(debrief.detected_issues[0].keywords) == 12
+    assert len(debrief.detected_issues[0].explanation) <= 400
+
+    assert debrief.missed_issues[0].id == "exp-missed-target"
+    assert (
+        debrief.missed_issues[0].explanation
+        == "Missed issue beyond index 15 still enriches"
+    )
+    assert len(debrief.missed_issues[0].lines) == 1
+
+    assert len(debrief.files) <= 6
+    assert debrief.files[0].path == "src/missed.py"
+    assert debrief.files[1].path == "src/flagged.py"
+    assert debrief.files[1].patch == "@@ -1 +1 @@\n-old\n+flagged_patch"
+    assert debrief.files[1].content is None
+    total_file_chars = sum(len(f.patch or f.content or "") for f in debrief.files)
+    assert total_file_chars <= 6000
+
+
+def test_submission_debrief_api_isolation_latest_v2_findings_and_claim(
+    session: Session,
+    client_factory,
+    register_user,
+    login_as,
+    as_guest,
+):
+    """Verify 404 isolation, share_token denial, latest ordering, v2 notes, claim."""
+    user_a = register_user("debrief_user_a")
+    user_b = register_user("debrief_user_b")
+    inactive_user = register_user("debrief_inactive")
+    db_inactive = session.get(User, inactive_user["id"])
+    assert db_inactive is not None
+    db_inactive.is_active = False
+    session.add(db_inactive)
+    session.commit()
+
+    client_a = login_as("debrief_user_a")
+    client_b = login_as("debrief_user_b")
+    guest_a_client = client_factory()
+    guest_a_sid = as_guest(guest_a_client, "debrief-guest-a-sid")
+    guest_b_client = client_factory()
+    as_guest(guest_b_client, "debrief-guest-b-sid")
+
+    pub_unattempted = _make_challenge(
+        session,
+        slug="debrief-unattempted-pub",
+        is_public=True,
+        canonical_review="Do not leak canonical",
+        recommended_fix_diff="- leak\n+ safe",
+        code_snippet="secret_line = True\n",
+    )
+    pub_multi = _make_challenge(
+        session,
+        slug="debrief-multi-pub",
+        is_public=True,
+        files=[
+            {
+                "path": "api/auth.py",
+                "language": "python",
+                "content": "def login():\n    pass\n",
+            }
+        ],
+        expected_issues=[
+            {
+                "id": "auth-bypass",
+                "title": "Auth bypass",
+                "severity": "high",
+                "lines": [{"file_path": "api/auth.py", "line_number": 2}],
+                "keywords": ["auth", "token"],
+                "explanation": "Verify session token",
+            }
+        ],
+    )
+    user_a_shared_priv = _make_challenge(
+        session,
+        slug="debrief-user-a-shared",
+        is_public=False,
+        user_id=user_a["id"],
+        share_token="active-share-token-value-123456",
+    )
+
+    now = datetime.now(UTC)
+    _make_submission(
+        session,
+        challenge_id=pub_multi.id,
+        user_id=user_a["id"],
+        score=40,
+        comments="Older attempt comment",
+        created_at=now - timedelta(minutes=10),
+    )
+    latest_sub = _make_submission(
+        session,
+        challenge_id=pub_multi.id,
+        user_id=user_a["id"],
+        score=75,
+        flagged_lines=[{"file_path": "api/auth.py", "line_number": 1}],
+        false_positive_lines=[{"file_path": "api/auth.py", "line_number": 1}],
+        comments="Summary note",
+        findings=[
+            {
+                "id": "f-line",
+                "anchor": {"file_path": None, "start_line": 12, "end_line": 12},
+                "severity": "high",
+                "body": "Missing check",
+            },
+            {
+                "id": "f-range",
+                "anchor": {
+                    "file_path": "api/auth.py",
+                    "start_line": 12,
+                    "end_line": 15,
+                },
+                "severity": "high",
+                "body": "Ranged issue",
+            },
+        ],
+        missed_issues=[
+            {
+                "id": "auth-bypass",
+                "title": "Auth bypass",
+                "severity": "high",
+                "expected_lines": [],
+                "missing_keywords": [],
+                "explanation": "",
+            }
+        ],
+        created_at=now,
+    )
+    # Simulates User B having submitted while User A's share_token was active,
+    # alongside another challenge whose share_token was revoked.
+    _make_submission(
+        session,
+        challenge_id=user_a_shared_priv.id,
+        user_id=user_b["id"],
+        score=50,
+    )
+    user_a_revoked_priv = _make_challenge(
+        session,
+        slug="debrief-user-a-revoked",
+        is_public=False,
+        user_id=user_a["id"],
+        share_token=None,
+    )
+    _make_submission(
+        session,
+        challenge_id=user_a_revoked_priv.id,
+        user_id=user_b["id"],
+        score=55,
+    )
+    _make_submission(
+        session,
+        challenge_id=pub_multi.id,
+        session_id=guest_a_sid,
+        score=65,
+        comments="Guest A debrief note",
+    )
+    _make_submission(
+        session,
+        challenge_id=pub_multi.id,
+        user_id=inactive_user["id"],
+        score=50,
+    )
+
+    unattempted_res = client_a.get(
+        f"/api/user/coach-submissions/{pub_unattempted.slug}"
+    )
+    assert unattempted_res.status_code == 404
+    for secret in ("Do not leak canonical", "secret_line", "safe"):
+        assert secret not in unattempted_res.text
+
+    assert (
+        client_b.get(f"/api/user/coach-submissions/{pub_multi.slug}").status_code == 404
+    )
+    assert (
+        guest_b_client.get(f"/api/user/coach-submissions/{pub_multi.slug}").status_code
+        == 404
+    )
+    assert (
+        client_b.get(
+            f"/api/user/coach-submissions/{user_a_shared_priv.slug}"
+            f"?share_token={user_a_shared_priv.share_token}"
+        ).status_code
+        == 404
+    )
+    assert (
+        client_b.get(
+            f"/api/user/coach-submissions/{user_a_revoked_priv.slug}"
+        ).status_code
+        == 404
+    )
+
+    own_res = client_a.get(f"/api/user/coach-submissions/{pub_multi.slug}")
+    assert own_res.status_code == 200
+    payload = own_res.json()
+    assert payload["submission_id"] == latest_sub.id
+    assert payload["score"] == 75
+    assert "Older attempt comment" not in payload["comments"]
+    assert payload["comments"] == (
+        "Summary note\n"
+        "[L12] (high) Missing check\n"
+        "[api/auth.py:L12-L15] (high) Ranged issue"
+    )
+    assert payload["missed_issues"][0]["lines"] == [
+        {"file_path": "api/auth.py", "line_number": 2}
+    ]
+    assert payload["missed_issues"][0]["explanation"] == "Verify session token"
+    assert payload["missed_issues"][0]["keywords"] == ["auth", "token"]
+    assert payload["truncated"] is False
+
+    inactive_client = client_factory()
+    inactive_token = create_access_token(
+        {
+            "sub": str(inactive_user["id"]),
+            "username": inactive_user["username"],
+            "email": inactive_user["email"],
+        }
+    )
+    inactive_client.cookies.set(
+        settings.AUTH_COOKIE_NAME, inactive_token, domain="testserver.local"
+    )
+    assert (
+        inactive_client.get(f"/api/user/coach-submissions/{pub_multi.slug}").status_code
+        == 404
+    )
+
+    guest_priv = _make_challenge(
+        session,
+        slug="debrief-guest-priv",
+        is_public=False,
+        session_id=guest_a_sid,
+    )
+    _make_submission(
+        session,
+        challenge_id=guest_priv.id,
+        session_id=guest_a_sid,
+        score=88,
+        comments="Guest private review",
+    )
+    assert (
+        guest_a_client.get(f"/api/user/coach-submissions/{guest_priv.slug}").status_code
+        == 200
+    )
+
+    saved_guest_cookie = guest_a_client.cookies.get(settings.GUEST_COOKIE_NAME)
+    assert saved_guest_cookie is not None
+    client_a.cookies.set(
+        settings.GUEST_COOKIE_NAME, saved_guest_cookie, domain="testserver.local"
+    )
+    assert client_a.post("/api/user/claim-session").status_code == 200
+
+    claimed_res = client_a.get(f"/api/user/coach-submissions/{guest_priv.slug}")
+    assert claimed_res.status_code == 200
+    assert claimed_res.json()["comments"] == "Guest private review"
+
+    old_guest_client = client_factory()
+    old_guest_client.cookies.set(
+        settings.GUEST_COOKIE_NAME, saved_guest_cookie, domain="testserver.local"
+    )
+    assert (
+        old_guest_client.get(
+            f"/api/user/coach-submissions/{guest_priv.slug}"
+        ).status_code
+        == 404
+    )
+    assert (
+        old_guest_client.get(
+            f"/api/user/coach-submissions/{pub_multi.slug}"
+        ).status_code
+        == 404
+    )
+    assert client_a.get("/api/user/coach-submissions/%20%20").status_code == 404
+
+
+def test_submission_debrief_normalizes_and_clips_issue_fields():
+    """Missing/blank issue fields fall back safely and oversized values clip."""
+    long_id = "id-" + ("x" * 250)
+    long_title = "title-" + ("y" * 350)
+    long_severity = "sev-" + ("z" * 80)
+    long_kw = "kw-" + ("k" * 250)
+    long_path = ("dir/" * 150) + "target.py"
+    assert len(long_path) > 500
+
+    ch = _make_challenge(
+        None,
+        slug="normalize-clip-ch",
+        challenge_id=201,
+        files=[
+            {
+                "path": "a/" * 245 + "f.py",
+                "language": "python",
+                "content": "x = 1\n",
+            }
+        ],
+        expected_issues=[
+            {
+                "id": long_id,
+                "title": long_title,
+                "severity": long_severity,
+                "lines": [1],
+                "keywords": [long_kw, "short"],
+                "explanation": "Expected explanation",
+            }
+        ],
+    )
+    sub = _make_submission(
+        None,
+        challenge_id=201,
+        submission_id=301,
+        score=55,
+        detected_issues=[
+            {
+                "id": "   ",
+                "title": "",
+                "severity": " ",
+                "file_path": long_path,
+                "matched_lines": [2],
+                "matched_keywords": [long_kw],
+                "explanation": "Blank metadata fallback",
+            },
+            {
+                "title": long_title,
+                "severity": long_severity,
+                "matched_lines": [{"path": long_path, "line_number": 5}],
+                "matched_keywords": ["ok", long_kw],
+            },
+        ],
+        missed_issues=[
+            {
+                "id": "",
+                "severity": long_severity,
+                "expected_lines": [{"file_path": long_path, "line_number": 7}],
+                "missing_keywords": [long_kw],
+            }
+        ],
+    )
+    sub.flagged_lines = json.dumps([{"file_path": long_path, "line_number": 3}])
+    sub.false_positive_lines = json.dumps([{"file_path": long_path, "line_number": 4}])
+
+    debrief = build_submission_debrief(sub, ch)
+    assert len(debrief.detected_issues) == 2
+
+    det0 = debrief.detected_issues[0]
+    assert det0.id == "issue-1"
+    assert det0.title == "issue-1"
+    assert det0.severity == "medium"
+    assert len(det0.keywords[0]) == 200
+    assert isinstance(det0.lines[0], FlaggedLineRef)
+    assert len(det0.lines[0].file_path) == 500
+
+    det1 = debrief.detected_issues[1]
+    assert det1.id == "issue-2"
+    assert len(det1.title) == 300
+    assert len(det1.severity) == 50
+    assert det1.keywords[0] == "ok"
+    assert len(det1.keywords[1]) == 200
+    assert isinstance(det1.lines[0], FlaggedLineRef)
+    assert len(det1.lines[0].file_path) == 500
+
+    miss0 = debrief.missed_issues[0]
+    assert miss0.id == "issue-1"
+    assert miss0.title == "issue-1"
+    assert len(miss0.severity) == 50
+    assert len(miss0.keywords[0]) == 200
+    assert isinstance(miss0.lines[0], FlaggedLineRef)
+    assert len(miss0.lines[0].file_path) == 500
+
+    exp0 = debrief.expected_issues[0]
+    assert len(exp0.id) == 200
+    assert len(exp0.title) == 300
+    assert len(exp0.severity) == 50
+    assert len(exp0.keywords[0]) == 200
+    assert exp0.keywords[1] == "short"
+
+    assert isinstance(debrief.flagged_lines[0], FlaggedLineRef)
+    assert len(debrief.flagged_lines[0].file_path) == 500
+    assert isinstance(debrief.false_positive_lines[0], FlaggedLineRef)
+    assert len(debrief.false_positive_lines[0].file_path) == 500
+
+    direct_norm = _normalize_submission_issue(
+        {"id": "", "severity": long_severity, "keywords": [long_kw]},
+        lines_key="matched_lines",
+        keywords_key="matched_keywords",
+        index=4,
+    )
+    assert direct_norm is not None
+    assert direct_norm.id == "issue-4"
+    assert direct_norm.title == "issue-4"
+    assert len(direct_norm.severity) == 50
+    assert len(direct_norm.keywords[0]) == 200
+
+    raw_clip_items = [
+        DebriefIssueItem(
+            id="   ",
+            title=long_title,
+            severity=long_severity,
+            lines=[FlaggedLineRef.model_construct(file_path=long_path, line_number=9)],
+            keywords=[long_kw],
+            explanation="ok",
+        )
+    ]
+    clipped, was_clipped = _clip_debrief_issues(raw_clip_items)
+    assert was_clipped is True
+    assert clipped[0].id == "issue-1"
+    assert len(clipped[0].title) == 300
+    assert len(clipped[0].severity) == 50
+    assert len(clipped[0].keywords[0]) == 200
+    assert isinstance(clipped[0].lines[0], FlaggedLineRef)
+    assert len(clipped[0].lines[0].file_path) == 500
+
+
+def test_submission_debrief_corrupt_json_columns_do_not_500(
+    client: TestClient,
+    session: Session,
+    as_guest,
+):
+    """Corrupt or non-list JSON DB values coerce safely to empty lists."""
+    sid = as_guest(client, "guest-corrupt-json")
+    ch_unit = _make_challenge(None, slug="corrupt-unit-ch", challenge_id=202)
+    sub_unit = _make_submission(
+        None,
+        challenge_id=202,
+        submission_id=302,
+        score=50,
+        comments="Clean note",
+    )
+
+    corrupt_variants = [
+        "{bad-json",
+        '{"not": "a list"}',
+        "123",
+        "null",
+        '"plain-string"',
+    ]
+    for bad_val in corrupt_variants:
+        ch_unit.expected_issues = bad_val
+        ch_unit.files = bad_val
+        sub_unit.detected_issues = bad_val
+        sub_unit.missed_issues = bad_val
+        sub_unit.flagged_lines = bad_val
+        sub_unit.false_positive_lines = bad_val
+        sub_unit.findings = bad_val
+
+        debrief = build_submission_debrief(sub_unit, ch_unit)
+        assert debrief.expected_issues == []
+        assert debrief.detected_issues == []
+        assert debrief.missed_issues == []
+        assert debrief.flagged_lines == []
+        assert debrief.false_positive_lines == []
+        assert debrief.files == []
+        assert debrief.comments == "Clean note"
+
+    ch_unit.expected_issues = '[{"lines": [{"line_number": 0}]}]'
+    ch_unit.files = '[{"path": "/abs/invalid"}]'
+    debrief_invalid_schema = build_submission_debrief(sub_unit, ch_unit)
+    assert debrief_invalid_schema.expected_issues == []
+    assert debrief_invalid_schema.files == []
+
+    db_ch = _make_challenge(session, slug="corrupt-db-ch", is_public=True)
+    db_sub = _make_submission(
+        session,
+        challenge_id=db_ch.id,
+        session_id=sid,
+        score=42,
+        comments="API corrupt row check",
+    )
+    session.exec(
+        text(
+            "UPDATE challenges SET expected_issues = :bad, files = :obj WHERE id = :id"
+        ),
+        params={"bad": "{corrupt", "obj": '{"k": 1}', "id": db_ch.id},
+    )
+    session.exec(
+        text(
+            "UPDATE submissions "
+            "SET detected_issues = :bad, missed_issues = :obj, "
+            "flagged_lines = :num, false_positive_lines = :nul, findings = :bad "
+            "WHERE id = :id"
+        ),
+        params={
+            "bad": "{corrupt",
+            "obj": '{"k": 1}',
+            "num": "123",
+            "nul": "null",
+            "id": db_sub.id,
+        },
+    )
+    session.commit()
+    session.expire_all()
+
+    res = client.get(f"/api/user/coach-submissions/{db_ch.slug}")
+    assert res.status_code == 200
+    payload = res.json()
+    assert payload["submission_id"] == db_sub.id
+    assert payload["expected_issues"] == []
+    assert payload["detected_issues"] == []
+    assert payload["missed_issues"] == []
+    assert payload["flagged_lines"] == []
+    assert payload["false_positive_lines"] == []
+    assert payload["files"] == []
+    assert payload["comments"] == "API corrupt row check"
+
+
+def test_submission_debrief_long_comments_preserves_v2_inline_findings():
+    """Long summary comments cap to leave budget for v2 inline findings."""
+    ch = _make_challenge(None, slug="long-comments-findings-ch", challenge_id=203)
+    long_summary = "Summary line\n" * 160  # > 1,500 chars
+    sub_with_short_finding = _make_submission(
+        None,
+        challenge_id=203,
+        submission_id=303,
+        score=60,
+        comments=long_summary,
+        findings=[
+            {
+                "id": "f1",
+                "anchor": {
+                    "file_path": "api/auth.py",
+                    "start_line": 12,
+                    "end_line": 15,
+                },
+                "severity": "high",
+                "body": "Missing signature check",
+            },
+            {
+                "id": "f2",
+                "anchor": {
+                    "file_path": "api/auth.py",
+                    "start_line": 20,
+                    "end_line": 20,
+                },
+                "severity": "medium",
+                "body": "Token expiry unchecked",
+            },
+        ],
+    )
+
+    debrief = build_submission_debrief(sub_with_short_finding, ch)
+    assert debrief.truncated is True
+    assert len(debrief.comments) <= 1500
+    assert "[api/auth.py:L12-L15] (high) Missing signature check" in debrief.comments
+    assert "[api/auth.py:L20] (medium) Token expiry unchecked" in debrief.comments
+    summary_prefix, _, _ = debrief.comments.partition(
+        "\n[api/auth.py:L12-L15] (high) Missing signature check"
+    )
+    assert summary_prefix.endswith("\n... [truncated]")
+    assert len(summary_prefix) <= 700
+
+    # When both summary and findings are huge, both are budgeted within 1,500 chars.
+    sub_with_many_findings = _make_submission(
+        None,
+        challenge_id=203,
+        submission_id=304,
+        score=55,
+        comments=long_summary,
+        findings=[
+            {
+                "id": f"f{idx}",
+                "anchor": {
+                    "file_path": "api/auth.py",
+                    "start_line": idx + 1,
+                    "end_line": idx + 1,
+                },
+                "severity": "high",
+                "body": f"Finding body #{idx} " + ("detail " * 25),
+            }
+            for idx in range(15)
+        ],
+    )
+    debrief_both = build_submission_debrief(sub_with_many_findings, ch)
+    assert debrief_both.truncated is True
+    assert len(debrief_both.comments) <= 1500
+    assert "[api/auth.py:L1] (high) Finding body #0" in debrief_both.comments
+    assert debrief_both.comments.endswith("\n... [truncated]")
+
+    # When findings have no text, summary_note uses the full 1,500-char budget.
+    sub_no_finding_body = _make_submission(
+        None,
+        challenge_id=203,
+        submission_id=305,
+        score=55,
+        comments=long_summary,
+        findings=[
+            {
+                "id": "f-empty",
+                "anchor": {"file_path": "api/auth.py", "start_line": 1, "end_line": 1},
+                "severity": None,
+                "body": "",
+            }
+        ],
+    )
+    debrief_summary_only = build_submission_debrief(sub_no_finding_body, ch)
+    assert debrief_summary_only.truncated is True
+    assert len(debrief_summary_only.comments) <= 1500
+    assert len(debrief_summary_only.comments) > 700
+    assert debrief_summary_only.comments.endswith("\n... [truncated]")
