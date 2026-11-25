@@ -15,6 +15,7 @@ from backend.core.config import settings
 from backend.core.guest_session import GuestSession, _encode
 from backend.core.security import create_access_token
 from backend.models.challenge import Category, Challenge, Difficulty, Language
+from backend.models.coach_thread import CoachMessage, CoachThread
 from backend.models.submission import Submission
 from backend.models.user import User
 
@@ -378,6 +379,140 @@ MATRIX: dict[tuple[str, str], dict[str, dict[str, int]]] = {
             "inactive": 401,
         },
     },
+    ("GET", "/api/user/coach-threads"): {
+        "own_list": {
+            "anonymous": 200,
+            "guest_a": 200,
+            "guest_b": 200,
+            "guest_forged": 200,
+            "guest_tampered": 200,
+            "user_a": 200,
+            "user_b": 200,
+            "inactive": 200,
+        },
+    },
+    ("POST", "/api/user/coach-threads"): {
+        "create_owned_thread": {
+            "anonymous": 401,
+            "guest_a": 201,
+            "guest_b": 201,
+            "guest_forged": 401,
+            "guest_tampered": 401,
+            "user_a": 201,
+            "user_b": 201,
+            "inactive": 401,
+        },
+    },
+    ("GET", "/api/user/coach-threads/{thread_id}"): {
+        "user_a_thread": {
+            "anonymous": 404,
+            "guest_a": 404,
+            "guest_b": 404,
+            "guest_forged": 404,
+            "guest_tampered": 404,
+            "user_a": 200,
+            "user_b": 404,
+            "inactive": 404,
+        },
+        "guest_a_thread": {
+            "anonymous": 404,
+            "guest_a": 200,
+            "guest_b": 404,
+            "guest_forged": 404,
+            "guest_tampered": 404,
+            "user_a": 404,
+            "user_b": 404,
+            "inactive": 404,
+        },
+    },
+    ("PATCH", "/api/user/coach-threads/{thread_id}"): {
+        "user_a_thread": {
+            "anonymous": 404,
+            "guest_a": 404,
+            "guest_b": 404,
+            "guest_forged": 404,
+            "guest_tampered": 404,
+            "user_a": 200,
+            "user_b": 404,
+            "inactive": 404,
+        },
+        "guest_a_thread": {
+            "anonymous": 404,
+            "guest_a": 200,
+            "guest_b": 404,
+            "guest_forged": 404,
+            "guest_tampered": 404,
+            "user_a": 404,
+            "user_b": 404,
+            "inactive": 404,
+        },
+    },
+    ("DELETE", "/api/user/coach-threads/{thread_id}"): {
+        "user_a_thread": {
+            "anonymous": 404,
+            "guest_a": 404,
+            "guest_b": 404,
+            "guest_forged": 404,
+            "guest_tampered": 404,
+            "user_a": 204,
+            "user_b": 404,
+            "inactive": 404,
+        },
+        "guest_a_thread": {
+            "anonymous": 404,
+            "guest_a": 204,
+            "guest_b": 404,
+            "guest_forged": 404,
+            "guest_tampered": 404,
+            "user_a": 404,
+            "user_b": 404,
+            "inactive": 404,
+        },
+    },
+    ("POST", "/api/user/coach-threads/{thread_id}/messages"): {
+        "user_a_thread": {
+            "anonymous": 404,
+            "guest_a": 404,
+            "guest_b": 404,
+            "guest_forged": 404,
+            "guest_tampered": 404,
+            "user_a": 201,
+            "user_b": 404,
+            "inactive": 404,
+        },
+        "guest_a_thread": {
+            "anonymous": 404,
+            "guest_a": 201,
+            "guest_b": 404,
+            "guest_forged": 404,
+            "guest_tampered": 404,
+            "user_a": 404,
+            "user_b": 404,
+            "inactive": 404,
+        },
+    },
+    ("DELETE", "/api/user/coach-threads/{thread_id}/messages"): {
+        "user_a_thread": {
+            "anonymous": 404,
+            "guest_a": 404,
+            "guest_b": 404,
+            "guest_forged": 404,
+            "guest_tampered": 404,
+            "user_a": 200,
+            "user_b": 404,
+            "inactive": 404,
+        },
+        "guest_a_thread": {
+            "anonymous": 404,
+            "guest_a": 200,
+            "guest_b": 404,
+            "guest_forged": 404,
+            "guest_tampered": 404,
+            "user_a": 404,
+            "user_b": 404,
+            "inactive": 404,
+        },
+    },
 }
 
 
@@ -641,6 +776,47 @@ def _seed_matrix_resources(session: Session, user_a_id: int, guest_a_sid: str):
     return public_ch, user_a_private, guest_a_private
 
 
+def _seed_matrix_coach_threads(
+    session: Session,
+    user_a_id: int,
+    guest_a_sid: str,
+) -> tuple[CoachThread, CoachThread]:
+    user_thread = CoachThread(
+        user_id=user_a_id,
+        title="User A Secret Thread",
+        mode="patterns",
+    )
+    guest_thread = CoachThread(
+        user_id=None,
+        session_id=guest_a_sid,
+        title="Guest A Secret Thread",
+        mode="patterns",
+    )
+    session.add_all([user_thread, guest_thread])
+    session.commit()
+    session.refresh(user_thread)
+    session.refresh(guest_thread)
+
+    session.add_all(
+        [
+            CoachMessage(
+                thread_id=user_thread.id,
+                role="user",
+                parts_json=json.dumps([{"type": "text", "text": "User A question"}]),
+                sequence=0,
+            ),
+            CoachMessage(
+                thread_id=guest_thread.id,
+                role="user",
+                parts_json=json.dumps([{"type": "text", "text": "Guest A question"}]),
+                sequence=0,
+            ),
+        ]
+    )
+    session.commit()
+    return user_thread, guest_thread
+
+
 def test_authorization_matrix_enforcement(
     client: TestClient,
     session: Session,
@@ -654,6 +830,9 @@ def test_authorization_matrix_enforcement(
         session, client_factory, register_user, login_as, as_guest
     )
     public_ch, user_a_private, guest_a_private = _seed_matrix_resources(
+        session, meta["user_a"]["id"], meta["guest_a_sid"]
+    )
+    user_a_thread, guest_a_thread = _seed_matrix_coach_threads(
         session, meta["user_a"]["id"], meta["guest_a_sid"]
     )
 
@@ -922,7 +1101,101 @@ def test_authorization_matrix_enforcement(
             res = ac.delete(f"/api/challenges/custom/{slug}", headers=headers)
             assert res.status_code == expected, f"{target_key} delete <- {actor_name}"
 
-    # 11. POST /api/user/claim-session and post-claim old-session isolation
+    # 12. Coach threads matrix (list, create, get, patch, messages, delete)
+    for actor_name, expected in MATRIX[("GET", "/api/user/coach-threads")][
+        "own_list"
+    ].items():
+        ac, headers = actors[actor_name]
+        res = ac.get("/api/user/coach-threads", headers=headers)
+        assert res.status_code == expected, f"list threads <- {actor_name}"
+        thread_ids = {item["id"] for item in res.json()["items"]}
+        if actor_name == "user_a":
+            assert thread_ids == {user_a_thread.id}
+        elif actor_name == "guest_a":
+            assert thread_ids == {guest_a_thread.id}
+        else:
+            assert thread_ids == set()
+
+    thread_targets = {
+        "user_a_thread": user_a_thread.id,
+        "guest_a_thread": guest_a_thread.id,
+    }
+    for target_key, tid in thread_targets.items():
+        for actor_name, expected in MATRIX[
+            ("GET", "/api/user/coach-threads/{thread_id}")
+        ][target_key].items():
+            ac, headers = actors[actor_name]
+            res = ac.get(f"/api/user/coach-threads/{tid}", headers=headers)
+            assert res.status_code == expected, f"{target_key} get <- {actor_name}"
+
+        for actor_name, expected in MATRIX[
+            ("PATCH", "/api/user/coach-threads/{thread_id}")
+        ][target_key].items():
+            ac, headers = actors[actor_name]
+            res = ac.patch(
+                f"/api/user/coach-threads/{tid}",
+                json={"title": f"Updated {target_key}"},
+                headers=headers,
+            )
+            assert res.status_code == expected, f"{target_key} patch <- {actor_name}"
+
+        for actor_name, expected in MATRIX[
+            ("POST", "/api/user/coach-threads/{thread_id}/messages")
+        ][target_key].items():
+            ac, headers = actors[actor_name]
+            res = ac.post(
+                f"/api/user/coach-threads/{tid}/messages",
+                json={
+                    "messages": [
+                        {
+                            "role": "user",
+                            "parts": [{"type": "text", "text": "Matrix probe"}],
+                        }
+                    ]
+                },
+                headers=headers,
+            )
+            assert res.status_code == expected, f"{target_key} msg post <- {actor_name}"
+
+        for actor_name, expected in MATRIX[
+            ("DELETE", "/api/user/coach-threads/{thread_id}/messages")
+        ][target_key].items():
+            ac, headers = actors[actor_name]
+            res = ac.delete(
+                f"/api/user/coach-threads/{tid}/messages?from_sequence=1",
+                headers=headers,
+            )
+            assert res.status_code == expected, f"{target_key} msg del <- {actor_name}"
+
+        for actor_name, expected in MATRIX[
+            ("DELETE", "/api/user/coach-threads/{thread_id}")
+        ][target_key].items():
+            if expected == 204:
+                continue
+            ac, headers = actors[actor_name]
+            res = ac.delete(f"/api/user/coach-threads/{tid}", headers=headers)
+            assert res.status_code == expected, f"{target_key} delete <- {actor_name}"
+
+    for actor_name, expected in MATRIX[("POST", "/api/user/coach-threads")][
+        "create_owned_thread"
+    ].items():
+        ac, headers = actors[actor_name]
+        res = ac.post(
+            "/api/user/coach-threads",
+            json={"mode": "patterns"},
+            headers=headers,
+        )
+        assert res.status_code == expected, f"create thread <- {actor_name}"
+        if expected == 201:
+            created_tid = res.json()["id"]
+            assert (
+                ac.delete(
+                    f"/api/user/coach-threads/{created_tid}", headers=headers
+                ).status_code
+                == 204
+            )
+
+    # 13. POST /api/user/claim-session and post-claim old-session isolation
     for actor_name, expected in MATRIX[("POST", "/api/user/claim-session")][
         "claim_guest_a"
     ].items():
@@ -941,6 +1214,7 @@ def test_authorization_matrix_enforcement(
     claim_res = actors["user_a"][0].post("/api/user/claim-session")
     assert claim_res.status_code == 200
     assert claim_res.json()["claimed_challenges_count"] == 1
+    assert claim_res.json()["claimed_threads_count"] == 1
     assert actors["user_a"][0].cookies.get(settings.GUEST_COOKIE_NAME) is None
 
     # Re-apply pre-claim Guest A cookie to ensure claimed rows cannot be accessed
@@ -980,6 +1254,38 @@ def test_authorization_matrix_enforcement(
             ac.get(f"/api/user/coach-submissions/{guest_a_private.slug}").status_code
             == 404
         )
+        assert ac.get("/api/user/coach-threads").json()["items"] == []
+        assert ac.get(f"/api/user/coach-threads/{guest_a_thread.id}").status_code == 404
+        assert (
+            ac.patch(
+                f"/api/user/coach-threads/{guest_a_thread.id}",
+                json={"title": "Snooper rename"},
+            ).status_code
+            == 404
+        )
+        assert (
+            ac.post(
+                f"/api/user/coach-threads/{guest_a_thread.id}/messages",
+                json={
+                    "messages": [
+                        {
+                            "role": "user",
+                            "parts": [{"type": "text", "text": "Snooper append"}],
+                        }
+                    ]
+                },
+            ).status_code
+            == 404
+        )
+        assert (
+            ac.delete(
+                f"/api/user/coach-threads/{guest_a_thread.id}/messages?from_sequence=0"
+            ).status_code
+            == 404
+        )
+        assert (
+            ac.delete(f"/api/user/coach-threads/{guest_a_thread.id}").status_code == 404
+        )
 
     assert (
         actors["user_a"][0]
@@ -987,8 +1293,14 @@ def test_authorization_matrix_enforcement(
         .status_code
         == 200
     )
+    assert (
+        actors["user_a"][0]
+        .get(f"/api/user/coach-threads/{guest_a_thread.id}")
+        .status_code
+        == 200
+    )
 
-    # User A now owns both private challenges and can delete them
+    # User A now owns both private challenges and both coach threads and can delete them
     assert (
         actors["user_a"][0]
         .delete(f"/api/challenges/custom/{user_a_private.slug}")
@@ -1000,6 +1312,18 @@ def test_authorization_matrix_enforcement(
         .delete(f"/api/challenges/custom/{guest_a_private.slug}")
         .status_code
         == 200
+    )
+    assert (
+        actors["user_a"][0]
+        .delete(f"/api/user/coach-threads/{user_a_thread.id}")
+        .status_code
+        == 204
+    )
+    assert (
+        actors["user_a"][0]
+        .delete(f"/api/user/coach-threads/{guest_a_thread.id}")
+        .status_code
+        == 204
     )
 
 
@@ -1278,6 +1602,9 @@ def test_authenticated_actor_ignores_unclaimed_guest_session_cookie_and_header(
     _, _, guest_a_private = _seed_matrix_resources(
         session, meta["user_a"]["id"], meta["guest_a_sid"]
     )
+    _, guest_a_thread = _seed_matrix_coach_threads(
+        session, meta["user_a"]["id"], meta["guest_a_sid"]
+    )
     guest_private_slug = guest_a_private.slug
     guest_headers = {"X-Diffly-Session-Id": meta["guest_a_sid"]}
 
@@ -1314,6 +1641,19 @@ def test_authenticated_actor_ignores_unclaimed_guest_session_cookie_and_header(
     assert (
         user_b_client.get(
             f"/api/user/coach-submissions/{guest_private_slug}",
+            headers=guest_headers,
+        ).status_code
+        == 404
+    )
+    assert (
+        user_b_client.get("/api/user/coach-threads", headers=guest_headers).json()[
+            "items"
+        ]
+        == []
+    )
+    assert (
+        user_b_client.get(
+            f"/api/user/coach-threads/{guest_a_thread.id}",
             headers=guest_headers,
         ).status_code
         == 404
@@ -1447,7 +1787,13 @@ def test_claimed_rows_have_null_session_id(
         comments="Guest review",
         score=85,
     )
-    session.add(sub)
+    thread = CoachThread(
+        user_id=None,
+        session_id=guest_sid,
+        title="Guest thread null sid",
+        mode="patterns",
+    )
+    session.add_all([sub, thread])
     session.commit()
 
     user = register_user("null_sid_owner")
@@ -1456,14 +1802,20 @@ def test_claimed_rows_have_null_session_id(
 
     res = auth_client.post("/api/user/claim-session")
     assert res.status_code == 200
-    assert res.json()["claimed_count"] == 2
+    assert res.json()["claimed_count"] == 3
+    assert res.json()["claimed_threads_count"] == 1
 
     claimed_ch = session.exec(select(Challenge).where(Challenge.id == priv.id)).one()
     claimed_sub = session.exec(select(Submission).where(Submission.id == sub.id)).one()
+    claimed_thread = session.exec(
+        select(CoachThread).where(CoachThread.id == thread.id)
+    ).one()
     assert claimed_ch.user_id == user["id"]
     assert claimed_ch.session_id is None
     assert claimed_sub.user_id == user["id"]
     assert claimed_sub.session_id is None
+    assert claimed_thread.user_id == user["id"]
+    assert claimed_thread.session_id is None
 
 
 def test_share_token_read_only_boundary_and_isolation(
