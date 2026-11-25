@@ -254,7 +254,7 @@ export function CoachWorkspace() {
       <CoachContextRail
         patterns={patterns}
         isLoading={patternsLoading}
-        disabled={state.kind !== "ready"}
+        disabled={!isConnected || isStreaming}
         onSelectPrompt={sendPrompt}
         onCreateChallenge={startChallengeCreation}
       />
