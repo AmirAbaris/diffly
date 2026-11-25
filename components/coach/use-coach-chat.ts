@@ -2,7 +2,14 @@
 
 import * as React from "react"
 import { useChat } from "@ai-sdk/react"
-import { DefaultChatTransport } from "ai"
+import {
+  DefaultChatTransport,
+  lastAssistantMessageIsCompleteWithToolCalls,
+} from "ai"
+import {
+  useCoachChallengeTool,
+  type CoachChallengeToolController,
+} from "@/components/coach/use-coach-challenge-tool"
 import { useAIConnection } from "@/hooks/use-ai-connection"
 import { formatAIConnectionSummary } from "@/lib/ai/catalog"
 import {
@@ -59,6 +66,9 @@ export const DEBRIEF_QUICK_PROMPTS: readonly CoachQuickPrompt[] = [
   },
 ] as const
 
+export const CREATE_CHALLENGE_PROMPT =
+  "Create a custom code review challenge for me."
+
 export type CoachTarget =
   | { mode: "patterns"; sliceLimit?: number; missedLimit?: number }
   | { mode: "debrief"; context: DebriefContext }
@@ -79,7 +89,9 @@ export interface UseCoachChatResult {
   state: CoachChatStatus
   messages: CoachUIMessage[]
   connectionSummary: string | null
+  challengeTool: CoachChallengeToolController
   sendPrompt: (prompt: string) => void
+  startChallengeCreation: () => void
   stop: () => Promise<void>
   clearError: () => void
   resetConversation: () => void
@@ -109,12 +121,15 @@ export function useCoachChat({
   const connection = useAIConnection()
   const connectionSummary = formatAIConnectionSummary(connection)
 
+  const suppressAutoSendRef = React.useRef(false)
+
   const transport = React.useMemo(
     () =>
       new DefaultChatTransport<CoachUIMessage>({
         api: "/api/coach",
+        body: () => buildCoachRequestBody(target),
       }),
-    []
+    [target]
   )
 
   const {
@@ -122,13 +137,24 @@ export function useCoachChat({
     status,
     error,
     sendMessage,
+    addToolOutput,
     stop,
     setMessages,
     clearError,
   } = useChat<CoachUIMessage>({
     id: chatId,
     transport,
+    sendAutomaticallyWhen: ({ messages: nextMessages }) =>
+      !suppressAutoSendRef.current &&
+      lastAssistantMessageIsCompleteWithToolCalls({ messages: nextMessages }),
   })
+
+  const {
+    controller: challengeTool,
+    hasPendingToolCalls,
+    cancelPendingToolCalls,
+    resetToolState,
+  } = useCoachChallengeTool({ addToolOutput })
 
   const parsedErrorMessage = error ? parseCoachErrorMessage(error) : null
   const isAuthError =
@@ -176,25 +202,48 @@ export function useCoachChat({
         return
       }
       clearError()
-      void sendMessage(
-        { text: trimmed },
-        { body: buildCoachRequestBody(target) }
-      )
+      if (hasPendingToolCalls(messages)) {
+        suppressAutoSendRef.current = true
+        void cancelPendingToolCalls(messages)
+          .finally(() => {
+            suppressAutoSendRef.current = false
+          })
+          .then(() => {
+            void sendMessage({ text: trimmed })
+          })
+        return
+      }
+      void sendMessage({ text: trimmed })
     },
-    [clearError, connection.isConnected, sendMessage, status, target]
+    [
+      cancelPendingToolCalls,
+      clearError,
+      connection.isConnected,
+      hasPendingToolCalls,
+      messages,
+      sendMessage,
+      status,
+    ]
   )
+
+  const startChallengeCreation = React.useCallback(() => {
+    sendPrompt(CREATE_CHALLENGE_PROMPT)
+  }, [sendPrompt])
 
   const resetConversation = React.useCallback(() => {
     void stop()
+    resetToolState()
     clearError()
     setMessages([])
-  }, [clearError, setMessages, stop])
+  }, [clearError, resetToolState, setMessages, stop])
 
   return {
     state,
     messages,
     connectionSummary,
+    challengeTool,
     sendPrompt,
+    startChallengeCreation,
     stop,
     clearError,
     resetConversation,

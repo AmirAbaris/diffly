@@ -2,14 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
-import {
-  AlertTriangle,
-  ArrowUpRight,
-  Plus,
-  Sparkles,
-  Target,
-  Trash2,
-} from "lucide-react"
+import { AlertTriangle, ArrowUpRight, Plus, Target, Trash2 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
@@ -27,7 +20,7 @@ export interface CoachContextRailProps {
   isLoading: boolean
   disabled?: boolean
   onSelectPrompt: (prompt: string) => void
-  onToggleGenerator?: () => void
+  onCreateChallenge?: () => void
 }
 
 function WeakSliceCard({
@@ -123,9 +116,11 @@ function RailSkeleton() {
 }
 
 function CustomChallengesSection({
-  onToggleGenerator,
+  disabled,
+  onCreateChallenge,
 }: {
-  onToggleGenerator: () => void
+  disabled: boolean
+  onCreateChallenge: () => void
 }) {
   const { customChallenges, total, quotaLimit, deleteCustomChallenge } =
     useCustomChallenges()
@@ -147,13 +142,9 @@ function CustomChallengesSection({
       className="flex flex-col gap-2.5 border-t border-border p-4"
     >
       <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-1.5 text-xs font-medium text-foreground">
-          <Sparkles
-            aria-hidden="true"
-            className="size-3.5 text-muted-foreground"
-          />
-          <span>Custom Challenges</span>
-        </div>
+        <span className="text-xs font-medium text-foreground">
+          Custom Challenges
+        </span>
         <Badge
           variant="secondary"
           size="sm"
@@ -167,7 +158,8 @@ function CustomChallengesSection({
         type="button"
         variant="outline"
         size="sm"
-        onClick={onToggleGenerator}
+        disabled={disabled}
+        onClick={onCreateChallenge}
         data-testid="coach-rail-new-challenge-button"
         className="w-full justify-start text-xs"
       >
@@ -215,7 +207,7 @@ export function CoachContextRail({
   isLoading,
   disabled = false,
   onSelectPrompt,
-  onToggleGenerator,
+  onCreateChallenge,
 }: CoachContextRailProps) {
   return (
     <aside
@@ -313,8 +305,11 @@ export function CoachContextRail({
         </div>
       )}
 
-      {onToggleGenerator ? (
-        <CustomChallengesSection onToggleGenerator={onToggleGenerator} />
+      {onCreateChallenge ? (
+        <CustomChallengesSection
+          disabled={disabled}
+          onCreateChallenge={onCreateChallenge}
+        />
       ) : null}
     </aside>
   )

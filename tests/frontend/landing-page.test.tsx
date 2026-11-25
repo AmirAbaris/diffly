@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import * as React from "react"
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import { LandingPage } from "@/components/landing/landing-page"
 import {
   evaluateSandboxSelection,
@@ -9,7 +9,6 @@ import {
 } from "@/lib/landing/sandbox-engine"
 import { LANDING_SANDBOX_SCENARIOS } from "@/lib/landing/scenarios"
 import { createShaderSignalBridge } from "@/lib/landing/shader-signal-bridge"
-import { useCustomChallengeModalStore } from "@/stores/custom-challenge-modal-store"
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
@@ -42,13 +41,6 @@ vi.mock("@/hooks/use-custom-challenges", () => ({
 }))
 
 describe("LandingPage & Sandbox Engine", () => {
-  beforeEach(() => {
-    useCustomChallengeModalStore.setState({
-      isOpen: false,
-      initialTab: "generate",
-    })
-  })
-
   it("computes precision, recall, and F1 scores deterministically from flagged lines", () => {
     const scenario = LANDING_SANDBOX_SCENARIOS[0]
 

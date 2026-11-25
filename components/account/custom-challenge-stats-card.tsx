@@ -2,7 +2,6 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { Sparkles } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -24,13 +23,7 @@ export function CustomChallengeStatsCard({
     <Card data-testid="custom-challenge-stats-card">
       <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-col gap-1">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Sparkles
-              aria-hidden="true"
-              className="size-4 text-muted-foreground"
-            />
-            <span>Custom Challenges</span>
-          </CardTitle>
+          <CardTitle className="text-base">Custom Challenges</CardTitle>
           <CardDescription className="text-xs">
             Tracked separately from public catalog mastery and precision/recall
             scores.

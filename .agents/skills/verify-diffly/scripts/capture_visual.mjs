@@ -59,7 +59,7 @@ function buildSpecs(baseUrl) {
     [
       "challenges",
       "/challenges",
-      `${hasSel('[data-testid="generate-ai-challenge-btn"]')} && document.body.innerText.includes("Challenge Catalog")`,
+      'document.body?.innerText.includes("Challenge Catalog")',
     ],
     [
       "challenge_detail",
@@ -72,13 +72,6 @@ function buildSpecs(baseUrl) {
       hasSel('[data-testid="sign-in-button"]'),
       '[data-testid="sign-in-button"]',
       '[data-testid="auth-modal-content"]',
-    ],
-    [
-      "custom_modal",
-      "/challenges",
-      hasSel('[data-testid="custom-challenges-quota-badge"]'),
-      '[data-testid="custom-challenges-quota-badge"]',
-      '[data-testid="custom-challenge-modal-content"]',
     ],
     [
       "coach",

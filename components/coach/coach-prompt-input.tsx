@@ -7,7 +7,6 @@ import {
   PlusIcon,
   RotateCcwIcon,
   SettingsIcon,
-  SparklesIcon,
   SquareIcon,
 } from "lucide-react"
 import {
@@ -36,7 +35,7 @@ export interface CoachPromptInputProps {
   placeholder?: string
   hasMessages?: boolean
   onReset?: () => void
-  onOpenGenerator?: () => void
+  onCreateChallenge?: () => void
 }
 
 export function CoachPromptInput({
@@ -49,7 +48,7 @@ export function CoachPromptInput({
   placeholder = "Ask Agent Coach anything about your reviews…",
   hasMessages = false,
   onReset,
-  onOpenGenerator,
+  onCreateChallenge,
 }: CoachPromptInputProps) {
   const formRef = React.useRef<HTMLFormElement>(null)
   const canSend = !isStreaming && value.trim().length > 0
@@ -105,12 +104,13 @@ export function CoachPromptInput({
             <DropdownMenuContent align="start" className="w-52">
               <DropdownMenuGroup>
                 <DropdownMenuLabel>Coach Actions</DropdownMenuLabel>
-                {onOpenGenerator ? (
+                {onCreateChallenge ? (
                   <DropdownMenuItem
-                    onClick={onOpenGenerator}
+                    disabled={isStreaming}
+                    onClick={onCreateChallenge}
                     data-testid="coach-menu-generate-challenge"
                   >
-                    <SparklesIcon aria-hidden="true" />
+                    <PlusIcon aria-hidden="true" />
                     <span>Generate Custom Challenge</span>
                   </DropdownMenuItem>
                 ) : null}

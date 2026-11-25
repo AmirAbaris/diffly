@@ -3,7 +3,10 @@ import { cleanup, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it } from "vitest"
 import { CodeDiffViewer } from "@/components/review/comparison/code-diff-viewer"
 import { FormattedInlineText } from "@/components/review/formatted-inline"
-import { parseInlineTokens } from "@/components/review/markdown-parser"
+import {
+  parseInlineTokens,
+  parseMarkdownBlocks,
+} from "@/components/review/markdown-parser"
 
 describe("Unified Markdown & Inline Parser", () => {
   afterEach(() => {
@@ -31,6 +34,26 @@ describe("Unified Markdown & Inline Parser", () => {
       "unsafe-test"
     )
     expect(tokens.some((t) => t.type === "link")).toBe(false)
+  })
+
+  it("terminates on incomplete streaming headings, unspaced hashes, and h5/h6 headings", () => {
+    for (const input of [
+      "#",
+      "##",
+      "###",
+      "####",
+      "#no-space",
+      "Intro line\n###",
+    ]) {
+      const blocks = parseMarkdownBlocks(input)
+      expect(blocks.length).toBeGreaterThan(0)
+      expect(blocks[0].type).toBe("paragraph")
+    }
+
+    const deepHeadings = parseMarkdownBlocks("##### Deep\n###### Deeper")
+    expect(deepHeadings).toHaveLength(2)
+    expect(deepHeadings[0]).toMatchObject({ type: "heading", level: 4 })
+    expect(deepHeadings[1]).toMatchObject({ type: "heading", level: 4 })
   })
 })
 
