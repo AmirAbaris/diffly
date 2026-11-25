@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { AlertCircle, Brain, Check, Copy, Sparkles } from "lucide-react"
+import { AlertCircle, Brain, Check, Copy } from "lucide-react"
 import { CoachChallengeConfigCard } from "@/components/coach/coach-challenge-config-card"
 import { CoachDrillCard } from "@/components/coach/coach-drill-card"
 import type { CoachChallengeToolController } from "@/components/coach/use-coach-challenge-tool"
@@ -117,9 +117,6 @@ function AssistantMessageParts({
             return (
               <Trace key={part.toolCallId} data-testid="coach-drill-loading">
                 <TraceLine status="running">
-                  <TraceIcon>
-                    <Sparkles />
-                  </TraceIcon>
                   <TraceTitle>Preparing targeted drill</TraceTitle>
                 </TraceLine>
               </Trace>
@@ -160,9 +157,6 @@ function AssistantMessageParts({
                 data-testid="coach-configure-loading"
               >
                 <TraceLine status="running">
-                  <TraceIcon>
-                    <Sparkles />
-                  </TraceIcon>
                   <TraceTitle>Preparing challenge options</TraceTitle>
                 </TraceLine>
               </Trace>
@@ -222,8 +216,7 @@ function AssistantMessageItem({
     <MessageScrollerItem messageId={message.id}>
       <Message align="start" data-testid="coach-message-assistant">
         <MessageContent>
-          <MessageHeader className="gap-1.5">
-            <Sparkles aria-hidden="true" className="size-3.5" />
+          <MessageHeader>
             <span>Agent Coach</span>
           </MessageHeader>
 
@@ -309,9 +302,6 @@ export function CoachMessageList({
             <MessageContent>
               <Trace>
                 <TraceLine status="running">
-                  <TraceIcon>
-                    <Sparkles />
-                  </TraceIcon>
                   <TraceTitle>Thinking</TraceTitle>
                 </TraceLine>
               </Trace>

@@ -5,8 +5,8 @@ import Link from "next/link"
 import {
   User as UserIcon,
   BarChart3,
+  MessageSquare,
   Settings,
-  Sparkles,
   LogOut,
   ChevronDown,
 } from "lucide-react"
@@ -182,7 +182,7 @@ export function UserNav({ className, onOpenStats }: UserNavProps) {
                 data-testid="user-menu-coach"
               >
                 <Link href="/coach">
-                  <Sparkles
+                  <MessageSquare
                     aria-hidden="true"
                     className="size-3.5 text-muted-foreground"
                   />

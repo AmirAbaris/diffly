@@ -3,7 +3,7 @@
 import * as React from "react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
-import { AlertCircle, Key, Plus, Settings, Sparkles } from "lucide-react"
+import { AlertCircle, Key, Plus, Settings } from "lucide-react"
 import { CoachContextRail } from "@/components/coach/coach-context-rail"
 import { CoachConversation } from "@/components/coach/coach-conversation"
 import { CoachMessageList } from "@/components/coach/coach-message-list"
@@ -83,9 +83,6 @@ function WorkspaceZeroState({
         className="mx-auto flex w-full max-w-2xl flex-col items-center gap-6 py-10 text-center"
       >
         <div className="flex flex-col items-center gap-2.5">
-          <div className="flex size-10 items-center justify-center rounded-xl border border-border bg-muted/40 text-foreground">
-            <Sparkles aria-hidden="true" className="size-4" />
-          </div>
           <h1 className="font-pixel text-2xl tracking-tight text-balance text-foreground">
             Agent Coach
           </h1>
@@ -265,10 +262,6 @@ export function CoachWorkspace() {
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-4 py-2.5 sm:px-6">
           <div className="flex min-w-0 items-center gap-2">
-            <Sparkles
-              aria-hidden="true"
-              className="size-4 shrink-0 text-muted-foreground"
-            />
             <span className="truncate text-xs font-semibold tracking-tight text-foreground">
               Agent Coach
             </span>

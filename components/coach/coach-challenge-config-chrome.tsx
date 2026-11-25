@@ -7,7 +7,6 @@ import {
   ArrowRight,
   Check,
   RotateCcw,
-  Sparkles,
 } from "lucide-react"
 import type { ChallengeToolCallStatus } from "@/components/coach/use-coach-challenge-tool"
 import { Button } from "@/components/ui/button"
@@ -82,10 +81,9 @@ export function CoachChallengeConfigHeader({
   return (
     <CardHeader className="gap-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-          <Sparkles aria-hidden="true" className="size-3.5 shrink-0" />
-          <span>Custom Challenge</span>
-        </div>
+        <span className="text-xs font-medium text-muted-foreground">
+          Custom Challenge
+        </span>
         <span
           data-testid="coach-config-step-indicator"
           className="font-mono text-xs text-muted-foreground tabular-nums"
@@ -160,9 +158,6 @@ export function CoachChallengeConfigStatus({
       {callStatus.kind === "generating" ? (
         <Trace data-testid="coach-config-generating">
           <TraceLine status="running">
-            <TraceIcon>
-              <Sparkles />
-            </TraceIcon>
             <TraceTitle>Generating challenge…</TraceTitle>
           </TraceLine>
         </Trace>
@@ -291,7 +286,6 @@ export function CoachChallengeConfigFooter({
               onClick={onSubmit}
               data-testid="coach-config-continue-button"
             >
-              <Sparkles data-icon="inline-start" aria-hidden="true" />
               <span>Create Challenge</span>
             </Button>
           )

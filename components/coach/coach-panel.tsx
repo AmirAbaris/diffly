@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { AlertCircle, Key, Settings, Sparkles } from "lucide-react"
+import { AlertCircle, Key, Settings } from "lucide-react"
 import { CoachConversation } from "@/components/coach/coach-conversation"
 import { CoachMessageList } from "@/components/coach/coach-message-list"
 import { CoachPromptInput } from "@/components/coach/coach-prompt-input"
@@ -101,19 +101,13 @@ export function CoachPanel({
     <div data-testid="coach-panel" className="flex flex-col gap-3">
       {messages.length === 0 ? (
         <div className="flex flex-col gap-3 rounded-xl border border-border/70 bg-muted/15 p-4">
-          <div className="flex items-center gap-2">
-            <Sparkles
-              aria-hidden="true"
-              className="size-4 shrink-0 text-muted-foreground"
-            />
-            <div className="flex flex-col gap-0.5">
-              <span className="text-sm font-medium text-foreground">
-                {emptyTitle}
-              </span>
-              <p className="text-xs text-pretty text-muted-foreground">
-                {emptyDescription}
-              </p>
-            </div>
+          <div className="flex flex-col gap-0.5">
+            <span className="text-sm font-medium text-foreground">
+              {emptyTitle}
+            </span>
+            <p className="text-xs text-pretty text-muted-foreground">
+              {emptyDescription}
+            </p>
           </div>
 
           <div

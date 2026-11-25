@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { AlertCircle, ArrowRight, RotateCcw, Sparkles } from "lucide-react"
+import { AlertCircle, ArrowRight, RotateCcw } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -92,9 +92,6 @@ export function CoachDrillCard({
           <div className="pt-0.5">
             <Trace data-testid="coach-drill-generating">
               <TraceLine status="running">
-                <TraceIcon>
-                  <Sparkles />
-                </TraceIcon>
                 <TraceTitle>Generating challenge</TraceTitle>
               </TraceLine>
             </Trace>
@@ -159,7 +156,6 @@ export function CoachDrillCard({
                 onClick={() => void handleGenerate()}
                 data-testid="coach-generate-drill-button"
               >
-                <Sparkles data-icon="inline-start" aria-hidden="true" />
                 <span>Generate Targeted Drill</span>
               </Button>
             </div>

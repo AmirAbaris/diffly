@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { ArrowRight, Settings, Sparkles } from "lucide-react"
+import { ArrowRight, Settings } from "lucide-react"
 import { PATTERNS_QUICK_PROMPTS } from "@/components/coach/use-coach-chat"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -21,34 +21,29 @@ export function PatternsCoachDrawer() {
     >
       <CardContent className="flex flex-col gap-3.5 px-4 py-4 sm:px-6">
         <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
-          <div className="flex items-start gap-3">
-            <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg border border-border bg-muted/40 text-foreground">
-              <Sparkles aria-hidden="true" className="size-4" />
-            </div>
-            <div className="flex flex-col gap-0.5">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-sm font-semibold tracking-tight text-foreground">
-                  Analyze My Patterns
-                </span>
-                <Badge variant="secondary" size="sm">
-                  Agent Coach
+          <div className="flex flex-col gap-0.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-sm font-semibold tracking-tight text-foreground">
+                Analyze My Patterns
+              </span>
+              <Badge variant="secondary" size="sm">
+                Agent Coach
+              </Badge>
+              {!connection.isLoading && connectionSummary ? (
+                <Badge
+                  variant="success"
+                  size="sm"
+                  data-testid="patterns-coach-connected-badge"
+                  className="font-mono"
+                >
+                  {connectionSummary}
                 </Badge>
-                {!connection.isLoading && connectionSummary ? (
-                  <Badge
-                    variant="success"
-                    size="sm"
-                    data-testid="patterns-coach-connected-badge"
-                    className="font-mono"
-                  >
-                    {connectionSummary}
-                  </Badge>
-                ) : null}
-              </div>
-              <p className="text-xs text-pretty text-muted-foreground">
-                Inspect blind spots across your review history and launch a
-                targeted drill in the full Coach workspace.
-              </p>
+              ) : null}
             </div>
+            <p className="text-xs text-pretty text-muted-foreground">
+              Inspect blind spots across your review history and launch a
+              targeted drill in the full Coach workspace.
+            </p>
           </div>
 
           <div className="flex shrink-0 items-center gap-2">

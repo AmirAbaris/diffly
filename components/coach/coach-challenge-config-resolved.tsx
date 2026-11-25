@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { AlertTriangle, ArrowRight, Sparkles } from "lucide-react"
+import { AlertTriangle, ArrowRight } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -27,8 +27,7 @@ export function CoachChallengeConfigResolved({
         data-testid="coach-config-cancelled"
         className="border-border/70 bg-muted/20 shadow-none"
       >
-        <CardContent className="flex items-center gap-2 text-xs text-muted-foreground">
-          <Sparkles aria-hidden="true" className="size-3.5 shrink-0" />
+        <CardContent className="text-xs text-muted-foreground">
           <span>Challenge creation cancelled</span>
         </CardContent>
       </Card>

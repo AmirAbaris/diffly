@@ -2,14 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
-import {
-  AlertTriangle,
-  ArrowUpRight,
-  Plus,
-  Sparkles,
-  Target,
-  Trash2,
-} from "lucide-react"
+import { AlertTriangle, ArrowUpRight, Plus, Target, Trash2 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
@@ -149,13 +142,9 @@ function CustomChallengesSection({
       className="flex flex-col gap-2.5 border-t border-border p-4"
     >
       <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-1.5 text-xs font-medium text-foreground">
-          <Sparkles
-            aria-hidden="true"
-            className="size-3.5 text-muted-foreground"
-          />
-          <span>Custom Challenges</span>
-        </div>
+        <span className="text-xs font-medium text-foreground">
+          Custom Challenges
+        </span>
         <Badge
           variant="secondary"
           size="sm"

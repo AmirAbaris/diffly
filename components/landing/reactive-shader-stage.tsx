@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { ArrowRight, Pause, Play, Sparkles, Terminal } from "lucide-react"
+import { ArrowRight, Pause, Play, Terminal } from "lucide-react"
 import { useTheme } from "next-themes"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -171,7 +171,6 @@ export function ReactiveShaderStage({
             className="bg-background/85 backdrop-blur-xs"
           >
             <Link href="/coach">
-              <Sparkles aria-hidden="true" data-icon="inline-start" />
               <span>Open AI Coach</span>
             </Link>
           </Button>

@@ -7,7 +7,6 @@ import {
   PlusIcon,
   RotateCcwIcon,
   SettingsIcon,
-  SparklesIcon,
   SquareIcon,
 } from "lucide-react"
 import {
@@ -111,7 +110,7 @@ export function CoachPromptInput({
                     onClick={onCreateChallenge}
                     data-testid="coach-menu-generate-challenge"
                   >
-                    <SparklesIcon aria-hidden="true" />
+                    <PlusIcon aria-hidden="true" />
                     <span>Generate Custom Challenge</span>
                   </DropdownMenuItem>
                 ) : null}
