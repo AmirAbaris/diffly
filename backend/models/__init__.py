@@ -15,6 +15,7 @@ from backend.models.challenge import (
     HintResponse,
     Language,
 )
+from backend.models.coach_thread import CoachMessage, CoachThread
 from backend.models.submission import Submission, SubmissionBase
 from backend.models.user import User, UserBase, UserCreate, UserRead
 
@@ -27,6 +28,8 @@ __all__ = [
     "ChallengeDetail",
     "ChallengeSolutionResponse",
     "ChallengeSummary",
+    "CoachMessage",
+    "CoachThread",
     "CustomChallengeResponse",
     "CustomChallengesListResponse",
     "DefectCriterion",
