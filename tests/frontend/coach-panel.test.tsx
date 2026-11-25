@@ -330,4 +330,68 @@ describe("Agent Coach UI components", () => {
     await user.click(screen.getByTestId("coach-rail-delete-custom-jwt-bypass"))
     expect(mockDeleteCustomChallenge).toHaveBeenCalledWith("custom-jwt-bypass")
   })
+
+  it("renders tool-get_submission_debrief across streaming, available, complete, and error states", () => {
+    const base = {
+      type: "tool-get_submission_debrief" as const,
+      input: { challengeSlug: "mutex-unlock-defer" },
+    }
+    const output = {
+      challengeSlug: "mutex-unlock-defer",
+      challengeTitle: "Deferred Mutex Unlock Leak",
+      score: 50,
+      truncated: false,
+      debrief: "<code_under_review>code</code_under_review>",
+    }
+    const cases: Array<
+      [
+        Extract<
+          CoachUIMessage["parts"][number],
+          { type: "tool-get_submission_debrief" }
+        >,
+        string,
+        string[],
+        boolean?,
+      ]
+    > = [
+      [
+        { ...base, toolCallId: "d-1", state: "input-streaming" },
+        "coach-debrief-loading",
+        ["Inspecting submission debrief"],
+      ],
+      [
+        { ...base, toolCallId: "d-2", state: "input-available" },
+        "coach-debrief-loading",
+        ["Inspecting submission debrief"],
+      ],
+      [
+        { ...base, toolCallId: "d-3", state: "output-available", output },
+        "coach-debrief-complete",
+        ["Reviewed submission details", "Deferred Mutex Unlock Leak"],
+      ],
+      [
+        {
+          ...base,
+          toolCallId: "d-4",
+          state: "output-error",
+          errorText: "No prior submission found for this challenge.",
+        },
+        "coach-debrief-error",
+        ["No prior submission found for this challenge."],
+        true,
+      ],
+    ]
+    for (const [part, testId, texts, isAlert] of cases) {
+      mockChatState = {
+        status: "ready",
+        error: undefined,
+        messages: [{ id: "a", role: "assistant", parts: [part] }],
+      }
+      const view = render(<CoachWorkspace />)
+      const el = screen.getByTestId(testId)
+      for (const text of texts) expect(el).toHaveTextContent(text)
+      if (isAlert) expect(el).toHaveAttribute("role", "alert")
+      view.unmount()
+    }
+  })
 })
