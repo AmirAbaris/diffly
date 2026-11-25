@@ -38,7 +38,11 @@ from backend.services.github_oauth import (
     sanitize_next_path,
     verify_oauth_state,
 )
-from backend.services.ownership import CustomQuotaExceeded, claim_guest_session
+from backend.services.ownership import (
+    CoachThreadQuotaExceeded,
+    CustomQuotaExceeded,
+    claim_guest_session,
+)
 
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -107,7 +111,7 @@ def adopt_guest_on_sign_in(
         return None
     try:
         claim_guest_session(session=session, user_id=user.id, guest=guest)
-    except CustomQuotaExceeded:
+    except (CustomQuotaExceeded, CoachThreadQuotaExceeded):
         session.rollback()
         response.headers["X-Diffly-Claim-Status"] = "quota_exceeded"
         return "quota_exceeded"

@@ -1,4 +1,4 @@
-"""Centralized ownership rules for submissions and private custom challenges.
+"""Centralized ownership rules for submissions, custom challenges, and coach threads.
 
 Ownership rules:
 - Claimed rows (user_id IS NOT NULL) are never visible via session_id and must
@@ -7,6 +7,7 @@ Ownership rules:
 - Private custom challenges (is_public IS False) are only visible and modifiable
   by their owning user_id or owning unclaimed guest session, unless an unlisted
   share_token is explicitly enabled by the owner for read-only link access.
+- Coach threads are strictly private to their owning user_id or unclaimed guest session.
 """
 
 import hmac
@@ -17,14 +18,36 @@ from sqlmodel import Session, and_, func, or_, select, text
 
 from backend.core.guest_session import GuestSession
 from backend.models.challenge import Challenge
+from backend.models.coach_thread import CoachThread
 from backend.models.submission import Submission
 from backend.models.user import User
 
 
 CUSTOM_CHALLENGE_QUOTA = 5
+COACH_THREAD_QUOTA = 50
 
 
-class CustomQuotaExceeded(Exception):
+class _QuotaExceededError(Exception):
+    """Base error raised when creating or claiming a bounded resource exceeds quota."""
+
+    def __init__(
+        self,
+        resource_label: str,
+        owned: int,
+        incoming: int,
+        limit: int,
+    ) -> None:
+        self.owned = owned
+        self.incoming = incoming
+        self.limit = limit
+        self.message = (
+            f"Cannot claim {incoming} guest {resource_label}: "
+            f"{owned} already owned + {incoming} incoming exceeds limit of {limit}."
+        )
+        super().__init__(self.message)
+
+
+class CustomQuotaExceeded(_QuotaExceededError):
     """Raised when creating or claiming custom challenges exceeds the quota."""
 
     def __init__(
@@ -33,14 +56,19 @@ class CustomQuotaExceeded(Exception):
         incoming: int,
         limit: int = CUSTOM_CHALLENGE_QUOTA,
     ) -> None:
-        self.owned = owned
-        self.incoming = incoming
-        self.limit = limit
-        self.message = (
-            f"Cannot claim {incoming} guest custom challenge(s): "
-            f"{owned} already owned + {incoming} incoming exceeds limit of {limit}."
-        )
-        super().__init__(self.message)
+        super().__init__("custom challenge(s)", owned, incoming, limit)
+
+
+class CoachThreadQuotaExceeded(_QuotaExceededError):
+    """Raised when creating or claiming coach threads exceeds the quota."""
+
+    def __init__(
+        self,
+        owned: int,
+        incoming: int,
+        limit: int = COACH_THREAD_QUOTA,
+    ) -> None:
+        super().__init__("coach thread(s)", owned, incoming, limit)
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,6 +77,7 @@ class ClaimResult:
 
     submissions: int
     challenges: int
+    coach_threads: int = 0
 
 
 @dataclass(frozen=True)
@@ -72,38 +101,35 @@ class Actor:
         return cls(user_id=None, guest_session_id=None)
 
 
-def submission_owner_filter(actor: Actor) -> Any | None:
-    """Return SQL filter matching submissions owned by actor, or None."""
+def _owner_filter(model: Any, actor: Actor) -> Any | None:
     conditions: list[Any] = []
     if actor.user_id is not None:
-        conditions.append(Submission.user_id == actor.user_id)
+        conditions.append(model.user_id == actor.user_id)
     if actor.guest_session_id is not None:
         conditions.append(
             and_(
-                Submission.session_id == actor.guest_session_id,
-                Submission.user_id.is_(None),
+                model.session_id == actor.guest_session_id,
+                model.user_id.is_(None),
             )
         )
     if not conditions:
         return None
     return conditions[0] if len(conditions) == 1 else or_(*conditions)
+
+
+def submission_owner_filter(actor: Actor) -> Any | None:
+    """Return SQL filter matching submissions owned by actor, or None."""
+    return _owner_filter(Submission, actor)
 
 
 def challenge_owner_filter(actor: Actor) -> Any | None:
     """Return SQL filter matching private challenges owned by actor, or None."""
-    conditions: list[Any] = []
-    if actor.user_id is not None:
-        conditions.append(Challenge.user_id == actor.user_id)
-    if actor.guest_session_id is not None:
-        conditions.append(
-            and_(
-                Challenge.session_id == actor.guest_session_id,
-                Challenge.user_id.is_(None),
-            )
-        )
-    if not conditions:
-        return None
-    return conditions[0] if len(conditions) == 1 else or_(*conditions)
+    return _owner_filter(Challenge, actor)
+
+
+def coach_thread_owner_filter(actor: Actor) -> Any | None:
+    """Return SQL filter matching coach threads owned by actor, or None."""
+    return _owner_filter(CoachThread, actor)
 
 
 def is_challenge_owner(challenge: Challenge, actor: Actor) -> bool:
@@ -146,7 +172,8 @@ def can_access_challenge(
     )
 
 
-def _lock_actor_scope(session: Session, actor: Actor) -> None:
+def lock_actor_scope(session: Session, actor: Actor) -> None:
+    """Serialize concurrent actor-scoped writes via row or advisory lock."""
     if actor.user_id is not None:
         session.exec(
             select(User.id).where(User.id == actor.user_id).with_for_update()
@@ -173,7 +200,7 @@ def ensure_custom_quota(
 ) -> None:
     """Ensure actor can hold `adding` more private custom challenges."""
     if lock:
-        _lock_actor_scope(session, actor)
+        lock_actor_scope(session, actor)
 
     owner_filter = challenge_owner_filter(actor)
     owned = 0
@@ -193,6 +220,32 @@ def ensure_custom_quota(
         )
 
 
+def ensure_coach_thread_quota(
+    session: Session,
+    actor: Actor,
+    adding: int = 1,
+    *,
+    lock: bool = True,
+) -> None:
+    """Ensure actor can hold `adding` more coach threads."""
+    if lock:
+        lock_actor_scope(session, actor)
+
+    owner_filter = coach_thread_owner_filter(actor)
+    owned = 0
+    if owner_filter is not None:
+        owned = session.exec(
+            select(func.count(CoachThread.id)).where(owner_filter)
+        ).one()
+
+    if owned + adding > COACH_THREAD_QUOTA:
+        raise CoachThreadQuotaExceeded(
+            owned=owned,
+            incoming=adding,
+            limit=COACH_THREAD_QUOTA,
+        )
+
+
 def claim_guest_session(
     session: Session,
     user_id: int,
@@ -200,42 +253,79 @@ def claim_guest_session(
 ) -> ClaimResult:
     """Atomically transfer unclaimed guest rows to user_id and scrub session_id."""
     user_actor = Actor(user_id=user_id)
-    _lock_actor_scope(session, user_actor)
+    lock_actor_scope(session, user_actor)
+    try:
+        lock_actor_scope(session, Actor(guest_session_id=guest.id))
 
-    unclaimed_challenges = session.exec(
-        select(Challenge).where(
-            Challenge.session_id == guest.id,
-            Challenge.user_id.is_(None),
-            Challenge.is_public.is_(False),
-        )
-    ).all()
+        unclaimed_challenges = session.exec(
+            select(Challenge)
+            .where(
+                Challenge.session_id == guest.id,
+                Challenge.user_id.is_(None),
+                Challenge.is_public.is_(False),
+            )
+            .with_for_update()
+        ).all()
 
-    if len(unclaimed_challenges) > 0:
-        ensure_custom_quota(
-            session,
-            user_actor,
-            adding=len(unclaimed_challenges),
-            lock=False,
-        )
+        if len(unclaimed_challenges) > 0:
+            ensure_custom_quota(
+                session,
+                user_actor,
+                adding=len(unclaimed_challenges),
+                lock=False,
+            )
 
-    unclaimed_subs = session.exec(
-        select(Submission).where(
-            Submission.session_id == guest.id,
-            Submission.user_id.is_(None),
-        )
-    ).all()
+        unclaimed_threads = session.exec(
+            select(CoachThread)
+            .where(
+                CoachThread.session_id == guest.id,
+                CoachThread.user_id.is_(None),
+            )
+            .with_for_update()
+        ).all()
 
-    for sub in unclaimed_subs:
-        sub.user_id = user_id
-        sub.session_id = None
+        if len(unclaimed_threads) > 0:
+            ensure_coach_thread_quota(
+                session,
+                user_actor,
+                adding=len(unclaimed_threads),
+                lock=False,
+            )
 
-    for challenge in unclaimed_challenges:
-        challenge.user_id = user_id
-        challenge.session_id = None
+        unclaimed_subs = session.exec(
+            select(Submission)
+            .where(
+                Submission.session_id == guest.id,
+                Submission.user_id.is_(None),
+            )
+            .with_for_update()
+        ).all()
 
-    sub_count = len(unclaimed_subs)
-    ch_count = len(unclaimed_challenges)
-    if sub_count > 0 or ch_count > 0:
-        session.commit()
+        for sub in unclaimed_subs:
+            sub.user_id = user_id
+            sub.session_id = None
 
-    return ClaimResult(submissions=sub_count, challenges=ch_count)
+        for challenge in unclaimed_challenges:
+            challenge.user_id = user_id
+            challenge.session_id = None
+
+        for thread in unclaimed_threads:
+            thread.user_id = user_id
+            thread.session_id = None
+
+        sub_count = len(unclaimed_subs)
+        ch_count = len(unclaimed_challenges)
+        thread_count = len(unclaimed_threads)
+        if sub_count > 0 or ch_count > 0 or thread_count > 0:
+            session.commit()
+        else:
+            session.rollback()
+    except Exception:
+        session.rollback()
+        raise
+
+    return ClaimResult(
+        submissions=sub_count,
+        challenges=ch_count,
+        coach_threads=thread_count,
+    )
