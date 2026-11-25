@@ -337,7 +337,6 @@ describe("lib/server/coach-threads ensureCoachThread & persistCoachTurn", () => 
       reason: "upstream-error",
     })
 
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
     mockFetch.mockRejectedValueOnce(new Error("timeout"))
     const tid = "22222222-2222-4222-8222-222222222222"
     await expect(
@@ -358,7 +357,5 @@ describe("lib/server/coach-threads ensureCoachThread & persistCoachTurn", () => 
       cookie: "diffly_access_token=jwt-2",
       "content-type": "application/json",
     })
-    expect(warnSpy).toHaveBeenCalledTimes(1)
-    warnSpy.mockRestore()
   })
 })

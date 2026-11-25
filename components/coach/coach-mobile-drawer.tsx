@@ -45,7 +45,7 @@ export function CoachMobileDrawer({
         <DialogPrimitive.Content
           data-testid="coach-mobile-drawer"
           aria-describedby={undefined}
-          className="fixed inset-y-0 left-0 z-50 flex w-80 max-w-[85vw] flex-col border-r border-border bg-background text-foreground shadow-xl duration-150 outline-none lg:hidden data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0"
+          className="fixed inset-y-0 left-0 z-50 flex w-80 max-w-[85vw] flex-col border-r border-border bg-background text-foreground shadow-xl outline-none lg:hidden data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0"
         >
           <div className="flex shrink-0 items-center justify-between gap-2 px-4 py-3">
             <DialogTitle className="text-xs font-semibold tracking-tight text-foreground">

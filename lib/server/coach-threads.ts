@@ -20,8 +20,6 @@ const MAX_PARTS_JSON_BYTES = 131_072
 const MAX_JSON_DEPTH = 20
 const PERSIST_TIMEOUT_MS = 5_000
 const TOOL_NAME_REGEX = /^[A-Za-z0-9_-]+$/
-const PRINTABLE_NON_WHITESPACE_REGEX = /[^\s\x00-\x1f\x7f]/
-const CONTROL_CHAR_REGEX = /[\x00-\x1f\x7f]/
 const TERMINAL_TOOL_STATES = new Set([
   "output-available",
   "output-error",
@@ -154,6 +152,27 @@ function sanitizeJsonValue(value: unknown, depth: number): unknown {
   return undefined
 }
 
+function isControlCode(code: number): boolean {
+  return code <= 0x1f || code === 0x7f
+}
+
+function hasControlChar(value: string): boolean {
+  for (let i = 0; i < value.length; i += 1) {
+    if (isControlCode(value.charCodeAt(i))) return true
+  }
+  return false
+}
+
+function hasPrintableNonWhitespace(value: string): boolean {
+  for (let i = 0; i < value.length; i += 1) {
+    const ch = value[i]
+    if (!isControlCode(value.charCodeAt(i)) && !/\s/.test(ch)) {
+      return true
+    }
+  }
+  return false
+}
+
 function sanitizeUserPart(part: unknown): Record<string, unknown> | null {
   if (!part || typeof part !== "object" || Array.isArray(part)) return null
   const record = part as Record<string, unknown>
@@ -161,9 +180,7 @@ function sanitizeUserPart(part: unknown): Record<string, unknown> | null {
   const text = record.text
     .replaceAll("\0", "")
     .slice(0, COACH_MAX_TEXT_PART_CHARS)
-  return PRINTABLE_NON_WHITESPACE_REGEX.test(text)
-    ? { type: "text", text }
-    : null
+  return hasPrintableNonWhitespace(text) ? { type: "text", text } : null
 }
 
 function sanitizeAssistantPart(part: unknown): Record<string, unknown> | null {
@@ -187,7 +204,7 @@ function sanitizeAssistantPart(part: unknown): Record<string, unknown> | null {
       typeof toolCallId !== "string" ||
       toolCallId.length > 200 ||
       toolCallId.trim().length === 0 ||
-      CONTROL_CHAR_REGEX.test(toolCallId) ||
+      hasControlChar(toolCallId) ||
       typeof state !== "string" ||
       !VALID_TOOL_STATES.has(state)
     ) {
@@ -343,13 +360,10 @@ export async function persistCoachTurn({
   if (batch.length === 0) return
 
   const origin = resolveInternalBackendOrigin(request)
-  if (!origin) {
-    console.warn("[coach] skipping turn persistence: missing backend origin")
-    return
-  }
+  if (!origin) return
 
   try {
-    const res = await fetch(
+    await fetch(
       `${origin}/api/user/coach-threads/${encodeURIComponent(threadId)}/messages`,
       {
         method: "POST",
@@ -363,15 +377,7 @@ export async function persistCoachTurn({
         signal: AbortSignal.timeout(PERSIST_TIMEOUT_MS),
       }
     )
-    if (!res.ok) {
-      console.warn(
-        `[coach] turn persistence returned HTTP ${res.status} for thread ${threadId}`
-      )
-    }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "unknown error"
-    console.warn(
-      `[coach] turn persistence failed for thread ${threadId}: ${message}`
-    )
+  } catch {
+    return
   }
 }
