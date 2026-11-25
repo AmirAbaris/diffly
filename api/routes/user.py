@@ -5,7 +5,7 @@ from collections import defaultdict
 from datetime import UTC, date, datetime, timedelta
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Query, Request, Response, status
+from fastapi import APIRouter, HTTPException, Path, Query, Request, Response, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlmodel import Session, func, select
 
@@ -26,7 +26,9 @@ from backend.services.analytics_service import (
 )
 from backend.services.coach_service import (
     CoachPatternsResponse,
+    CoachSubmissionDebriefResponse,
     get_actor_coach_patterns,
+    get_actor_submission_debrief,
 )
 from backend.services.ownership import (
     Actor,
@@ -429,6 +431,33 @@ def get_user_coach_patterns(
         slice_limit=slice_limit,
         missed_limit=missed_limit,
     )
+
+
+@router.get(
+    "/coach-submissions/{challenge_slug}",
+    response_model=CoachSubmissionDebriefResponse,
+    status_code=status.HTTP_200_OK,
+)
+def get_user_coach_submission_debrief(
+    challenge_slug: Annotated[
+        str,
+        Path(
+            min_length=1,
+            max_length=200,
+            description="Challenge slug to fetch latest submission debrief for",
+        ),
+    ],
+    session: SessionDep,
+    actor: ActorDep,
+) -> CoachSubmissionDebriefResponse:
+    """Retrieve actor-scoped submission debrief and challenge context for coaching."""
+    debrief = get_actor_submission_debrief(session, actor, challenge_slug)
+    if debrief is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Submission debrief not found",
+        )
+    return debrief
 
 
 async def _has_raw_session_input(request: Request) -> bool:

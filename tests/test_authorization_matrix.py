@@ -323,6 +323,38 @@ MATRIX: dict[tuple[str, str], dict[str, dict[str, int]]] = {
             "inactive": 200,
         },
     },
+    ("GET", "/api/user/coach-submissions/{challenge_slug}"): {
+        "public": {
+            "anonymous": 404,
+            "guest_a": 200,
+            "guest_b": 404,
+            "guest_forged": 404,
+            "guest_tampered": 404,
+            "user_a": 200,
+            "user_b": 404,
+            "inactive": 404,
+        },
+        "user_a_private": {
+            "anonymous": 404,
+            "guest_a": 404,
+            "guest_b": 404,
+            "guest_forged": 404,
+            "guest_tampered": 404,
+            "user_a": 200,
+            "user_b": 404,
+            "inactive": 404,
+        },
+        "guest_a_private": {
+            "anonymous": 404,
+            "guest_a": 200,
+            "guest_b": 404,
+            "guest_forged": 404,
+            "guest_tampered": 404,
+            "user_a": 404,
+            "user_b": 404,
+            "inactive": 404,
+        },
+    },
     ("GET", "/api/challenges/next"): {
         "public_drill_recommendation": {
             "anonymous": 200,
@@ -820,6 +852,24 @@ def test_authorization_matrix_enforcement(
             assert patterns["strongest_slices"] == []
             assert patterns["recent_missed"] == []
 
+    for target_key, slug in targets.items():
+        for actor_name, expected in MATRIX[
+            ("GET", "/api/user/coach-submissions/{challenge_slug}")
+        ][target_key].items():
+            ac, headers = actors[actor_name]
+            res = ac.get(f"/api/user/coach-submissions/{slug}", headers=headers)
+            assert res.status_code == expected, f"{target_key} debrief <- {actor_name}"
+            if expected == 200:
+                debrief = res.json()
+                assert debrief["challenge_slug"] == slug
+                if target_key == "public":
+                    if actor_name == "user_a":
+                        assert "User A public submission" in debrief["comments"]
+                        assert "Guest A" not in debrief["comments"]
+                    elif actor_name == "guest_a":
+                        assert "Guest A public submission" in debrief["comments"]
+                        assert "User A" not in debrief["comments"]
+
     for actor_name, expected in MATRIX[("GET", "/api/challenges/next")][
         "public_drill_recommendation"
     ].items():
@@ -923,6 +973,20 @@ def test_authorization_matrix_enforcement(
         assert ac.get("/api/user/progress").json()["total_attempted"] == 0
         assert ac.get("/api/user/analytics").json()["total_submissions"] == 0
         assert ac.get("/api/user/coach-patterns").json()["total_submissions"] == 0
+        assert (
+            ac.get(f"/api/user/coach-submissions/{public_ch.slug}").status_code == 404
+        )
+        assert (
+            ac.get(f"/api/user/coach-submissions/{guest_a_private.slug}").status_code
+            == 404
+        )
+
+    assert (
+        actors["user_a"][0]
+        .get(f"/api/user/coach-submissions/{guest_a_private.slug}")
+        .status_code
+        == 200
+    )
 
     # User A now owns both private challenges and can delete them
     assert (
@@ -1247,6 +1311,13 @@ def test_authenticated_actor_ignores_unclaimed_guest_session_cookie_and_header(
         ]
         == 0
     )
+    assert (
+        user_b_client.get(
+            f"/api/user/coach-submissions/{guest_private_slug}",
+            headers=guest_headers,
+        ).status_code
+        == 404
+    )
 
 
 def test_evaluate_custom_rejects_invalid_and_oversized_payloads(client: TestClient):
@@ -1554,6 +1625,18 @@ def test_share_token_read_only_boundary_and_isolation(
         },
     )
     assert recipient_review.status_code == 200
+    assert (
+        user_b_client.get(
+            f"/api/user/coach-submissions/{user_a_private.slug}?share_token={token}"
+        ).status_code
+        == 404
+    )
+    assert (
+        user_b_client.get(
+            f"/api/user/coach-submissions/{user_a_private.slug}"
+        ).status_code
+        == 404
+    )
     owner_subs = user_a_client.get(f"/api/challenges/{user_a_private.slug}/submissions")
     assert owner_subs.status_code == 200
     assert all(
