@@ -17,6 +17,11 @@ import {
   type CoachUIMessage,
   type DebriefContext,
 } from "@/lib/ai/coach"
+import { sliceCoachMessageWindow } from "@/lib/ai/coach-window"
+import type { CoachPersistenceDegradationReason } from "@/types/coach-thread"
+
+const COACH_THREAD_ID_HEADER = "X-Coach-Thread-Id"
+const COACH_PERSISTENCE_HEADER = "X-Coach-Persistence"
 
 export interface CoachQuickPrompt {
   readonly id: string
@@ -80,9 +85,21 @@ export type CoachChatStatus =
   | { kind: "error"; message: string; isAuthError: boolean }
   | { kind: "ready" }
 
+export interface CoachChatPersistenceAdapter {
+  getThreadId: () => string | null
+  getSessionEpoch: () => number
+  onThreadIdResolved: (threadId: string, requestEpoch: number) => void
+  onPersistenceDegraded: (
+    reason: CoachPersistenceDegradationReason,
+    requestEpoch: number
+  ) => void
+  onTurnFinished?: (requestEpoch: number) => void
+}
+
 export interface UseCoachChatOptions {
   chatId?: string
   target: CoachTarget
+  persistence?: CoachChatPersistenceAdapter
 }
 
 export interface UseCoachChatResult {
@@ -95,6 +112,7 @@ export interface UseCoachChatResult {
   stop: () => Promise<void>
   clearError: () => void
   resetConversation: () => void
+  hydrateMessages: (nextMessages: CoachUIMessage[]) => void
 }
 
 const AUTH_ERROR_PATTERN =
@@ -114,23 +132,84 @@ function buildCoachRequestBody(target: CoachTarget): Record<string, unknown> {
   }
 }
 
+function isPersistenceDegradationReason(
+  value: string | null
+): value is CoachPersistenceDegradationReason {
+  return (
+    value === "unauthenticated" ||
+    value === "quota-exceeded" ||
+    value === "upstream-error"
+  )
+}
+
+function createCoachChatTransport(target: CoachTarget) {
+  let persistence: CoachChatPersistenceAdapter | undefined
+  let lastRequestEpoch = 0
+
+  const transport = new DefaultChatTransport<CoachUIMessage>({
+    api: "/api/coach",
+    prepareSendMessagesRequest: ({ messages: outbound, body }) => {
+      const baseBody = buildCoachRequestBody(target)
+      const threadId = persistence?.getThreadId()
+      return {
+        body: {
+          ...baseBody,
+          ...body,
+          ...(threadId ? { threadId } : {}),
+          messages: sliceCoachMessageWindow(outbound),
+        },
+      }
+    },
+    fetch: async (input, init) => {
+      const requestEpoch = persistence?.getSessionEpoch() ?? 0
+      lastRequestEpoch = requestEpoch
+      const response = await globalThis.fetch(input, init)
+      if (persistence) {
+        const resolvedThreadId = response.headers
+          .get(COACH_THREAD_ID_HEADER)
+          ?.trim()
+        if (resolvedThreadId) {
+          persistence.onThreadIdResolved(resolvedThreadId, requestEpoch)
+        }
+        const degradedHeader =
+          response.headers.get(COACH_PERSISTENCE_HEADER)?.trim() ?? null
+        if (isPersistenceDegradationReason(degradedHeader)) {
+          persistence.onPersistenceDegraded(degradedHeader, requestEpoch)
+        }
+      }
+      return response
+    },
+  })
+
+  return {
+    transport,
+    setPersistence(next: CoachChatPersistenceAdapter | undefined) {
+      persistence = next
+    },
+    notifyTurnFinished() {
+      persistence?.onTurnFinished?.(lastRequestEpoch)
+    },
+  }
+}
+
 export function useCoachChat({
   chatId,
   target,
+  persistence,
 }: UseCoachChatOptions): UseCoachChatResult {
   const connection = useAIConnection()
   const connectionSummary = formatAIConnectionSummary(connection)
 
   const suppressAutoSendRef = React.useRef(false)
 
-  const transport = React.useMemo(
-    () =>
-      new DefaultChatTransport<CoachUIMessage>({
-        api: "/api/coach",
-        body: () => buildCoachRequestBody(target),
-      }),
+  const transportController = React.useMemo(
+    () => createCoachChatTransport(target),
     [target]
   )
+
+  React.useEffect(() => {
+    transportController.setPersistence(persistence)
+  }, [persistence, transportController])
 
   const {
     messages,
@@ -143,10 +222,15 @@ export function useCoachChat({
     clearError,
   } = useChat<CoachUIMessage>({
     id: chatId,
-    transport,
+    transport: transportController.transport,
     sendAutomaticallyWhen: ({ messages: nextMessages }) =>
       !suppressAutoSendRef.current &&
       lastAssistantMessageIsCompleteWithToolCalls({ messages: nextMessages }),
+    onFinish: (event) => {
+      if (!event.isAbort && !event.isError) {
+        transportController.notifyTurnFinished()
+      }
+    },
   })
 
   const {
@@ -230,12 +314,19 @@ export function useCoachChat({
     sendPrompt(CREATE_CHALLENGE_PROMPT)
   }, [sendPrompt])
 
+  const hydrateMessages = React.useCallback(
+    (nextMessages: CoachUIMessage[]) => {
+      void stop()
+      resetToolState()
+      clearError()
+      setMessages(nextMessages)
+    },
+    [clearError, resetToolState, setMessages, stop]
+  )
+
   const resetConversation = React.useCallback(() => {
-    void stop()
-    resetToolState()
-    clearError()
-    setMessages([])
-  }, [clearError, resetToolState, setMessages, stop])
+    hydrateMessages([])
+  }, [hydrateMessages])
 
   return {
     state,
@@ -247,5 +338,6 @@ export function useCoachChat({
     stop,
     clearError,
     resetConversation,
+    hydrateMessages,
   }
 }

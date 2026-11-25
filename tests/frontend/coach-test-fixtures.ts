@@ -2,6 +2,7 @@ import { vi } from "vitest"
 import type { AIProviderId } from "@/lib/ai/catalog"
 import type { CoachPatternsSnapshot, CoachUIMessage } from "@/lib/ai/coach"
 import type { ChallengeSummary } from "@/types/challenge"
+import type { CoachThreadSummary } from "@/types/coach-thread"
 
 export const createConnectionState = () => ({
   isConnected: true,
@@ -97,6 +98,73 @@ export const SAMPLE_DRILL_MESSAGES: CoachUIMessage[] = [
           rationale: "Addresses low recall on concurrency challenges.",
         },
       },
+    ],
+  },
+]
+
+export const SAMPLE_COACH_THREADS: CoachThreadSummary[] = [
+  {
+    id: "11111111-1111-4111-8111-111111111111",
+    title: "Rust concurrency blind spots",
+    mode: "patterns",
+    challenge_slug: null,
+    message_count: 4,
+    created_at: "2026-11-25T15:00:00Z",
+    updated_at: "2026-11-25T16:30:00Z",
+  },
+  {
+    id: "22222222-2222-4222-8222-222222222222",
+    title: "SQL injection debrief",
+    mode: "patterns",
+    challenge_slug: null,
+    message_count: 2,
+    created_at: "2026-11-24T12:00:00Z",
+    updated_at: "2026-11-24T12:15:00Z",
+  },
+]
+
+export const SAMPLE_HYDRATED_TOOL_MESSAGES: CoachUIMessage[] = [
+  {
+    id: "u-1",
+    role: "user",
+    parts: [{ type: "text", text: "Help me review my concurrency bugs." }],
+  },
+  {
+    id: "a-1",
+    role: "assistant",
+    parts: [
+      {
+        type: "tool-get_submission_debrief",
+        toolCallId: "debrief-1",
+        state: "output-available",
+        input: { challengeSlug: "async-lock-order" },
+        output: {
+          challengeSlug: "async-lock-order",
+          challengeTitle: "Async Lock Ordering",
+          score: 52,
+          truncated: false,
+          debrief: "Missed lock ordering across await",
+        },
+      },
+      {
+        type: "tool-configure_challenge",
+        toolCallId: "cfg-1",
+        state: "output-available",
+        input: {
+          topic: "Async lock ordering",
+          language: "rust",
+          difficulty: "Hard",
+        },
+        output: {
+          status: "created",
+          slug: "custom-rust-locks",
+          title: "Custom Rust Locks",
+          language: "rust",
+          difficulty: "Hard",
+          topic: "Async lock ordering",
+        },
+      },
+      ...SAMPLE_DRILL_MESSAGES[0].parts,
     ],
   },
 ]

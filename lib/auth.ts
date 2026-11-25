@@ -3,6 +3,7 @@
 import axios from "axios"
 import useSWR, { useSWRConfig, type ScopedMutator } from "swr"
 import { apiClient } from "@/lib/axios"
+import { isCoachThreadsKey } from "@/hooks/use-coach-threads"
 import { CUSTOM_CHALLENGES_SWR_KEY } from "@/hooks/use-custom-challenges"
 import { toast } from "@/hooks/use-toast"
 import { USER_PROGRESS_SWR_KEY } from "@/hooks/use-user-stats"
@@ -192,6 +193,11 @@ const isChallengeScopedKey = (key: unknown): key is string =>
   key !== CUSTOM_CHALLENGES_SWR_KEY &&
   !key.startsWith("/api/challenges/next")
 
+const isCoachPatternsKey = (key: unknown): key is string =>
+  typeof key === "string" &&
+  (key === "/api/user/coach-patterns" ||
+    key.startsWith("/api/user/coach-patterns?"))
+
 async function revalidateAuthScopedCaches(
   mutateCache: ScopedMutator,
   options?: {
@@ -221,6 +227,12 @@ async function revalidateAuthScopedCaches(
     clearPrivate
       ? mutateCache(isChallengeScopedKey, undefined, { revalidate: true })
       : mutateCache(isChallengeScopedKey),
+    clearPrivate
+      ? mutateCache(isCoachPatternsKey, undefined, { revalidate: true })
+      : mutateCache(isCoachPatternsKey),
+    clearPrivate
+      ? mutateCache(isCoachThreadsKey, undefined, { revalidate: true })
+      : mutateCache(isCoachThreadsKey),
   ])
 }
 
