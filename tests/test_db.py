@@ -242,9 +242,14 @@ def test_init_db_applies_alembic_migrations():
             init_db()
             inspector = inspect(test_engine)
             table_names = set(inspector.get_table_names())
-            assert {"users", "challenges", "submissions", "alembic_version"}.issubset(
-                table_names
-            )
+            assert {
+                "users",
+                "challenges",
+                "submissions",
+                "coach_threads",
+                "coach_messages",
+                "alembic_version",
+            }.issubset(table_names)
 
             cfg = Config(str(ALEMBIC_INI_PATH))
             cfg.set_main_option("script_location", str(ALEMBIC_SCRIPT_LOCATION))
@@ -403,9 +408,14 @@ def test_alembic_downgrade_base_and_upgrade_head_roundtrip(tmp_path):
     command.upgrade(cfg, "head")
     test_engine = create_db_engine(db_url)
     try:
-        assert {"users", "challenges", "submissions", "alembic_version"}.issubset(
-            set(inspect(test_engine).get_table_names())
-        )
+        assert {
+            "users",
+            "challenges",
+            "submissions",
+            "coach_threads",
+            "coach_messages",
+            "alembic_version",
+        }.issubset(set(inspect(test_engine).get_table_names()))
     finally:
         test_engine.dispose()
 
@@ -416,15 +426,22 @@ def test_alembic_downgrade_base_and_upgrade_head_roundtrip(tmp_path):
         assert "users" not in table_names
         assert "challenges" not in table_names
         assert "submissions" not in table_names
+        assert "coach_threads" not in table_names
+        assert "coach_messages" not in table_names
     finally:
         test_engine.dispose()
 
     command.upgrade(cfg, "head")
     test_engine = create_db_engine(db_url)
     try:
-        assert {"users", "challenges", "submissions", "alembic_version"}.issubset(
-            set(inspect(test_engine).get_table_names())
-        )
+        assert {
+            "users",
+            "challenges",
+            "submissions",
+            "coach_threads",
+            "coach_messages",
+            "alembic_version",
+        }.issubset(set(inspect(test_engine).get_table_names()))
         with test_engine.connect() as conn:
             migration_ctx = MigrationContext.configure(
                 conn, opts={"compare_type": True}
@@ -804,6 +821,13 @@ def test_alembic_postgres_offline_sql_generation_and_percent_url():
     assert "ix_users_username_lower" in up_sql
     assert "content_hash" in up_sql
     assert "share_token" in up_sql
+    assert "CREATE TABLE coach_threads" in up_sql
+    assert "CREATE TABLE coach_messages" in up_sql
+    assert "ck_coach_threads_single_owner" in up_sql
+    assert "ck_coach_threads_mode" in up_sql
+    assert "ck_coach_messages_role" in up_sql
+    assert "PRIMARY KEY (thread_id, id)" in up_sql
+    assert "ix_coach_messages_thread_id" not in up_sql
 
     downgrade_buf = io.StringIO()
     cfg_down = Config(str(ALEMBIC_INI_PATH), stdout=downgrade_buf)
@@ -816,6 +840,8 @@ def test_alembic_postgres_offline_sql_generation_and_percent_url():
     assert "DROP COLUMN content_hash" in down_sql
     assert "DROP INDEX ix_users_email_lower" in down_sql
     assert "DROP INDEX ix_users_username_lower" in down_sql
+    assert "DROP TABLE coach_messages" in down_sql
+    assert "DROP TABLE coach_threads" in down_sql
     assert "DROP TABLE submissions" in down_sql
     assert "DROP TYPE language" in down_sql
 

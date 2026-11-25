@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlmodel import Session, func, select
 
 from api.deps import ActorDep, CurrentUserDep, GuestSessionDep, SessionDep
+from api.routes.coach_threads import router as coach_threads_router
 from backend.core.config import settings
 from backend.core.guest_session import clear_guest_cookie
 from backend.models.challenge import Challenge
@@ -32,6 +33,7 @@ from backend.services.coach_service import (
 )
 from backend.services.ownership import (
     Actor,
+    CoachThreadQuotaExceeded,
     CustomQuotaExceeded,
     challenge_owner_filter,
     claim_guest_session,
@@ -148,6 +150,7 @@ class ClaimSessionResponse(BaseModel):
 
     claimed_count: int
     claimed_challenges_count: int = 0
+    claimed_threads_count: int = 0
     user_id: int
     session_id: str
 
@@ -518,7 +521,7 @@ async def claim_guest_session_endpoint(
             user_id=current_user.id,
             guest=guest,
         )
-    except CustomQuotaExceeded as exc:
+    except (CustomQuotaExceeded, CoachThreadQuotaExceeded) as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=exc.message,
@@ -526,8 +529,12 @@ async def claim_guest_session_endpoint(
 
     clear_guest_cookie(response)
     return ClaimSessionResponse(
-        claimed_count=result.submissions + result.challenges,
+        claimed_count=result.submissions + result.challenges + result.coach_threads,
         claimed_challenges_count=result.challenges,
+        claimed_threads_count=result.coach_threads,
         user_id=current_user.id,
         session_id=guest.id,
     )
+
+
+router.include_router(coach_threads_router)
