@@ -28,15 +28,15 @@ export function FindingsOutline({
         className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border/70 bg-muted/30 px-3 py-2 text-xs text-muted-foreground"
       >
         <span>
-          No findings flagged yet. Click line numbers or press{" "}
+          No findings yet. Click a line number above or press{" "}
           <kbd className="rounded border border-border bg-background px-1 py-0.5 font-mono text-[10px] text-foreground">
             f
           </kbd>{" "}
-          to flag a line,{" "}
+          to flag a defect and explain it inline (
           <kbd className="rounded border border-border bg-background px-1 py-0.5 font-mono text-[10px] text-foreground">
             ?
           </kbd>{" "}
-          for shortcuts.
+          for shortcuts).
         </span>
         {onOpenFlagGuide && (
           <button
@@ -95,7 +95,7 @@ export function FindingsOutline({
                 <span className="truncate text-foreground">
                   {finding.body.trim()
                     ? finding.body
-                    : "Click to add inline note"}
+                    : "No inline note. Click to explain"}
                 </span>
               </button>
 

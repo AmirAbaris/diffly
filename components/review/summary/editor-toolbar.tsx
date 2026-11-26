@@ -51,11 +51,12 @@ export function EditorToolbar({
       <div className="flex items-center gap-2 text-xs tabular-nums">
         {isMinLengthMet ? (
           <span className="font-medium text-emerald-600 dark:text-emerald-400">
-            Min length met
+            Optional • min length met
           </span>
         ) : (
           <span className="text-muted-foreground">
             {remainingChars} more char{remainingChars === 1 ? "" : "s"} needed
+            (inline or here)
           </span>
         )}
       </div>
