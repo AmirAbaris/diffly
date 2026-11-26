@@ -52,7 +52,7 @@ export function ArenaCommentDrawer({
       <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
         <div className="flex items-center gap-2">
           <h3 className="text-xs font-semibold text-foreground">
-            Review Findings & Comments
+            Review Findings
           </h3>
           {findingCount > 0 && (
             <Badge variant="secondary" size="sm" className="tabular-nums">
@@ -99,8 +99,6 @@ export function ArenaCommentDrawer({
               onSelectFinding={onSelectFinding}
               onRemoveFinding={onRemoveFinding}
               onOpenFlagGuide={onOpenFlagGuide}
-              onSubmitReview={onSubmitReview}
-              isSubmitting={isSubmitting}
             />
           ) : (
             <ReviewCommentEditor

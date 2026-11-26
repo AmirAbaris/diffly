@@ -32,7 +32,7 @@ describe("FlaggingGuideModal Component", () => {
     // 3 steps
     expect(screen.getByText("Hover Any Line")).toBeInTheDocument()
     expect(screen.getByText("Click to Flag")).toBeInTheDocument()
-    expect(screen.getByText(/Explain & Submit/i)).toBeInTheDocument()
+    expect(screen.getByText(/Explain Inline & Submit/i)).toBeInTheDocument()
   })
 
   it("renders interactive code demo placeholder and allows clicking line numbers", async () => {

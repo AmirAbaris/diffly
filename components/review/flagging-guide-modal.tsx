@@ -162,12 +162,12 @@ export function FlaggingGuideModal({
             </span>
             <div className="min-w-0">
               <span className="font-medium text-foreground">
-                Explain &amp; Submit
+                Explain Inline &amp; Submit
               </span>
               <span className="text-muted-foreground">
                 {" "}
-                — Flagged lines attach to your review draft. Write your critique
-                and submit.
+                — Write your explanation directly on the flagged line (overall
+                summary is optional), then click Submit Review.
               </span>
             </div>
           </li>

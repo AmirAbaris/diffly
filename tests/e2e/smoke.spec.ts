@@ -67,13 +67,14 @@ test.describe("Diffly E2E Smoke Suite", () => {
       "L1"
     )
 
-    const critiqueInput = page.getByLabel("Review summary note")
-    await critiqueInput.fill(
+    const inlineCommentInput = page.getByLabel("Comment for L1")
+    await inlineCommentInput.fill(
       "Line 1 introduces a potential security and correctness defect that lacks proper validation and error handling."
     )
+    await page.getByRole("button", { name: "Save", exact: true }).click()
 
     await page
-      .getByTestId("review-summary-panel")
+      .getByTestId("submission-bar")
       .getByRole("button", { name: "Submit Review" })
       .click()
 
@@ -131,6 +132,7 @@ test.describe("Diffly E2E Smoke Suite", () => {
       .getByRole("button", { name: "Flag line 28", exact: true })
       .click()
 
+    await page.getByTestId("toggle-summary-note").click()
     await page
       .getByLabel("Review summary note")
       .fill(
@@ -138,7 +140,7 @@ test.describe("Diffly E2E Smoke Suite", () => {
       )
 
     await page
-      .getByTestId("review-summary-panel")
+      .getByTestId("submission-bar")
       .getByRole("button", { name: "Submit Review" })
       .click()
 

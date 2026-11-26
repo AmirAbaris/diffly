@@ -1,9 +1,14 @@
 "use client"
 
 import * as React from "react"
-import { Button } from "@/components/ui/button"
+import { ChevronDown, Plus } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
 import {
-  MIN_REVIEW_TEXT_CHARS,
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible"
+import {
   validateReview,
   type Finding,
   type FindingId,
@@ -19,11 +24,11 @@ export interface ReviewSummaryPanelProps {
   onSelectFinding: (finding: Finding) => void
   onRemoveFinding: (id: FindingId) => void
   onOpenFlagGuide?: () => void
-  onSubmitReview?: () => void
-  isSubmitting?: boolean
   disabled?: boolean
   className?: string
 }
+
+type SummaryOverride = "auto" | "open" | "closed"
 
 export function ReviewSummaryPanel({
   draft,
@@ -31,21 +36,18 @@ export function ReviewSummaryPanel({
   onSelectFinding,
   onRemoveFinding,
   onOpenFlagGuide,
-  onSubmitReview,
-  isSubmitting = false,
   disabled = false,
   className,
 }: ReviewSummaryPanelProps) {
-  const validation = React.useMemo(() => validateReview(draft), [draft])
-  const hasFindings = !validation.blockers.includes("no-findings")
-  const hasMinText = !validation.blockers.includes("too-little-text")
-  const canSubmit = !disabled && !isSubmitting && validation.valid
+  const [summaryOverride, setSummaryOverride] =
+    React.useState<SummaryOverride>("auto")
 
-  const statusLabel = !hasFindings
-    ? "Flag at least 1 line"
-    : !hasMinText
-      ? `${validation.totalTextChars}/${MIN_REVIEW_TEXT_CHARS} chars required`
-      : "Review ready"
+  const hasSummaryText = draft.summaryNote.trim().length > 0
+  const summaryOpen =
+    summaryOverride === "auto" ? hasSummaryText : summaryOverride === "open"
+
+  const validation = React.useMemo(() => validateReview(draft), [draft])
+  const hasMinText = !validation.blockers.includes("too-little-text")
 
   return (
     <div
@@ -60,48 +62,60 @@ export function ReviewSummaryPanel({
         disabled={disabled}
       />
 
-      <SummaryNoteEditor
-        note={draft.summaryNote}
-        onChangeNote={onChangeSummaryNote}
-        remainingChars={validation.remainingChars}
-        isMinLengthMet={hasMinText}
-        disabled={disabled}
-      />
-
-      <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-xs">
-        <div className="flex items-center gap-2 text-muted-foreground tabular-nums">
-          <span data-testid="counter-stats">
-            {draft.findings.length}{" "}
-            {draft.findings.length === 1 ? "finding" : "findings"} (
-            {validation.totalTextChars}{" "}
-            {validation.totalTextChars === 1 ? "char" : "chars"})
-          </span>
-          <span className="text-border">•</span>
-          <span
-            data-testid="validation-indicator"
-            className={cn(
-              "font-medium",
-              validation.valid
-                ? "text-emerald-600 dark:text-emerald-400"
-                : "text-amber-600 dark:text-amber-400"
+      <Collapsible
+        open={summaryOpen}
+        onOpenChange={(nextOpen) =>
+          setSummaryOverride(nextOpen ? "open" : "closed")
+        }
+        className="flex flex-col gap-2"
+      >
+        <CollapsibleTrigger
+          type="button"
+          data-testid="toggle-summary-note"
+          className="flex w-full flex-wrap items-center justify-between gap-2 rounded-md border border-border/70 bg-muted/20 px-3 py-2 text-left text-xs transition-colors hover:bg-muted/40 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+        >
+          <span className="flex items-center gap-2">
+            {summaryOpen ? (
+              <ChevronDown
+                aria-hidden="true"
+                className="size-3.5 text-muted-foreground"
+              />
+            ) : (
+              <Plus
+                aria-hidden="true"
+                className="size-3.5 text-muted-foreground"
+              />
             )}
-          >
-            {statusLabel}
+            <span className="font-medium text-foreground">
+              {summaryOpen || hasSummaryText
+                ? "Overall summary"
+                : "Add overall summary"}
+            </span>
+            <Badge variant="secondary" size="sm">
+              {hasSummaryText && !summaryOpen ? "Added" : "Optional"}
+            </Badge>
           </span>
-        </div>
 
-        {onSubmitReview && (
-          <Button
-            type="button"
-            size="sm"
-            onClick={onSubmitReview}
-            disabled={!canSubmit}
-            className="h-8 px-3 text-xs"
-          >
-            <span>{isSubmitting ? "Submitting…" : "Submit Review"}</span>
-          </Button>
-        )}
-      </div>
+          {!summaryOpen && (
+            <span className="text-muted-foreground">
+              {hasSummaryText
+                ? "Click to view or edit"
+                : "Not required when explained inline"}
+            </span>
+          )}
+        </CollapsibleTrigger>
+
+        <CollapsibleContent>
+          <SummaryNoteEditor
+            note={draft.summaryNote}
+            onChangeNote={onChangeSummaryNote}
+            remainingChars={validation.remainingChars}
+            isMinLengthMet={hasMinText}
+            disabled={disabled}
+            placeholder="Optional: summarize overall risk, cross-cutting root cause, or remediation plan…"
+          />
+        </CollapsibleContent>
+      </Collapsible>
     </div>
   )
 }

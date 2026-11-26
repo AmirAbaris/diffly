@@ -20,7 +20,7 @@ export function SummaryNoteEditor({
   remainingChars,
   isMinLengthMet,
   disabled = false,
-  placeholder = "Summarize the overall risk, root cause, and remediation plan (or add notes inline on flagged lines)…",
+  placeholder = "Optional: summarize overall risk, cross-cutting root cause, or remediation plan…",
 }: SummaryNoteEditorProps) {
   const [activeTab, setActiveTab] = React.useState<"write" | "preview">("write")
 
