@@ -794,247 +794,253 @@
       }
     }
 
-    const els = {
-      liveRegion: document.getElementById("live-region"),
-      slideCounter: document.getElementById("slide-counter"),
-      dots: [document.getElementById("dot-0"), document.getElementById("dot-1")],
-      slides: [document.getElementById("slide-intro"), document.getElementById("slide-cta")],
-      btnTheme: document.getElementById("btn-theme"),
-      themeLabel: document.getElementById("theme-label"),
-      btnNotes: document.getElementById("btn-notes"),
-      btnNotesClose: document.getElementById("btn-notes-close"),
-      btnFullscreen: document.getElementById("btn-fullscreen"),
-      btnPrev: document.getElementById("btn-prev"),
-      btnNext: document.getElementById("btn-next"),
-      qrBtnLive: document.getElementById("qr-btn-live"),
-      qrBtnGithub: document.getElementById("qr-btn-github"),
-      qrFrame: document.getElementById("qr-frame"),
-      ctaUrl: document.getElementById("cta-url"),
-      notesDrawer: document.getElementById("notes-drawer"),
-      notesHeading: document.getElementById("notes-heading"),
-      notesList: document.getElementById("notes-list")
-    };
+    function initDeck() {
+      const els = {
+        liveRegion: document.getElementById("live-region"),
+        slideCounter: document.getElementById("slide-counter"),
+        dots: [document.getElementById("dot-0"), document.getElementById("dot-1")],
+        slides: [document.getElementById("slide-intro"), document.getElementById("slide-cta")],
+        btnTheme: document.getElementById("btn-theme"),
+        themeLabel: document.getElementById("theme-label"),
+        btnNotes: document.getElementById("btn-notes"),
+        btnNotesClose: document.getElementById("btn-notes-close"),
+        btnFullscreen: document.getElementById("btn-fullscreen"),
+        btnPrev: document.getElementById("btn-prev"),
+        btnNext: document.getElementById("btn-next"),
+        qrBtnLive: document.getElementById("qr-btn-live"),
+        qrBtnGithub: document.getElementById("qr-btn-github"),
+        qrFrame: document.getElementById("qr-frame"),
+        ctaUrl: document.getElementById("cta-url"),
+        notesDrawer: document.getElementById("notes-drawer"),
+        notesHeading: document.getElementById("notes-heading"),
+        notesList: document.getElementById("notes-list")
+      };
 
-    let state = {
-      slideIndex: parseSlideIndexFromHash(window.location.hash),
-      theme: parseInitialTheme(window.location.search),
-      qrTarget: "live",
-      notesOpen: false
-    };
+      let state = {
+        slideIndex: parseSlideIndexFromHash(window.location.hash),
+        theme: parseInitialTheme(window.location.search),
+        qrTarget: "live",
+        notesOpen: false
+      };
 
-    function syncHash(slideNumber) {
-      const targetHash = "#" + slideNumber;
-      if (window.location.hash === targetHash) {
-        return;
+      function syncHash(slideNumber) {
+        const targetHash = "#" + slideNumber;
+        if (window.location.hash === targetHash) {
+          return;
+        }
+        if (window.location.protocol === "file:") {
+          window.location.hash = targetHash;
+          return;
+        }
+        window.history.replaceState(null, "", targetHash);
       }
-      if (window.location.protocol === "file:") {
-        window.location.hash = targetHash;
-        return;
+
+      function render(nextState, announcement) {
+        const activeSlide = SLIDES[nextState.slideIndex];
+        const activeQr = QR_TARGETS[nextState.qrTarget];
+
+        document.documentElement.classList.toggle("dark", nextState.theme === "dark");
+        els.btnTheme.setAttribute("aria-pressed", String(nextState.theme === "dark"));
+        els.themeLabel.textContent = nextState.theme === "dark" ? "Dark" : "Light";
+
+        els.slideCounter.textContent = "0" + activeSlide.number + " / 0" + SLIDES.length;
+
+        els.slides.forEach((section, index) => {
+          section.hidden = index !== nextState.slideIndex;
+        });
+
+        els.dots.forEach((dot, index) => {
+          if (index === nextState.slideIndex) {
+            dot.setAttribute("aria-current", "step");
+          } else {
+            dot.removeAttribute("aria-current");
+          }
+        });
+
+        els.btnPrev.disabled = nextState.slideIndex === 0;
+        els.btnNext.disabled = nextState.slideIndex === SLIDES.length - 1;
+
+        els.qrBtnLive.setAttribute("aria-pressed", String(nextState.qrTarget === "live"));
+        els.qrBtnGithub.setAttribute("aria-pressed", String(nextState.qrTarget === "github"));
+        els.qrFrame.innerHTML = activeQr.svg;
+        els.ctaUrl.href = activeQr.url;
+        els.ctaUrl.textContent = activeQr.displayUrl;
+
+        els.notesDrawer.hidden = !nextState.notesOpen;
+        els.btnNotes.setAttribute("aria-pressed", String(nextState.notesOpen));
+        els.notesHeading.textContent = "Speaker Notes (Slide " + activeSlide.number + ")";
+
+        const beats = SPEAKER_NOTES[activeSlide.id];
+        els.notesList.innerHTML = beats
+          .map(
+            (beat) =>
+              '<li class="notes-beat">' +
+              '<div class="notes-beat-meta"><span>' +
+              beat.label +
+              "</span><span>" +
+              beat.time +
+              "</span></div>" +
+              '<p class="notes-beat-text">' +
+              beat.text +
+              "</p>" +
+              "</li>"
+          )
+          .join("");
+
+        syncHash(activeSlide.number);
+
+        if (announcement) {
+          els.liveRegion.textContent = announcement;
+        }
       }
-      window.history.replaceState(null, "", targetHash);
-    }
 
-    function render(nextState, announcement) {
-      const activeSlide = SLIDES[nextState.slideIndex];
-      const activeQr = QR_TARGETS[nextState.qrTarget];
+      function dispatch(action, announcement) {
+        const prev = state;
+        state = applyAction(state, action);
+        const changed =
+          prev.slideIndex !== state.slideIndex ||
+          prev.theme !== state.theme ||
+          prev.qrTarget !== state.qrTarget ||
+          prev.notesOpen !== state.notesOpen;
+        if (changed) {
+          render(state, announcement);
+        }
+      }
 
-      document.documentElement.classList.toggle("dark", nextState.theme === "dark");
-      els.btnTheme.setAttribute("aria-pressed", String(nextState.theme === "dark"));
-      els.themeLabel.textContent = nextState.theme === "dark" ? "Dark" : "Light";
+      function toggleFullscreen() {
+        if (!document.fullscreenEnabled) {
+          return;
+        }
+        if (document.fullscreenElement) {
+          void document.exitFullscreen();
+        } else if (document.documentElement.requestFullscreen) {
+          void document.documentElement.requestFullscreen();
+        }
+      }
 
-      els.slideCounter.textContent = "0" + activeSlide.number + " / 0" + SLIDES.length;
-
-      els.slides.forEach((section, index) => {
-        section.hidden = index !== nextState.slideIndex;
+      els.dots[0].addEventListener("click", () => {
+        dispatch({ type: "GO_TO_SLIDE", index: 0 }, "Slide 1 of 2: Diffly");
       });
 
-      els.dots.forEach((dot, index) => {
-        if (index === nextState.slideIndex) {
-          dot.setAttribute("aria-current", "step");
-        } else {
-          dot.removeAttribute("aria-current");
+      els.dots[1].addEventListener("click", () => {
+        dispatch({ type: "GO_TO_SLIDE", index: 1 }, "Slide 2 of 2: Try a challenge now");
+      });
+
+      els.btnPrev.addEventListener("click", () => {
+        dispatch({ type: "PREV_SLIDE" }, "Slide 1 of 2: Diffly");
+      });
+
+      els.btnNext.addEventListener("click", () => {
+        dispatch({ type: "NEXT_SLIDE" }, "Slide 2 of 2: Try a challenge now");
+      });
+
+      els.btnTheme.addEventListener("click", () => {
+        const nextTheme = state.theme === "dark" ? "light" : "dark";
+        dispatch({ type: "TOGGLE_THEME" }, "Switched to " + nextTheme + " theme");
+      });
+
+      els.btnNotes.addEventListener("click", () => {
+        dispatch({ type: "TOGGLE_NOTES" }, state.notesOpen ? "Speaker notes closed" : "Speaker notes opened");
+      });
+
+      els.btnNotesClose.addEventListener("click", () => {
+        dispatch({ type: "CLOSE_NOTES" }, "Speaker notes closed");
+      });
+
+      els.btnFullscreen.addEventListener("click", toggleFullscreen);
+
+      els.qrBtnLive.addEventListener("click", () => {
+        dispatch({ type: "SET_QR_TARGET", target: "live" }, "Showing QR code for Live Arena");
+      });
+
+      els.qrBtnGithub.addEventListener("click", () => {
+        dispatch({ type: "SET_QR_TARGET", target: "github" }, "Showing QR code for GitHub Repo");
+      });
+
+      window.addEventListener("hashchange", () => {
+        const index = parseSlideIndexFromHash(window.location.hash);
+        const slide = SLIDES[index];
+        dispatch({ type: "GO_TO_SLIDE", index }, "Slide " + slide.number + " of " + SLIDES.length + ": " + slide.title);
+      });
+
+      document.addEventListener("keydown", (event) => {
+        if (event.metaKey || event.ctrlKey || event.altKey) {
+          return;
+        }
+
+        const tag = document.activeElement ? document.activeElement.tagName : "";
+        if (tag === "INPUT" || tag === "TEXTAREA") {
+          return;
+        }
+
+        switch (event.key) {
+          case "ArrowRight":
+          case "PageDown":
+            event.preventDefault();
+            dispatch({ type: "NEXT_SLIDE" }, "Slide 2 of 2: Try a challenge now");
+            break;
+          case " ":
+            if (tag === "BUTTON" || tag === "A") {
+              return;
+            }
+            event.preventDefault();
+            dispatch({ type: "NEXT_SLIDE" }, "Slide 2 of 2: Try a challenge now");
+            break;
+          case "ArrowLeft":
+          case "PageUp":
+            event.preventDefault();
+            dispatch({ type: "PREV_SLIDE" }, "Slide 1 of 2: Diffly");
+            break;
+          case "1":
+            event.preventDefault();
+            dispatch({ type: "GO_TO_SLIDE", index: 0 }, "Slide 1 of 2: Diffly");
+            break;
+          case "2":
+            event.preventDefault();
+            dispatch({ type: "GO_TO_SLIDE", index: 1 }, "Slide 2 of 2: Try a challenge now");
+            break;
+          case "t":
+          case "T": {
+            event.preventDefault();
+            const nextTheme = state.theme === "dark" ? "light" : "dark";
+            dispatch({ type: "TOGGLE_THEME" }, "Switched to " + nextTheme + " theme");
+            break;
+          }
+          case "q":
+          case "Q":
+            if (state.slideIndex === 1) {
+              event.preventDefault();
+              const nextLabel = state.qrTarget === "live" ? "GitHub Repo" : "Live Arena";
+              dispatch({ type: "TOGGLE_QR_TARGET" }, "Showing QR code for " + nextLabel);
+            }
+            break;
+          case "n":
+          case "N":
+            event.preventDefault();
+            dispatch({ type: "TOGGLE_NOTES" }, state.notesOpen ? "Speaker notes closed" : "Speaker notes opened");
+            break;
+          case "Escape":
+            if (state.notesOpen) {
+              event.preventDefault();
+              dispatch({ type: "CLOSE_NOTES" }, "Speaker notes closed");
+            }
+            break;
+          case "f":
+          case "F":
+            event.preventDefault();
+            toggleFullscreen();
+            break;
+          default:
+            break;
         }
       });
 
-      els.btnPrev.disabled = nextState.slideIndex === 0;
-      els.btnNext.disabled = nextState.slideIndex === SLIDES.length - 1;
-
-      els.qrBtnLive.setAttribute("aria-pressed", String(nextState.qrTarget === "live"));
-      els.qrBtnGithub.setAttribute("aria-pressed", String(nextState.qrTarget === "github"));
-      els.qrFrame.innerHTML = activeQr.svg;
-      els.ctaUrl.href = activeQr.url;
-      els.ctaUrl.textContent = activeQr.displayUrl;
-
-      els.notesDrawer.hidden = !nextState.notesOpen;
-      els.btnNotes.setAttribute("aria-pressed", String(nextState.notesOpen));
-      els.notesHeading.textContent = "Speaker Notes (Slide " + activeSlide.number + ")";
-
-      const beats = SPEAKER_NOTES[activeSlide.id];
-      els.notesList.innerHTML = beats
-        .map(
-          (beat) =>
-            '<li class="notes-beat">' +
-            '<div class="notes-beat-meta"><span>' +
-            beat.label +
-            "</span><span>" +
-            beat.time +
-            "</span></div>" +
-            '<p class="notes-beat-text">' +
-            beat.text +
-            "</p>" +
-            "</li>"
-        )
-        .join("");
-
-      syncHash(activeSlide.number);
-
-      if (announcement) {
-        els.liveRegion.textContent = announcement;
-      }
+      render(state, "");
     }
 
-    function dispatch(action, announcement) {
-      const prev = state;
-      state = applyAction(state, action);
-      const changed =
-        prev.slideIndex !== state.slideIndex ||
-        prev.theme !== state.theme ||
-        prev.qrTarget !== state.qrTarget ||
-        prev.notesOpen !== state.notesOpen;
-      if (changed) {
-        render(state, announcement);
-      }
+    if (typeof window !== "undefined") {
+      initDeck();
     }
-
-    function toggleFullscreen() {
-      if (!document.fullscreenEnabled) {
-        return;
-      }
-      if (document.fullscreenElement) {
-        void document.exitFullscreen();
-      } else if (document.documentElement.requestFullscreen) {
-        void document.documentElement.requestFullscreen();
-      }
-    }
-
-    els.dots[0].addEventListener("click", () => {
-      dispatch({ type: "GO_TO_SLIDE", index: 0 }, "Slide 1 of 2: Diffly");
-    });
-
-    els.dots[1].addEventListener("click", () => {
-      dispatch({ type: "GO_TO_SLIDE", index: 1 }, "Slide 2 of 2: Try a challenge now");
-    });
-
-    els.btnPrev.addEventListener("click", () => {
-      dispatch({ type: "PREV_SLIDE" }, "Slide 1 of 2: Diffly");
-    });
-
-    els.btnNext.addEventListener("click", () => {
-      dispatch({ type: "NEXT_SLIDE" }, "Slide 2 of 2: Try a challenge now");
-    });
-
-    els.btnTheme.addEventListener("click", () => {
-      const nextTheme = state.theme === "dark" ? "light" : "dark";
-      dispatch({ type: "TOGGLE_THEME" }, "Switched to " + nextTheme + " theme");
-    });
-
-    els.btnNotes.addEventListener("click", () => {
-      dispatch({ type: "TOGGLE_NOTES" }, state.notesOpen ? "Speaker notes closed" : "Speaker notes opened");
-    });
-
-    els.btnNotesClose.addEventListener("click", () => {
-      dispatch({ type: "CLOSE_NOTES" }, "Speaker notes closed");
-    });
-
-    els.btnFullscreen.addEventListener("click", toggleFullscreen);
-
-    els.qrBtnLive.addEventListener("click", () => {
-      dispatch({ type: "SET_QR_TARGET", target: "live" }, "Showing QR code for Live Arena");
-    });
-
-    els.qrBtnGithub.addEventListener("click", () => {
-      dispatch({ type: "SET_QR_TARGET", target: "github" }, "Showing QR code for GitHub Repo");
-    });
-
-    window.addEventListener("hashchange", () => {
-      const index = parseSlideIndexFromHash(window.location.hash);
-      const slide = SLIDES[index];
-      dispatch({ type: "GO_TO_SLIDE", index }, "Slide " + slide.number + " of " + SLIDES.length + ": " + slide.title);
-    });
-
-    document.addEventListener("keydown", (event) => {
-      if (event.metaKey || event.ctrlKey || event.altKey) {
-        return;
-      }
-
-      const tag = document.activeElement ? document.activeElement.tagName : "";
-      if (tag === "INPUT" || tag === "TEXTAREA") {
-        return;
-      }
-
-      switch (event.key) {
-        case "ArrowRight":
-        case "PageDown":
-          event.preventDefault();
-          dispatch({ type: "NEXT_SLIDE" }, "Slide 2 of 2: Try a challenge now");
-          break;
-        case " ":
-          if (tag === "BUTTON" || tag === "A") {
-            return;
-          }
-          event.preventDefault();
-          dispatch({ type: "NEXT_SLIDE" }, "Slide 2 of 2: Try a challenge now");
-          break;
-        case "ArrowLeft":
-        case "PageUp":
-          event.preventDefault();
-          dispatch({ type: "PREV_SLIDE" }, "Slide 1 of 2: Diffly");
-          break;
-        case "1":
-          event.preventDefault();
-          dispatch({ type: "GO_TO_SLIDE", index: 0 }, "Slide 1 of 2: Diffly");
-          break;
-        case "2":
-          event.preventDefault();
-          dispatch({ type: "GO_TO_SLIDE", index: 1 }, "Slide 2 of 2: Try a challenge now");
-          break;
-        case "t":
-        case "T": {
-          event.preventDefault();
-          const nextTheme = state.theme === "dark" ? "light" : "dark";
-          dispatch({ type: "TOGGLE_THEME" }, "Switched to " + nextTheme + " theme");
-          break;
-        }
-        case "q":
-        case "Q":
-          if (state.slideIndex === 1) {
-            event.preventDefault();
-            const nextLabel = state.qrTarget === "live" ? "GitHub Repo" : "Live Arena";
-            dispatch({ type: "TOGGLE_QR_TARGET" }, "Showing QR code for " + nextLabel);
-          }
-          break;
-        case "n":
-        case "N":
-          event.preventDefault();
-          dispatch({ type: "TOGGLE_NOTES" }, state.notesOpen ? "Speaker notes closed" : "Speaker notes opened");
-          break;
-        case "Escape":
-          if (state.notesOpen) {
-            event.preventDefault();
-            dispatch({ type: "CLOSE_NOTES" }, "Speaker notes closed");
-          }
-          break;
-        case "f":
-        case "F":
-          event.preventDefault();
-          toggleFullscreen();
-          break;
-        default:
-          break;
-      }
-    });
-
-    render(state, "");
   </script>
 </body>
 </html>
