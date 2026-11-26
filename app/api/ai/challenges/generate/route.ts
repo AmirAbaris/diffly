@@ -120,12 +120,13 @@ interface GenerationAttemptContext {
 
 async function runGenerationAttempt(
   ctx: GenerationAttemptContext,
-  attempt: number
+  attempt: number,
+  previousIssues?: readonly string[]
 ): Promise<NextResponse> {
   const generated = await generateCustomChallengeWithAI(
     ctx.credential,
     ctx.payload,
-    { signal: ctx.signal, clientSignal: ctx.clientSignal }
+    { signal: ctx.signal, clientSignal: ctx.clientSignal, previousIssues }
   )
 
   if (!generated.ok) {
@@ -134,7 +135,7 @@ async function runGenerationAttempt(
       attempt < MAX_GENERATION_ATTEMPTS &&
       !ctx.signal.aborted
     ) {
-      return runGenerationAttempt(ctx, attempt + 1)
+      return runGenerationAttempt(ctx, attempt + 1, generated.validationIssues)
     }
     return errorJson(generated.message, generated.status, ctx.quotaHeaders)
   }
@@ -174,7 +175,7 @@ async function runGenerationAttempt(
       "Generated challenge failed validation."
     )
     if (attempt < MAX_GENERATION_ATTEMPTS && !ctx.signal.aborted) {
-      return runGenerationAttempt(ctx, attempt + 1)
+      return runGenerationAttempt(ctx, attempt + 1, [detail])
     }
     return errorJson(detail, 502, ctx.quotaHeaders, persistRes.headers)
   }
