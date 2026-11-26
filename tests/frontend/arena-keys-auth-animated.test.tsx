@@ -12,6 +12,10 @@ import { useSubmissionHistory } from "@/hooks/use-submission-history"
 import { useAuth } from "@/lib/auth"
 import { apiClient } from "@/lib/axios"
 
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }),
+}))
+
 describe("Stable index-qualified React keys", () => {
   afterEach(() => {
     cleanup()

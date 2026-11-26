@@ -17,11 +17,13 @@ import {
 } from "./coach-test-fixtures"
 
 const mockSendMessage = vi.fn()
+const mockRegenerate = vi.fn()
 const mockAddToolOutput = vi.fn()
 const mockStop = vi.fn()
 const mockSetMessages = vi.fn()
 const mockClearError = vi.fn()
 const mockFetchThread = vi.fn()
+const mockTruncateMessages = vi.fn()
 const mockRenameThread = vi.fn()
 const mockDeleteThread = vi.fn()
 const mockRevalidateThreads = vi.fn()
@@ -55,6 +57,7 @@ vi.mock("@ai-sdk/react", () => ({
       status: mockChatState.status,
       error: mockChatState.error,
       sendMessage: mockSendMessage,
+      regenerate: mockRegenerate,
       addToolOutput: mockAddToolOutput,
       stop: mockStop,
       setMessages: mockSetMessages,
@@ -101,11 +104,12 @@ vi.mock("@/hooks/use-coach-threads", () => ({
     isLoading: false,
     error: null,
     fetchThread: mockFetchThread,
+    truncateMessages: mockTruncateMessages,
     renameThread: mockRenameThread,
     deleteThread: mockDeleteThread,
     revalidate: mockRevalidateThreads,
   }),
-  COACH_THREADS_SWR_KEY: "/api/user/coach-threads?mode=patterns&limit=50",
+  COACH_THREADS_SWR_KEY: "/api/user/coach-threads?limit=50",
   isCoachThreadsKey: () => false,
 }))
 
