@@ -3,6 +3,7 @@ import type {
   DetectedIssue,
   MissedIssue,
   ReviewFindingPayload,
+  ReviewFindingWirePayload,
   ReviewSubmissionRequest,
   ReviewSubmissionResponse,
 } from "@/types/challenge"
@@ -183,16 +184,19 @@ export function toSubmissionBody(
   return body
 }
 
-function payloadToFinding(payload: ReviewFindingPayload): Finding {
+export function parseFindingPayload(
+  payload: ReviewFindingWirePayload
+): Finding {
+  const anchor = "anchor" in payload ? payload.anchor : payload
   return {
     id: asFindingId(payload.id),
     anchor: {
-      file: payload.file_path,
-      start: payload.start_line,
-      end: payload.end_line,
+      file: anchor.file_path ?? null,
+      start: anchor.start_line,
+      end: anchor.end_line,
     },
-    body: payload.body,
-    severity: payload.severity,
+    body: payload.body ?? "",
+    severity: payload.severity ?? null,
   }
 }
 
@@ -209,7 +213,7 @@ export function parseGradeReport(raw: ReviewSubmissionResponse): GradeReport {
     })
   }
 
-  const findings = (raw.findings ?? []).map(payloadToFinding)
+  const findings = (raw.findings ?? []).map(parseFindingPayload)
 
   return {
     score: raw.score,

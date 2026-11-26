@@ -3,6 +3,7 @@
 import * as React from "react"
 import { Badge } from "@/components/ui/badge"
 import { flaggedLineKey, formatFlaggedLineLabel } from "@/lib/flagged-lines"
+import { parseFindingPayload } from "@/lib/review"
 import type { SubmissionHistoryItem } from "@/types/challenge"
 
 interface HistoryDetailProps {
@@ -43,13 +44,14 @@ export function HistoryDetail({ item }: HistoryDetailProps) {
             Inline Findings ({item.findings.length})
           </span>
           <ul className="flex flex-col gap-1.5">
-            {item.findings.map((finding) => {
+            {item.findings.map((rawFinding) => {
+              const finding = parseFindingPayload(rawFinding)
               const rangeLabel =
-                finding.start_line === finding.end_line
-                  ? `L${finding.start_line}`
-                  : `L${finding.start_line}-L${finding.end_line}`
-              const fullLabel = finding.file_path
-                ? `${finding.file_path}:${rangeLabel}`
+                finding.anchor.start === finding.anchor.end
+                  ? `L${finding.anchor.start}`
+                  : `L${finding.anchor.start}-L${finding.anchor.end}`
+              const fullLabel = finding.anchor.file
+                ? `${finding.anchor.file}:${rangeLabel}`
                 : rangeLabel
               return (
                 <li
