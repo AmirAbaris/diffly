@@ -13,10 +13,7 @@ describe("resolveInternalBackendOrigin", () => {
     vi.stubEnv("VERCEL", "1")
     vi.stubEnv("VERCEL_ENV", "production")
     vi.stubEnv("VERCEL_PROJECT_PRODUCTION_URL", "diffly-sigma.vercel.app")
-    vi.stubEnv(
-      "VERCEL_URL",
-      "diffly-7tmv4uih7-amirabaris-projects.vercel.app"
-    )
+    vi.stubEnv("VERCEL_URL", "diffly-7tmv4uih7-amirabaris-projects.vercel.app")
 
     const request = new NextRequest("https://spoofed.example.com/api/coach")
 
@@ -33,10 +30,7 @@ describe("resolveInternalBackendOrigin", () => {
       "VERCEL_PROJECT_PRODUCTION_URL",
       "https://diffly-sigma.vercel.app/"
     )
-    vi.stubEnv(
-      "VERCEL_URL",
-      "diffly-7tmv4uih7-amirabaris-projects.vercel.app"
-    )
+    vi.stubEnv("VERCEL_URL", "diffly-7tmv4uih7-amirabaris-projects.vercel.app")
 
     expect(resolveInternalBackendOrigin()).toBe(
       "https://diffly-sigma.vercel.app"
@@ -48,10 +42,7 @@ describe("resolveInternalBackendOrigin", () => {
     vi.stubEnv("VERCEL", "1")
     vi.stubEnv("VERCEL_ENV", "preview")
     vi.stubEnv("VERCEL_PROJECT_PRODUCTION_URL", "diffly-sigma.vercel.app")
-    vi.stubEnv(
-      "VERCEL_URL",
-      "diffly-7tmv4uih7-amirabaris-projects.vercel.app"
-    )
+    vi.stubEnv("VERCEL_URL", "diffly-7tmv4uih7-amirabaris-projects.vercel.app")
 
     expect(resolveInternalBackendOrigin()).toBe(
       "https://diffly-7tmv4uih7-amirabaris-projects.vercel.app"
@@ -63,10 +54,7 @@ describe("resolveInternalBackendOrigin", () => {
     vi.stubEnv("VERCEL", "1")
     vi.stubEnv("VERCEL_ENV", "production")
     vi.stubEnv("VERCEL_PROJECT_PRODUCTION_URL", "")
-    vi.stubEnv(
-      "VERCEL_URL",
-      "diffly-7tmv4uih7-amirabaris-projects.vercel.app"
-    )
+    vi.stubEnv("VERCEL_URL", "diffly-7tmv4uih7-amirabaris-projects.vercel.app")
 
     expect(resolveInternalBackendOrigin()).toBe(
       "https://diffly-7tmv4uih7-amirabaris-projects.vercel.app"
@@ -78,10 +66,7 @@ describe("resolveInternalBackendOrigin", () => {
     vi.stubEnv("VERCEL", "1")
     vi.stubEnv("VERCEL_ENV", "production")
     vi.stubEnv("VERCEL_PROJECT_PRODUCTION_URL", "diffly-sigma.vercel.app")
-    vi.stubEnv(
-      "VERCEL_URL",
-      "diffly-7tmv4uih7-amirabaris-projects.vercel.app"
-    )
+    vi.stubEnv("VERCEL_URL", "diffly-7tmv4uih7-amirabaris-projects.vercel.app")
 
     expect(resolveInternalBackendOrigin()).toBe("https://api.example.com")
   })
