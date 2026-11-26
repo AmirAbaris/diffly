@@ -261,8 +261,18 @@ describe("app/api/ai/challenges/generate/route", () => {
       },
       headers: { cookie: sealCookie("google") },
     })
+    const promptAt = (idx: number) =>
+      String(
+        (mockGenerateText.mock.calls[idx]?.[0] as { prompt?: string })
+          ?.prompt ?? ""
+      )
     expect(res.status).toBe(200)
     expect(mockGenerateText).toHaveBeenCalledTimes(2)
+    expect(promptAt(0)).not.toContain("Previous Attempt Corrections:")
+    expect(promptAt(1)).toContain("Previous Attempt Corrections:")
+    expect(promptAt(1)).toContain(
+      "expected_issues must contain at least one issue."
+    )
     expect(res.headers.get("set-cookie")).toContain(
       "diffly_guest_session=quota-guest"
     )
@@ -286,6 +296,8 @@ describe("app/api/ai/challenges/generate/route", () => {
       "Failed 2"
     )
     expect(mockGenerateText).toHaveBeenCalledTimes(2)
+    expect(promptAt(1)).toContain("Previous Attempt Corrections:")
+    expect(promptAt(1)).toContain("- Failed 1")
 
     mockGenerateText.mockReset()
     mockFetch.mockReset()
