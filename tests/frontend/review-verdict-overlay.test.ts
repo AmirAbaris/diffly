@@ -147,7 +147,7 @@ describe("draft-codec & verdict-overlay", () => {
   })
 
   it("parses nested anchor findings returned by the backend review API", () => {
-    const backendResponse = {
+    const backendResponse: ReviewSubmissionResponse = {
       submission_id: 23,
       id: 23,
       score: 100,
@@ -187,7 +187,7 @@ describe("draft-codec & verdict-overlay", () => {
           severity_agrees: true,
         },
       ],
-    } as unknown as ReviewSubmissionResponse
+    }
 
     const report = parseGradeReport(backendResponse)
     expect(report.findings).toEqual([

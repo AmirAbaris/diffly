@@ -151,7 +151,7 @@ describe("Multi-File PR Comparison & Scoped Reporting", () => {
   })
 
   it("formats nested anchor findings in HistoryDetail without Lundefined", () => {
-    const historyItem = {
+    const historyItem: SubmissionHistoryItem = {
       attempt_number: 1,
       id: 23,
       submission_id: 23,
@@ -185,7 +185,7 @@ describe("Multi-File PR Comparison & Scoped Reporting", () => {
           severity: "high",
         },
       ],
-    } as unknown as SubmissionHistoryItem
+    }
 
     render(<HistoryDetail item={historyItem} />)
 

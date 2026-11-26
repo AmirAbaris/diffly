@@ -42,6 +42,7 @@ export {
 } from "./validation"
 
 export {
+  parseFindingPayload,
   parseGradeReport,
   parseStoredDraft,
   serializeStoredDraft,

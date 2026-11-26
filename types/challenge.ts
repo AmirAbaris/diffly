@@ -109,6 +109,22 @@ export interface ReviewFindingPayload {
   severity: FindingSeverity | null
 }
 
+export interface ReviewFindingAnchorPayload {
+  file_path: string | null
+  start_line: number
+  end_line: number
+}
+
+export interface ReviewFindingResponsePayload {
+  id: string
+  anchor: ReviewFindingAnchorPayload
+  body: string
+  severity: FindingSeverity | null
+}
+
+export type ReviewFindingWirePayload =
+  ReviewFindingPayload | ReviewFindingResponsePayload
+
 export interface FindingVerdictPayload {
   finding_id: string
   verdict: "matched" | "redundant" | "false_positive"
@@ -168,7 +184,7 @@ export interface ReviewSubmissionResponse {
   created_at: string
   flagged_lines?: FlaggedLine[]
   comments?: string
-  findings?: ReviewFindingPayload[]
+  findings?: ReviewFindingWirePayload[]
   finding_verdicts?: FindingVerdictPayload[]
 }
 
@@ -189,7 +205,7 @@ export interface SubmissionHistoryItem {
   detected_issues: DetectedIssue[]
   missed_issues: MissedIssue[]
   created_at: string
-  findings?: ReviewFindingPayload[]
+  findings?: ReviewFindingWirePayload[]
   finding_verdicts?: FindingVerdictPayload[]
 }
 

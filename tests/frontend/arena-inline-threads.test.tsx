@@ -271,7 +271,7 @@ describe("Arena inline threads, range selection, and keyboard shortcuts", () => 
   })
 
   it("renders inline verdict cards when backend returns nested anchor findings", async () => {
-    const response = {
+    const response: ReviewSubmissionResponse = {
       submission_id: 23,
       id: 23,
       score: 100,
@@ -310,7 +310,7 @@ describe("Arena inline threads, range selection, and keyboard shortcuts", () => 
           severity_agrees: true,
         },
       ],
-    } as unknown as ReviewSubmissionResponse
+    }
 
     const report = parseGradeReport(response)
     render(
