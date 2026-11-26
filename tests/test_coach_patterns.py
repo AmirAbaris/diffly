@@ -1501,7 +1501,7 @@ def test_submission_debrief_normalizes_and_clips_issue_fields():
     exp0 = debrief.expected_issues[0]
     assert len(exp0.id) == 200
     assert len(exp0.title) == 300
-    assert len(exp0.severity) == 50
+    assert exp0.severity == "medium"
     assert len(exp0.keywords[0]) == 200
     assert exp0.keywords[1] == "short"
 

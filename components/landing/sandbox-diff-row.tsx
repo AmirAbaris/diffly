@@ -65,17 +65,17 @@ export function SandboxDiffRow({
         data-line-kind={line.kind}
         data-line-flagged={isFlagged ? "true" : "false"}
         className={cn(
-          "group flex w-full items-stretch text-left transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset",
+          "group flex w-max min-w-full items-stretch text-left transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset",
           getRowSurfaceClass(line.kind, isFlagged, hasDefect)
         )}
       >
-        <span className="flex w-10 shrink-0 items-center justify-end border-r border-border/60 px-2 py-2 text-[11px] text-zinc-600 tabular-nums select-none dark:text-zinc-400">
+        <span className="flex w-8 shrink-0 items-center justify-end border-r border-border/60 px-1.5 py-2 text-[11px] text-zinc-600 tabular-nums select-none dark:text-zinc-400">
           {line.oldLineNumber ?? ""}
         </span>
-        <span className="flex w-10 shrink-0 items-center justify-end border-r border-border/60 px-2 py-2 text-[11px] text-zinc-600 tabular-nums select-none dark:text-zinc-400">
+        <span className="flex w-8 shrink-0 items-center justify-end border-r border-border/60 px-1.5 py-2 text-[11px] text-zinc-600 tabular-nums select-none dark:text-zinc-400">
           {line.newLineNumber ?? ""}
         </span>
-        <span className="flex w-9 shrink-0 items-center justify-center gap-0.5 py-2 text-[11px] select-none">
+        <span className="flex w-6 shrink-0 items-center justify-center gap-0.5 py-2 text-[11px] select-none">
           <span className="text-zinc-600 group-hover:text-foreground dark:text-zinc-400">
             {LINE_PREFIX_MAP[line.kind]}
           </span>
@@ -123,7 +123,7 @@ export function SandboxDiffRow({
           <div className="flex items-center gap-2 text-destructive">
             <AlertTriangle aria-hidden="true" className="size-3.5" />
             <span className="font-medium">
-              False Positive: This line does not introduce a defect.
+              False flag: no defect on this line.
             </span>
           </div>
         </div>

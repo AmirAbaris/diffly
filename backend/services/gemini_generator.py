@@ -4,7 +4,6 @@ Zero-cost, Bring Your Own Key (BYOK) challenge generation powered by Google Gemi
 User API keys are used strictly in-memory and are never stored or logged.
 """
 
-import json
 import re
 from typing import Any
 
@@ -21,36 +20,36 @@ from backend.models.challenge import (
     HintResponse,
     Language,
 )
-
-
-DEFAULT_GEMINI_MODEL = "gemini-3.1-flash-lite"
-FALLBACK_GEMINI_MODELS = (
-    "gemini-3.1-flash-lite",
-    "gemini-3.5-flash-lite",
-    "gemini-3.5-flash",
-    "gemini-flash-latest",
+from backend.services.gemini_client import (
+    DEFAULT_GEMINI_MODEL as DEFAULT_GEMINI_MODEL,
 )
-GEMINI_API_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
-
-
-class GeminiError(Exception):
-    """Base exception for Gemini generation service."""
-
-
-class GeminiAuthError(GeminiError):
-    """Raised when Gemini API key is missing or invalid (HTTP 401)."""
-
-
-class GeminiRateLimitError(GeminiError):
-    """Raised when Gemini API rate limit is exceeded (HTTP 429)."""
-
-
-class GeminiAPIError(GeminiError):
-    """Raised when Gemini API encounters server or network errors (HTTP 502)."""
-
-
-class GeminiSchemaError(GeminiError):
-    """Raised when Gemini output fails schema validation (HTTP 502)."""
+from backend.services.gemini_client import (
+    FALLBACK_GEMINI_MODELS as FALLBACK_GEMINI_MODELS,
+)
+from backend.services.gemini_client import (
+    GEMINI_API_BASE_URL as GEMINI_API_BASE_URL,
+)
+from backend.services.gemini_client import (
+    GeminiAPIError as GeminiAPIError,
+)
+from backend.services.gemini_client import (
+    GeminiAuthError as GeminiAuthError,
+)
+from backend.services.gemini_client import (
+    GeminiError as GeminiError,
+)
+from backend.services.gemini_client import (
+    GeminiRateLimitError as GeminiRateLimitError,
+)
+from backend.services.gemini_client import (
+    GeminiSchemaError as GeminiSchemaError,
+)
+from backend.services.gemini_client import (
+    HttpxGeminiClient,
+)
+from backend.services.gemini_client import (
+    clean_markdown_json as clean_markdown_json,
+)
 
 
 def build_generation_prompt(
@@ -192,16 +191,6 @@ def get_response_schema() -> dict[str, Any]:
             "expected_issues",
         ],
     }
-
-
-def clean_markdown_json(raw_text: str) -> str:
-    """Strip markdown code fence blocks if returned by the LLM."""
-    trimmed = raw_text.strip()
-    if trimmed.startswith("```"):
-        match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", trimmed)
-        if match:
-            return match.group(1).strip()
-    return trimmed
 
 
 _TIER_PATTERN = re.compile(r"(?:tier[\s_-]*)?([1-3])", re.IGNORECASE)
@@ -842,84 +831,6 @@ def sanitize_generated_challenge(
         raise GeminiSchemaError(f"Invalid challenge payload: {exc}") from exc
 
 
-async def _request_and_sanitize_once(
-    http_client: httpx.AsyncClient,
-    models_to_try: list[str],
-    payload: dict[str, Any],
-    headers: dict[str, str],
-    request: GenerateCustomChallengeRequest,
-) -> CustomChallengeResponse:
-    """Execute one Gemini model-fallback pass and validate the generated challenge."""
-    last_response: httpx.Response | None = None
-    for current_model in models_to_try:
-        url = f"{GEMINI_API_BASE_URL}/{current_model}:generateContent"
-        try:
-            response = await http_client.post(url, json=payload, headers=headers)
-            last_response = response
-        except httpx.RequestError as exc:
-            if current_model == models_to_try[-1]:
-                raise GeminiAPIError(
-                    f"Failed to communicate with Gemini API: {exc.__class__.__name__}"
-                ) from exc
-            continue
-
-        # If model is deprecated (404) or busy (503), try next fallback
-        if response.status_code in {404, 503} and current_model != models_to_try[-1]:
-            continue
-        break
-
-    if last_response is None:
-        raise GeminiAPIError("No response received from Gemini API")
-
-    response = last_response
-
-    if response.status_code == 400:
-        err_body = response.text
-        if (
-            "API_KEY_INVALID" in err_body
-            or "API key not valid" in err_body
-            or "INVALID_ARGUMENT" in err_body
-        ):
-            raise GeminiAuthError("Invalid Gemini API key or unauthorized request.")
-        raise GeminiAPIError(f"Gemini API bad request: {err_body}")
-
-    if response.status_code in {401, 403}:
-        raise GeminiAuthError("Invalid Gemini API key or unauthorized request.")
-
-    if response.status_code == 429:
-        raise GeminiRateLimitError(
-            "Gemini API rate limit exceeded. Please try again later."
-        )
-
-    if response.status_code != 200:
-        raise GeminiAPIError(
-            f"Gemini API request failed with status code {response.status_code}"
-        )
-
-    try:
-        res_json = response.json()
-        candidates = res_json.get("candidates") or []
-        if not candidates or not isinstance(candidates, list):
-            raise GeminiSchemaError("Gemini returned empty candidate response")
-
-        content = candidates[0].get("content") or {}
-        parts = content.get("parts") or [{}]
-        first_part = parts[0] if isinstance(parts, list) and parts else {}
-        raw_text = first_part.get("text") or ""
-        clean_text = clean_markdown_json(raw_text)
-        parsed_data = json.loads(clean_text)
-    except (
-        json.JSONDecodeError,
-        KeyError,
-        IndexError,
-        AttributeError,
-        TypeError,
-    ) as exc:
-        raise GeminiSchemaError(f"Failed to parse Gemini output: {exc}") from exc
-
-    return sanitize_generated_challenge(parsed_data, request)
-
-
 async def generate_custom_challenge(
     request: GenerateCustomChallengeRequest,
     api_key: str | None,
@@ -937,51 +848,29 @@ async def generate_custom_challenge(
             "Provide a valid key in the X-Gemini-Key header."
         )
 
-    clean_key = api_key.strip()
-    headers = {
-        "Content-Type": "application/json",
-        "x-goog-api-key": clean_key,
-    }
-
     prompt = build_generation_prompt(
         topic=request.topic,
         language=request.language,
         difficulty=request.difficulty,
     )
-
-    payload = {
-        "contents": [
-            {
-                "parts": [
-                    {"text": prompt},
-                ]
-            }
-        ],
-        "generationConfig": {
-            "response_mime_type": "application/json",
-            "response_schema": get_response_schema(),
-            "temperature": 0.2,
-        },
-    }
-
-    models_to_try = [model]
-    for fallback in FALLBACK_GEMINI_MODELS:
-        if fallback not in models_to_try:
-            models_to_try.append(fallback)
+    response_schema = get_response_schema()
 
     owns_client = client is None
     http_client = client or httpx.AsyncClient(timeout=30.0)
+    gemini_client = HttpxGeminiClient(http_client=http_client)
 
     try:
         for attempt in range(_MAX_SCHEMA_ATTEMPTS):
             try:
-                return await _request_and_sanitize_once(
-                    http_client,
-                    models_to_try,
-                    payload,
-                    headers,
-                    request,
+                parsed_data = await gemini_client.generate_json(
+                    prompt=prompt,
+                    response_schema=response_schema,
+                    api_key=api_key,
+                    model=model,
+                    temperature=0.2,
+                    fallback_models=FALLBACK_GEMINI_MODELS,
                 )
+                return sanitize_generated_challenge(parsed_data, request)
             except GeminiSchemaError:
                 if attempt == _MAX_SCHEMA_ATTEMPTS - 1:
                     raise

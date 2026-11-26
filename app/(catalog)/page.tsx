@@ -3,9 +3,9 @@ import * as React from "react"
 import { LandingPage } from "@/components/landing/landing-page"
 
 export const metadata: Metadata = {
-  title: "Diffly · AI Code Review Benchmark & Training Arena",
+  title: "Diffly · AI Code Review Arena",
   description:
-    "Audit realistic AI agent pull requests for hidden race conditions, injection sinks, and sandbox escapes. Powered by WebGPU and deterministic line-level evaluation.",
+    "Audit AI agent pull requests for race conditions, injection sinks, and sandbox escapes. Scored line by line.",
 }
 
 export const instant = false

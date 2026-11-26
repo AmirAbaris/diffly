@@ -2,14 +2,11 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { ArrowRight, Pause, Play, Terminal } from "lucide-react"
+import { ArrowRight, Terminal } from "lucide-react"
 import { useTheme } from "next-themes"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import {
-  useReactiveDiffShader,
-  type WebGpuRuntimeStatus,
-} from "@/hooks/use-reactive-diff-shader"
+import { useReactiveDiffShader } from "@/hooks/use-reactive-diff-shader"
 import type { SandboxEvaluationReadout } from "@/lib/landing/sandbox-engine"
 import type {
   ShaderMachinePhase,
@@ -30,14 +27,6 @@ const PHASE_LABELS: Readonly<Record<ShaderMachinePhase, string>> = {
   "idle-scan": "IDLE_SCAN // LATTICE_READY",
 }
 
-const RUNTIME_BADGES: Readonly<Record<WebGpuRuntimeStatus, string>> = {
-  running: "vgpu · WebGPU 60fps",
-  paused: "vgpu · Paused",
-  "reduced-motion": "vgpu · Static Frame",
-  fallback: "Lattice · SVG Grid",
-  initializing: "vgpu · Booting",
-}
-
 export function ReactiveShaderStage({
   bridge,
   readout,
@@ -46,8 +35,11 @@ export function ReactiveShaderStage({
   const { resolvedTheme } = useTheme()
   const isDark = resolvedTheme !== "light"
 
-  const { canvasRef, status, isPaused, togglePause, triggerSingleFrame } =
-    useReactiveDiffShader({ bridge, isDark, maxFps: 60 })
+  const { canvasRef, status, triggerSingleFrame } = useReactiveDiffShader({
+    bridge,
+    isDark,
+    maxFps: 60,
+  })
 
   function handlePointerMove(event: React.PointerEvent<HTMLDivElement>) {
     const rect = event.currentTarget.getBoundingClientRect()
@@ -58,7 +50,7 @@ export function ReactiveShaderStage({
       y: (event.clientY - rect.top) / rect.height,
     })
 
-    if (isPaused) triggerSingleFrame()
+    if (status === "reduced-motion") triggerSingleFrame()
   }
 
   return (
@@ -66,7 +58,7 @@ export function ReactiveShaderStage({
       onPointerMove={handlePointerMove}
       data-testid="reactive-shader-stage"
       data-shader-status={status}
-      className="relative flex flex-col justify-between overflow-hidden border-b border-border bg-background p-6 sm:p-8 lg:border-r lg:border-b-0"
+      className="relative flex h-full flex-col justify-between overflow-hidden border-b border-border bg-background p-6 sm:p-8 lg:border-r lg:border-b-0"
     >
       <canvas
         ref={canvasRef}
@@ -111,54 +103,25 @@ export function ReactiveShaderStage({
             />
             {PHASE_LABELS[activePhase]}
           </Badge>
-
-          <div className="flex items-center gap-1.5">
-            <span className="rounded-md border border-border bg-background/80 px-2 py-0.5 font-mono text-[11px] text-muted-foreground tabular-nums">
-              {RUNTIME_BADGES[status]}
-            </span>
-            {status !== "fallback" && status !== "reduced-motion" ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="icon-xs"
-                onClick={togglePause}
-                aria-label={
-                  isPaused
-                    ? "Resume shader animation"
-                    : "Pause shader animation"
-                }
-                data-testid="shader-pause-toggle"
-                className="bg-background/80"
-              >
-                {isPaused ? (
-                  <Play className="size-3" aria-hidden="true" />
-                ) : (
-                  <Pause className="size-3" aria-hidden="true" />
-                )}
-              </Button>
-            ) : null}
-          </div>
         </div>
 
         <div className="flex flex-col gap-3 pt-2">
           <p className="font-pixel text-xs tracking-widest text-muted-foreground uppercase">
-            AI CODE REVIEW BENCHMARK & TRAINING ARENA
+            CODE REVIEW ARENA
           </p>
           <h1 className="font-pixel text-3xl leading-[1.12] tracking-tight text-balance text-foreground sm:text-4xl lg:text-[2.65rem]">
-            Audit Agent Diffs Before They Ship to Production.
+            Audit Agent Diffs Before They Ship.
           </h1>
-          <p className="max-w-xl text-sm leading-relaxed text-pretty text-muted-foreground sm:text-base">
-            Coding agents write plausible pull requests that hide race
-            conditions, injection sinks, and tool-execution escapes. Train your
-            review reflex on real multi-language diffs and measure your
-            precision, recall, and F1 score against ground-truth defect rules.
+          <p className="max-w-md text-sm leading-relaxed text-pretty text-muted-foreground sm:text-base">
+            Spot race conditions, injection sinks, and sandbox escapes in real
+            pull requests. Scored line by line.
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-3 pt-1">
           <Button asChild size="lg" data-testid="landing-enter-arena-cta">
             <Link href="/challenges">
-              <span>Enter Challenge Arena</span>
+              <span>Enter Arena</span>
               <ArrowRight aria-hidden="true" data-icon="inline-end" />
             </Link>
           </Button>
@@ -181,7 +144,7 @@ export function ReactiveShaderStage({
         <div className="flex items-center justify-between text-xs">
           <span className="flex items-center gap-1.5 font-mono text-muted-foreground">
             <Terminal className="size-3.5" aria-hidden="true" />
-            <span>LIVE_EVALUATION_TELEMETRY</span>
+            <span>LIVE_TELEMETRY</span>
           </span>
           <span
             aria-live="polite"

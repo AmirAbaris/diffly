@@ -111,7 +111,7 @@ describe("LandingPage & Sandbox Engine", () => {
     )
     expect(
       screen.getByRole("heading", {
-        name: /Audit Agent Diffs Before They Ship to Production/i,
+        name: /Audit Agent Diffs Before They Ship/i,
       })
     ).toBeInTheDocument()
 
@@ -139,7 +139,7 @@ describe("LandingPage & Sandbox Engine", () => {
       "50%"
     )
     expect(screen.getByTestId("sandbox-status-banner")).toHaveTextContent(
-      /1 false positive/i
+      /1 false/i
     )
 
     const resetButton = screen.getByTestId("sandbox-reset-btn")
@@ -186,7 +186,8 @@ describe("LandingPage & Sandbox Engine", () => {
 
     try {
       const ssrHtml = renderToString(<LandingPage />)
-      expect(ssrHtml).toContain("Pause shader animation")
+      expect(ssrHtml).toContain('data-shader-status="initializing"')
+      expect(ssrHtml).not.toContain("vgpu ·")
       container.innerHTML = ssrHtml
 
       await act(async () => {
@@ -215,17 +216,15 @@ describe("LandingPage & Sandbox Engine", () => {
     render(<LandingPage />)
 
     expect(screen.getByTestId("landing-taxonomy-section")).toBeInTheDocument()
-    expect(
-      screen.getByText("DEFECT_TAXONOMY // BENCHMARK_SPECIFICATION")
-    ).toBeInTheDocument()
+    expect(screen.getByText("DEFECT_TAXONOMY")).toBeInTheDocument()
 
-    expect(screen.getByText("01 // AGENT_ANTIPATTERNS")).toBeInTheDocument()
-    expect(screen.getByText("Python · TypeScript · Go")).toBeInTheDocument()
+    expect(screen.getByText("01 // TOOL_ESCAPES")).toBeInTheDocument()
+    expect(screen.getByText("Python · TS · Go")).toBeInTheDocument()
 
-    expect(screen.getByText("02 // CONCURRENCY_HAZARDS")).toBeInTheDocument()
-    expect(screen.getByText("React 19 · FastAPI · Redis")).toBeInTheDocument()
+    expect(screen.getByText("02 // RACE_WINDOWS")).toBeInTheDocument()
+    expect(screen.getByText("React · FastAPI · Redis")).toBeInTheDocument()
 
-    expect(screen.getByText("03 // SECURITY_BOUNDARIES")).toBeInTheDocument()
-    expect(screen.getByText("SQLModel · JWT · Next.js")).toBeInTheDocument()
+    expect(screen.getByText("03 // AUTH_DRIFT")).toBeInTheDocument()
+    expect(screen.getByText("SQL · JWT · Next.js")).toBeInTheDocument()
   })
 })

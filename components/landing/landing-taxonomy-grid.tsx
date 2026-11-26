@@ -6,64 +6,61 @@ import { Button } from "@/components/ui/button"
 
 const TAXONOMY_SPEC_COLUMNS = [
   {
-    code: "01 // AGENT_ANTIPATTERNS",
-    title: "Autonomous Tool & Sandbox Escapes",
+    code: "01 // TOOL_ESCAPES",
+    title: "Sandbox Escapes",
     icon: Cpu,
-    metrics: "Python · TypeScript · Go",
+    metrics: "Python · TS · Go",
     description:
-      "Agents frequently bypass AST validators with raw eval(), shell interpolation, or unverified tool-call arguments. Diffly tests whether you catch execution sinks disguised as helper refactors.",
+      "Agents bypass validators with eval(), shell calls, and unverified tool args.",
     examples: [
-      "Unsanitized Python eval() gadget chains in math tools",
-      "Indirect prompt injection in RAG document pipelines",
-      "Unbounded recursion in autonomous retry loops",
+      "eval() gadget chains",
+      "Indirect prompt injection",
+      "Unbounded retry loops",
     ],
   },
   {
-    code: "02 // CONCURRENCY_HAZARDS",
-    title: "Async State & Lock Race Windows",
+    code: "02 // RACE_WINDOWS",
+    title: "Async Race Windows",
     icon: Workflow,
-    metrics: "React 19 · FastAPI · Redis",
+    metrics: "React · FastAPI · Redis",
     description:
-      "LLM-generated async handlers routinely split atomic operations into separate check-then-act reads and writes. Spot stale closure captures, missing cancellation tokens, and swallowed gather exceptions.",
+      "Check-then-act reads, stale closures, and swallowed async errors.",
     examples: [
-      "TOCTOU Redis lock checks in payment webhook handlers",
-      "React async effect race conditions overwriting fresh state",
-      "Silent task failures in asyncio.gather pipelines",
+      "Non-atomic Redis locks",
+      "Stale React effect state",
+      "Swallowed gather() errors",
     ],
   },
   {
-    code: "03 // SECURITY_BOUNDARIES",
-    title: "Injection Sinks & Auth Drift",
+    code: "03 // AUTH_DRIFT",
+    title: "Injection & Auth Drift",
     icon: ShieldAlert,
-    metrics: "SQLModel · JWT · Next.js",
+    metrics: "SQL · JWT · Next.js",
     description:
-      "Even when parameterized queries protect WHERE clauses, agents interpolate sort columns, tenant headers, or redirect URLs directly. Audit subtle trust-boundary violations line by line.",
+      "Interpolated sort columns, unvalidated redirects, and missing tenant checks.",
     examples: [
-      "f-string SQL injection inside dynamic ORDER BY clauses",
-      "SSRF via unvalidated upstream webhook redirect targets",
-      "Missing tenant isolation predicates on bulk mutations",
+      "Dynamic ORDER BY SQLi",
+      "Unvalidated webhook SSRF",
+      "Missing tenant predicates",
     ],
   },
 ] as const
 
 const PIPELINE_STEPS = [
   {
-    step: "STEP_01",
-    label: "Inspect Realistic Agent PR",
-    detail:
-      "Read the threat model, environment specs, and unified or split diff exactly as it lands in code review.",
+    step: "01",
+    label: "Read the Diff",
+    detail: "Inspect the threat model and agent PR.",
   },
   {
-    step: "STEP_02",
-    label: "Flag Exact Defect Lines",
-    detail:
-      "Attach line-scoped review annotations explaining the root cause and failure mode without noisy false alarms.",
+    step: "02",
+    label: "Flag Defect Lines",
+    detail: "Pinpoint root-cause lines without noise.",
   },
   {
-    step: "STEP_03",
-    label: "Score Precision, Recall & F1",
-    detail:
-      "Diffly evaluates your annotations against deterministic line-range and keyword rules or live Gemini BYOK grading.",
+    step: "03",
+    label: "Get F1 Score",
+    detail: "Graded on exact lines or Gemini BYOK.",
   },
 ] as const
 
@@ -78,18 +75,17 @@ export function LandingTaxonomyGrid() {
         <div className="flex flex-col gap-2">
           <div className="flex items-center gap-2 font-mono text-xs text-muted-foreground">
             <Layers className="size-3.5" aria-hidden="true" />
-            <span>DEFECT_TAXONOMY // BENCHMARK_SPECIFICATION</span>
+            <span>DEFECT_TAXONOMY</span>
           </div>
           <h2
             id="taxonomy-heading"
             className="font-pixel text-2xl tracking-tight text-balance text-foreground sm:text-3xl"
           >
-            Engineered for Post-AI Code Review.
+            What You Catch.
           </h2>
         </div>
-        <p className="max-w-md text-xs leading-relaxed text-muted-foreground sm:text-sm">
-          Syntax linters catch missing semicolons. Diffly trains engineers on
-          the structural failure modes that pass CI and break production.
+        <p className="max-w-md text-xs leading-relaxed text-pretty text-muted-foreground sm:text-sm">
+          Linters check syntax. Diffly trains you on the bugs that pass CI.
         </p>
       </div>
 
@@ -156,16 +152,15 @@ export function LandingTaxonomyGrid() {
             EVALUATION_LOOP
           </span>
           <h3 className="font-pixel text-xl text-foreground">
-            Deterministic Scoring Protocol
+            Scored Line by Line
           </h3>
-          <p className="text-xs leading-relaxed text-muted-foreground">
-            Every submission computes exact line-level precision and recall so
-            guessing every line tanks your score.
+          <p className="text-xs leading-relaxed text-pretty text-muted-foreground">
+            Flagging every line tanks precision.
           </p>
           <div className="pt-2">
             <Button asChild variant="outline" size="sm">
               <Link href="/challenges">
-                <span>Browse All Challenges</span>
+                <span>Browse Challenges</span>
                 <ArrowRight aria-hidden="true" data-icon="inline-end" />
               </Link>
             </Button>

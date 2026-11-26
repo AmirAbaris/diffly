@@ -73,14 +73,14 @@ export function InteractiveDiffSandbox({
   return (
     <div
       data-testid="interactive-diff-sandbox"
-      className="flex flex-col justify-between bg-card/40"
+      className="flex h-full flex-col justify-between bg-card/40"
     >
       <div className="flex flex-col">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-muted/25 px-4 py-3 sm:px-5">
+        <div className="flex flex-wrap items-center justify-between gap-1.5 border-b border-border bg-muted/25 px-4 py-2.5 sm:px-5">
           <div
             role="tablist"
             aria-label="Live diff scenarios"
-            className="flex flex-wrap items-center gap-1.5"
+            className="flex flex-wrap items-center gap-1"
           >
             {scenarios.map((scenario, index) => {
               const isSelected = scenario.id === activeScenario.id
@@ -100,7 +100,7 @@ export function InteractiveDiffSandbox({
                   onClick={() => onSelectScenario(scenario.id)}
                   onKeyDown={(e) => handleTabKeyDown(index, e)}
                   className={cn(
-                    "rounded-md border px-2.5 py-1 font-mono text-[11px] transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+                    "shrink-0 rounded-md border px-2 py-1 font-mono text-[11px] transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
                     isSelected
                       ? "border-foreground/30 bg-background text-foreground shadow-2xs"
                       : "border-transparent bg-transparent text-muted-foreground hover:border-border hover:text-foreground"
@@ -122,7 +122,7 @@ export function InteractiveDiffSandbox({
             className="font-mono text-[11px] text-muted-foreground"
           >
             <RotateCcw aria-hidden="true" data-icon="inline-start" />
-            <span>Reset Flags</span>
+            <span>Reset</span>
           </Button>
         </div>
 
@@ -143,7 +143,7 @@ export function InteractiveDiffSandbox({
                 </Badge>
               </div>
               <span className="font-mono text-[11px] text-muted-foreground">
-                Click any diff line to flag a defect
+                Click a line to flag
               </span>
             </div>
             <p className="text-xs text-muted-foreground">
@@ -175,15 +175,14 @@ export function InteractiveDiffSandbox({
         >
           {readout.isScenarioSolved ? (
             <span className="font-medium text-emerald-600 dark:text-emerald-400">
-              Target defect isolated with 100% precision.
+              Defect isolated. 100% precision.
             </span>
           ) : (
-            <span className="text-muted-foreground">
-              Isolated {readout.detectedDefects} of {readout.totalDefects}{" "}
-              ground-truth defect(s) in this diff
+            <span className="text-muted-foreground tabular-nums">
+              {readout.detectedDefects}/{readout.totalDefects} defects found
               {readout.falsePositives > 0
-                ? ` (${readout.falsePositives} false positive${readout.falsePositives > 1 ? "s" : ""}).`
-                : "."}
+                ? ` · ${readout.falsePositives} false`
+                : ""}
             </span>
           )}
         </div>
@@ -193,7 +192,7 @@ export function InteractiveDiffSandbox({
           data-testid="sandbox-open-full-challenge-link"
           className="inline-flex items-center gap-1 font-mono text-xs font-medium text-foreground underline-offset-4 hover:underline"
         >
-          <span>Open Full Arena Challenge</span>
+          <span>Open in Arena</span>
           <ArrowUpRight className="size-3.5" aria-hidden="true" />
         </Link>
       </div>

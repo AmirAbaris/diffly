@@ -6,13 +6,12 @@ export const LANDING_SANDBOX_SCENARIOS: readonly [
 ] = [
   {
     id: "race-condition-lock",
-    codeLabel: "SCENARIO_01 // ASYNC_STATE",
+    codeLabel: "01 // ASYNC_STATE",
     title: "Async Checkout Double-Charge Race",
     agentModelLabel: "Agent PR #412 · claude-code",
     language: "typescript",
     filePath: "services/billing/capture-intent.ts",
-    prSummary:
-      "Refactored payment capture handler to check idempotency cache before charging customer card.",
+    prSummary: "Checks idempotency cache before charging customer card.",
     challengeSlug: "nextjs-race-condition-useeffect",
     lines: [
       {
@@ -97,13 +96,13 @@ export const LANDING_SANDBOX_SCENARIOS: readonly [
   },
   {
     id: "sql-injection-sink",
-    codeLabel: "SCENARIO_02 // INJECTION_SINK",
+    codeLabel: "02 // SQL_INJECTION",
     title: "Raw SQL Sort Column Interpolation",
     agentModelLabel: "Agent PR #189 · cursor-agent",
     language: "python",
     filePath: "api/routes/audit_logs.py",
     prSummary:
-      "Added dynamic column sorting and tenant filtering to the organization audit log endpoint.",
+      "Adds dynamic column sorting to the organization audit log endpoint.",
     challengeSlug: "fastapi-raw-sql-injection",
     lines: [
       {
@@ -167,13 +166,13 @@ export const LANDING_SANDBOX_SCENARIOS: readonly [
   },
   {
     id: "prompt-injection-pipeline",
-    codeLabel: "SCENARIO_03 // AGENT_TOOL_RCE",
+    codeLabel: "03 // PROMPT_INJECTION",
     title: "Unsanitized Agent Expression Evaluator",
     agentModelLabel: "Agent PR #804 · codex-agent",
     language: "python",
     filePath: "backend/agents/math_tool.py",
     prSummary:
-      "Optimized autonomous agent arithmetic tool by replacing AST visitor with direct expression evaluation.",
+      "Replaces AST visitor with direct expression evaluation in math tool.",
     challengeSlug: "agent-unsanitized-exec",
     lines: [
       {

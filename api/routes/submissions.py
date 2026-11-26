@@ -3,12 +3,14 @@
 from datetime import datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
 from pydantic import BaseModel, ConfigDict, Field, model_validator
-from sqlmodel import func, select
+from sqlmodel import Session, func, select
+from starlette.concurrency import run_in_threadpool
 
 from api.deps import ActorDep, SessionDep
 from api.routes.challenges import ShareTokenQuery, get_challenge_or_404
+from backend.core.config import settings
 from backend.core.guest_session import mint_guest_session, write_guest_cookie
 from backend.core.rate_limit import rate_limit
 from backend.models.challenge import FlaggedLineItem, FlaggedLines
@@ -17,9 +19,15 @@ from backend.services.grading import (
     MAX_BLIND_ATTEMPTS,
     PASS_SCORE_THRESHOLD,
     Finding,
+    GradeReport,
     GradingPolicy,
+    JudgeRequest,
     ReviewSubmission,
     grade_review,
+    redact_judge_outcome,
+    redact_missed_issue_dicts,
+    refine_with_judge,
+    should_reveal,
     validate_review_bounds,
     validate_review_text,
 )
@@ -54,6 +62,10 @@ class ReviewSubmissionRequest(BaseModel):
     reveal: bool = Field(
         default=False,
         description="Explicitly reveal missed issue details on this submission",
+    )
+    semantic_judge: bool = Field(
+        default=False,
+        description="Opt in to optional async semantic judge for borderline concepts",
     )
 
     def to_review_submission(self) -> ReviewSubmission:
@@ -101,6 +113,7 @@ class ReviewSubmissionResponse(BaseModel):
     finding_verdicts: list[dict[str, Any]] = Field(default_factory=list)
     comments: str = ""
     session_id: str | None = None
+    judge: dict[str, Any] | None = None
 
 
 class SubmissionHistoryResponse(BaseModel):
@@ -124,35 +137,24 @@ class SubmissionHistoryResponse(BaseModel):
     detected_issues: list[dict[str, Any]] = Field(default_factory=list)
     missed_issues: list[dict[str, Any]] = Field(default_factory=list)
     created_at: datetime
+    judge: dict[str, Any] | None = None
 
 
-@router.post(
-    "/{identifier}/review",
-    response_model=ReviewSubmissionResponse,
-    status_code=status.HTTP_200_OK,
-    dependencies=[Depends(rate_limit("review", 30, 60))],
-)
-def submit_review(
+def _prepare_submission_context(
+    *,
     identifier: str,
-    payload: ReviewSubmissionRequest,
-    response: Response,
-    session: SessionDep,
-    actor: ActorDep,
-    reveal: Annotated[
-        bool,
-        Query(description="Explicitly reveal missed issue details"),
-    ] = False,
-    share_token: ShareTokenQuery = None,
-) -> ReviewSubmissionResponse:
-    # Authorize challenge access before minting a guest cookie so 404s do not mint
+    session: Session,
+    actor: Actor,
+    share_token: str | None,
+    review: ReviewSubmission,
+) -> tuple[int, dict[str, Any], int, bool]:
+    # Authorize challenge access before minting a guest cookie so 404s do not mint.
     challenge = get_challenge_or_404(
         identifier,
         session,
         actor=actor,
         share_token=share_token,
     )
-
-    review = payload.to_review_submission()
     try:
         validate_review_bounds(review, challenge)
     except ValueError as err:
@@ -161,33 +163,43 @@ def submit_review(
             detail=str(err),
         ) from err
 
-    if actor.user_id is None and actor.guest_session_id is None:
-        guest = mint_guest_session()
-        write_guest_cookie(response, guest)
-        actor = Actor.resolve(None, guest)
-
-    owner_filter = submission_owner_filter(actor)
+    needs_guest_cookie = actor.user_id is None and actor.guest_session_id is None
     prior_attempts = 0
-    if owner_filter is not None and challenge.id is not None:
-        prior_attempts = session.exec(
-            select(func.count(Submission.id)).where(
-                Submission.challenge_id == challenge.id,
-                owner_filter,
-            )
-        ).one()
+    if not needs_guest_cookie and challenge.id is not None:
+        owner_filter = submission_owner_filter(actor)
+        if owner_filter is not None:
+            prior_attempts = session.exec(
+                select(func.count(Submission.id)).where(
+                    Submission.challenge_id == challenge.id,
+                    owner_filter,
+                )
+            ).one()
 
-    policy = GradingPolicy(
-        attempt_number=prior_attempts + 1,
-        reveal=reveal or review.reveal,
-    )
-    report = grade_review(
-        challenge=challenge,
-        review=review,
-        policy=policy,
+    challenge_snapshot: dict[str, Any] = {
+        "expected_issues": challenge.get_expected_issues(),
+        "canonical_review": challenge.canonical_review,
+        "files": challenge.get_files(),
+        "code_snippet": challenge.code_snippet,
+    }
+    return (
+        challenge.id or 0,
+        challenge_snapshot,
+        prior_attempts,
+        needs_guest_cookie,
     )
 
+
+def _persist_submission(
+    *,
+    session: Session,
+    challenge_id: int,
+    actor: Actor,
+    review: ReviewSubmission,
+    report: GradeReport,
+    unlocked: bool,
+) -> ReviewSubmissionResponse:
     submission = Submission.record(
-        challenge_id=challenge.id or 0,
+        challenge_id=challenge_id,
         user_id=actor.user_id,
         session_id=actor.guest_session_id,
         review=review,
@@ -197,8 +209,9 @@ def submit_review(
     session.commit()
     session.refresh(submission)
 
-    detected_issues_data = submission.get_detected_issues()
-    missed_issues_data = submission.get_missed_issues()
+    judge_data = submission.get_judge_outcome()
+    if not unlocked:
+        judge_data = redact_judge_outcome(judge_data)
 
     return ReviewSubmissionResponse(
         submission_id=submission.id or 0,
@@ -210,32 +223,101 @@ def submit_review(
         false_positive_lines=submission.get_false_positive_lines(),
         summary=submission.summary,
         feedback=submission.feedback,
-        detected_issues=detected_issues_data,
-        missed_issues=missed_issues_data,
+        detected_issues=submission.get_detected_issues(),
+        missed_issues=submission.get_missed_issues(),
         created_at=submission.created_at,
         flagged_lines=submission.get_flagged_lines(),
         findings=submission.get_findings(),
         finding_verdicts=submission.get_finding_verdicts(),
         comments=submission.comments,
         session_id=submission.session_id,
+        judge=judge_data,
     )
 
 
-def _gate_history_missed_issues(missed_issues: list[Any]) -> list[Any]:
-    gated: list[Any] = []
-    for item in missed_issues:
-        if isinstance(item, dict):
-            gated.append(
-                {
-                    **item,
-                    "expected_lines": [],
-                    "missing_keywords": [],
-                    "explanation": "",
-                }
-            )
-        else:
-            gated.append(item)
-    return gated
+@router.post(
+    "/{identifier}/review",
+    response_model=ReviewSubmissionResponse,
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(rate_limit("review", 30, 60))],
+)
+async def submit_review(
+    identifier: str,
+    payload: ReviewSubmissionRequest,
+    response: Response,
+    session: SessionDep,
+    actor: ActorDep,
+    reveal: Annotated[
+        bool,
+        Query(description="Explicitly reveal missed issue details"),
+    ] = False,
+    share_token: ShareTokenQuery = None,
+    x_gemini_key: Annotated[
+        str | None,
+        Header(
+            alias="X-Gemini-Key",
+            description="Optional BYOK Gemini API key for semantic judge",
+        ),
+    ] = None,
+) -> ReviewSubmissionResponse:
+    review = payload.to_review_submission()
+    (
+        challenge_id,
+        challenge_snapshot,
+        prior_attempts,
+        needs_guest_cookie,
+    ) = await run_in_threadpool(
+        _prepare_submission_context,
+        identifier=identifier,
+        session=session,
+        actor=actor,
+        share_token=share_token,
+        review=review,
+    )
+
+    if needs_guest_cookie:
+        guest = mint_guest_session()
+        write_guest_cookie(response, guest)
+        actor = Actor.resolve(None, guest)
+
+    policy = GradingPolicy(
+        attempt_number=prior_attempts + 1,
+        reveal=reveal or review.reveal,
+    )
+    report = await run_in_threadpool(
+        grade_review,
+        challenge=challenge_snapshot,
+        review=review,
+        policy=policy,
+    )
+
+    judge_req = JudgeRequest.from_headers(
+        byok_key=x_gemini_key,
+        opt_in=payload.semantic_judge,
+        settings=settings,
+    )
+    if judge_req is not None:
+        # Release pooled DB connection before waiting on external Gemini HTTP I/O.
+        await run_in_threadpool(session.rollback)
+        report = await refine_with_judge(
+            challenge_snapshot,
+            review,
+            report,
+            judge_req,
+            policy,
+            redact_judge_feedback=False,
+        )
+
+    unlocked = should_reveal(policy, review, report.score)
+    return await run_in_threadpool(
+        _persist_submission,
+        session=session,
+        challenge_id=challenge_id,
+        actor=actor,
+        review=review,
+        report=report,
+        unlocked=unlocked,
+    )
 
 
 @router.get(
@@ -281,8 +363,10 @@ def get_submission_history(
     history_items: list[SubmissionHistoryResponse] = []
     for index, sub in enumerate(submissions, start=1):
         missed = sub.get_missed_issues()
+        judge_data = sub.get_judge_outcome()
         if not has_unlocked:
-            missed = _gate_history_missed_issues(missed)
+            missed = redact_missed_issue_dicts(missed)
+            judge_data = redact_judge_outcome(judge_data)
         history_items.append(
             SubmissionHistoryResponse(
                 attempt_number=index,
@@ -303,6 +387,7 @@ def get_submission_history(
                 detected_issues=sub.get_detected_issues(),
                 missed_issues=missed,
                 created_at=sub.created_at,
+                judge=judge_data,
             )
         )
 
