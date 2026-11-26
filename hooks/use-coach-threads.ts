@@ -2,17 +2,17 @@
 
 import * as React from "react"
 import useSWR from "swr"
-import { hydrateCoachThreadMessages } from "@/lib/ai/coach-window"
+import { hydrateCoachThreadWithSequences } from "@/lib/ai/coach-window"
 import type { CoachUIMessage } from "@/lib/ai/coach"
 import { apiClient } from "@/lib/axios"
 import type {
   CoachThreadDetail,
   CoachThreadListResponse,
   CoachThreadSummary,
+  TruncateCoachMessagesResponse,
 } from "@/types/coach-thread"
 
-export const COACH_THREADS_SWR_KEY =
-  "/api/user/coach-threads?mode=patterns&limit=50"
+export const COACH_THREADS_SWR_KEY = "/api/user/coach-threads?limit=50"
 
 export function isCoachThreadsKey(key: unknown): boolean {
   return (
@@ -26,6 +26,7 @@ export function isCoachThreadsKey(key: unknown): boolean {
 export interface FetchedCoachThread {
   thread: CoachThreadDetail
   messages: CoachUIMessage[]
+  sequenceByMessageId: Record<string, number>
 }
 
 export function useCoachThreads() {
@@ -48,10 +49,25 @@ export function useCoachThreads() {
         `/api/user/coach-threads/${encodeURIComponent(threadId)}`,
         { signal: options?.signal }
       )
+      const hydrated = hydrateCoachThreadWithSequences(response.data.messages)
       return {
         thread: response.data,
-        messages: hydrateCoachThreadMessages(response.data.messages),
+        messages: hydrated.messages,
+        sequenceByMessageId: hydrated.sequenceByMessageId,
       }
+    },
+    []
+  )
+
+  const truncateMessages = React.useCallback(
+    async (
+      threadId: string,
+      fromSequence: number
+    ): Promise<TruncateCoachMessagesResponse> => {
+      const response = await apiClient.delete<TruncateCoachMessagesResponse>(
+        `/api/user/coach-threads/${encodeURIComponent(threadId)}/messages?from_sequence=${encodeURIComponent(String(fromSequence))}`
+      )
+      return response.data
     },
     []
   )
@@ -144,6 +160,7 @@ export function useCoachThreads() {
     isLoading,
     error: error ?? null,
     fetchThread,
+    truncateMessages,
     renameThread,
     deleteThread,
     revalidate,

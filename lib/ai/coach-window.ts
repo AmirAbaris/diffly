@@ -91,9 +91,16 @@ function isValidHydratedPart(
   return false
 }
 
-export function hydrateCoachThreadMessages(raw: unknown): CoachUIMessage[] {
+export interface HydratedCoachThread {
+  messages: CoachUIMessage[]
+  sequenceByMessageId: Record<string, number>
+}
+
+export function hydrateCoachThreadWithSequences(
+  raw: unknown
+): HydratedCoachThread {
   if (!Array.isArray(raw)) {
-    return []
+    return { messages: [], sequenceByMessageId: {} }
   }
 
   const valid: Array<{
@@ -142,5 +149,15 @@ export function hydrateCoachThreadMessages(raw: unknown): CoachUIMessage[] {
   })
 
   valid.sort((a, b) => a.sequence - b.sequence || a.index - b.index)
-  return valid.map((entry) => entry.message)
+  const sequenceByMessageId: Record<string, number> = {}
+  const messages: CoachUIMessage[] = []
+  for (const entry of valid) {
+    messages.push(entry.message)
+    sequenceByMessageId[entry.message.id] = entry.sequence
+  }
+  return { messages, sequenceByMessageId }
+}
+
+export function hydrateCoachThreadMessages(raw: unknown): CoachUIMessage[] {
+  return hydrateCoachThreadWithSequences(raw).messages
 }
