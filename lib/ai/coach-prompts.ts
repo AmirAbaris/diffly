@@ -88,11 +88,49 @@ export type CoachPromptInput =
     }
   | { mode: "debrief"; context: DebriefContext }
 
-const UNTRUSTED_XML_TAG_REGEX =
-  /<\s*(\/?\s*(?:code_under_review|user_critique|canonical_review)\b[^>]*)>/gi
+const DELIMITED_TAG_NAMES = [
+  "code_under_review",
+  "user_critique",
+  "canonical_review",
+] as const
+
+const ASCII_WORD_CHAR = /[A-Za-z0-9_]/
 
 export function escapeDelimitedTags(value: string): string {
-  return value.replace(UNTRUSTED_XML_TAG_REGEX, "&lt;$1&gt;")
+  let out = ""
+  let cursor = 0
+  let lt = value.indexOf("<")
+
+  while (lt !== -1) {
+    let i = lt + 1
+    while (i < value.length && value[i].trim() === "") i += 1
+    const contentStart = i
+
+    if (value[i] === "/") {
+      i += 1
+      while (i < value.length && value[i].trim() === "") i += 1
+    }
+
+    const head = value.slice(i, i + 18).toLowerCase()
+    const tag = DELIMITED_TAG_NAMES.find(
+      (name) =>
+        head.startsWith(name) &&
+        (i + name.length === value.length ||
+          !ASCII_WORD_CHAR.test(value[i + name.length]))
+    )
+
+    if (tag) {
+      const gt = value.indexOf(">", i + tag.length)
+      if (gt === -1) break
+      out += `${value.slice(cursor, lt)}&lt;${value.slice(contentStart, gt)}&gt;`
+      cursor = gt + 1
+      lt = value.indexOf("<", cursor)
+    } else {
+      lt = value.indexOf("<", Math.max(lt + 1, i))
+    }
+  }
+
+  return cursor === 0 ? value : out + value.slice(cursor)
 }
 
 function formatSliceLine(slice: CoachPatternSlice): string {
