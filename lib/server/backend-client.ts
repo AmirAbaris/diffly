@@ -7,6 +7,15 @@ const ALLOWLISTED_BACKEND_COOKIE_NAMES = new Set([
   "diffly_guest_session",
 ])
 
+function normalizeOrigin(raw: string | undefined): string | null {
+  const trimmed = raw?.trim().replace(/\/+$/, "")
+  if (!trimmed) {
+    return null
+  }
+
+  return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`
+}
+
 export function resolveInternalBackendOrigin(
   request?: NextRequest
 ): string | null {
@@ -15,9 +24,18 @@ export function resolveInternalBackendOrigin(
     return resolved.replace(/\/+$/, "")
   }
 
-  const vercelUrl = process.env.VERCEL_URL?.trim().replace(/\/+$/, "")
-  if (vercelUrl) {
-    return vercelUrl.startsWith("http") ? vercelUrl : `https://${vercelUrl}`
+  if (process.env.VERCEL_ENV === "production") {
+    const productionOrigin = normalizeOrigin(
+      process.env.VERCEL_PROJECT_PRODUCTION_URL
+    )
+    if (productionOrigin) {
+      return productionOrigin
+    }
+  }
+
+  const vercelOrigin = normalizeOrigin(process.env.VERCEL_URL)
+  if (vercelOrigin) {
+    return vercelOrigin
   }
 
   if (request?.nextUrl.origin) {
