@@ -297,3 +297,26 @@ def test_models_database_persistence_and_relationships():
         assert guest_submission.user_id is None
         assert guest_submission.session_id == "anon-guest-session-42"
         assert guest_submission.challenge.id == challenge.id
+
+
+def test_defect_criterion_json_has_no_duplicate_alias_keys():
+    defect = DefectCriterion.model_validate(
+        {
+            "id": "ssrf_dns_rebinding",
+            "title": "Server-Side Request Forgery via Unresolved DNS Hostnames",
+            "severity": "high",
+            "lines": [33],
+            "keywords": ["ssrf", "dns rebinding"],
+            "matched_lines": [33],
+            "matched_keywords": ["ssrf", "dns rebinding"],
+            "explanation": "Domain names bypass IP literal checks.",
+        }
+    )
+
+    raw_json = defect.model_dump_json()
+
+    assert raw_json.count('"matched_lines"') == 1
+    assert raw_json.count('"matched_keywords"') == 1
+    parsed = json.loads(raw_json)
+    assert parsed["matched_lines"] == [33]
+    assert parsed["matched_keywords"] == ["ssrf", "dns rebinding"]

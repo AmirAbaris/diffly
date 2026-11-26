@@ -158,6 +158,68 @@ describe("validateGeneratedChallengeQuality", () => {
       expect(result.reasons.some((r) => r.includes("Tier 2"))).toBe(true)
     }
   })
+
+  it("rejects spoiler vulnerability names in slug", () => {
+    const result = validateGeneratedChallengeQuality({
+      ...VALID_CHALLENGE,
+      slug: "webhook-dispatcher-ssrf",
+    })
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.reasons.some((r) => r.includes("slug"))).toBe(true)
+    }
+  })
+
+  it("rejects matched_keywords that only copy code tokens from anchor_lines", () => {
+    const result = validateGeneratedChallengeQuality({
+      ...VALID_CHALLENGE,
+      code_snippet:
+        "response = await self.client.post(webhook_url, json=payload)",
+      expected_issues: [
+        {
+          ...VALID_CHALLENGE.expected_issues[0],
+          anchor_lines: [
+            "response = await self.client.post(webhook_url, json=payload)",
+          ],
+          matched_lines: [1],
+          matched_keywords: [
+            "client.post",
+            "webhook_url",
+            "json",
+            "payload",
+            "await",
+          ],
+        },
+      ],
+    })
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.reasons.some((r) => r.includes("matched_keywords"))).toBe(
+        true
+      )
+    }
+  })
+
+  it("rejects empty or non-diff recommended_fix_diff", () => {
+    const emptyDiff = validateGeneratedChallengeQuality({
+      ...VALID_CHALLENGE,
+      recommended_fix_diff: "   ",
+    })
+    const plainTextDiff = validateGeneratedChallengeQuality({
+      ...VALID_CHALLENGE,
+      recommended_fix_diff: "Use parameterized queries instead of f-strings.",
+    })
+
+    expect(emptyDiff.ok).toBe(false)
+    expect(plainTextDiff.ok).toBe(false)
+    if (!plainTextDiff.ok) {
+      expect(
+        plainTextDiff.reasons.some((r) => r.includes("recommended_fix_diff"))
+      ).toBe(true)
+    }
+  })
 })
 
 describe("buildChallengeGenerationPrompt", () => {
@@ -172,8 +234,10 @@ describe("buildChallengeGenerationPrompt", () => {
     expect(prompt).toContain("Agent Antipaths")
     expect(prompt).toContain("2 subtle defects involving state, concurrency")
     expect(prompt).toContain("Anti-Spoiler Metadata")
+    expect(prompt).toContain("slug")
     expect(prompt).toContain("Code Realism & Cleanliness")
     expect(prompt).toContain("Grading Precision")
+    expect(prompt).toContain("review concepts")
     expect(prompt).toContain("Progressive Hints")
     expect(prompt).not.toContain("Previous Attempt Corrections:")
   })

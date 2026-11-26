@@ -1197,3 +1197,40 @@ def test_sanitize_rejects_trivial_only_code_snippet():
     )
     with pytest.raises(GeminiSchemaError, match="unresolvable line numbers"):
         sanitize_generated_challenge(raw, req)
+
+
+def test_sanitize_preserves_capitalization_when_aligning_tier3_hint():
+    code = "def run(cmd):\n    clean = cmd.strip()\n    return eval(clean)\n"
+    raw = {
+        **SAMPLE_GEMINI_OUTPUT,
+        "language": "python",
+        "code_snippet": code,
+        "expected_issues": [
+            {
+                "id": "eval-cap",
+                "title": "Code Injection",
+                "severity": "critical",
+                "anchor_lines": ["return eval(clean)"],
+                "matched_lines": [1],
+                "matched_keywords": ["code injection", "eval"],
+                "explanation": "eval executes arbitrary input.",
+            }
+        ],
+        "hints": [
+            {"tier": 1, "label": "Contextual Clue", "text": "Inspect command flow."},
+            {"tier": 2, "label": "Vulnerability Class", "text": "Code injection risk."},
+            {
+                "tier": 3,
+                "label": "Line Pointer",
+                "text": "Lines 1-2 execute untrusted input directly.",
+            },
+        ],
+    }
+    req = GenerateCustomChallengeRequest(
+        topic="Code injection",
+        language=Language.PYTHON,
+        difficulty=Difficulty.EASY,
+    )
+    result = sanitize_generated_challenge(raw, req)
+    tier3 = next(h for h in result.hints if h.tier == 3)
+    assert tier3.text == "Line 3 execute untrusted input directly."

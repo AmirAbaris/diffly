@@ -425,20 +425,22 @@ class DefectCriterion(BaseModel):
                     for item in d["lines"]
                     if item is not None
                 ]
-            if d.get("matched_lines") is not None and not d.get("lines"):
-                raw_lines = d["matched_lines"]
-                if not isinstance(raw_lines, list):
+            raw_matched_lines = d.pop("matched_lines", None)
+            if raw_matched_lines is not None and not d.get("lines"):
+                if not isinstance(raw_matched_lines, list):
                     raise ValueError("matched_lines must be a list")
                 d["lines"] = [
                     _parse_defect_line_entry(item)
-                    for item in raw_lines
+                    for item in raw_matched_lines
                     if item is not None
                 ]
-            if d.get("matched_keywords") is not None and not d.get("keywords"):
-                raw_keywords = d["matched_keywords"]
-                if not isinstance(raw_keywords, list):
+            raw_matched_keywords = d.pop("matched_keywords", None)
+            if raw_matched_keywords is not None and not d.get("keywords"):
+                if not isinstance(raw_matched_keywords, list):
                     raise ValueError("matched_keywords must be a list of strings")
-                d["keywords"] = [str(item) for item in raw_keywords if item is not None]
+                d["keywords"] = [
+                    str(item) for item in raw_matched_keywords if item is not None
+                ]
             if not d.get("id"):
                 lines_val = d.get("lines")
                 fallback_line = d.get("line")
