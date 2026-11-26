@@ -150,6 +150,50 @@ describe("Multi-File PR Comparison & Scoped Reporting", () => {
     ).toBeGreaterThanOrEqual(2)
   })
 
+  it("formats nested anchor findings in HistoryDetail without Lundefined", () => {
+    const historyItem = {
+      attempt_number: 1,
+      id: 23,
+      submission_id: 23,
+      challenge_id: 29,
+      flagged_lines: [28, 29, 30, 31],
+      comments: "",
+      score: 100,
+      feedback: "Outstanding review!",
+      detected_issues: [],
+      missed_issues: [],
+      created_at: "2026-11-26T17:17:44Z",
+      findings: [
+        {
+          id: "f1",
+          anchor: {
+            file_path: null,
+            start_line: 28,
+            end_line: 31,
+          },
+          body: "eval allows RCE",
+          severity: "critical",
+        },
+        {
+          id: "f2",
+          anchor: {
+            file_path: "api/routes/oauth.py",
+            start_line: 19,
+            end_line: 19,
+          },
+          body: "Missing state check",
+          severity: "high",
+        },
+      ],
+    } as unknown as SubmissionHistoryItem
+
+    render(<HistoryDetail item={historyItem} />)
+
+    expect(document.body.textContent).not.toContain("Lundefined")
+    expect(screen.getByText("L28-L31")).toBeInTheDocument()
+    expect(screen.getByText("api/routes/oauth.py:L19")).toBeInTheDocument()
+  })
+
   it("parses and switches multi-file recommended_fix_diff in CodeDiffViewer", async () => {
     const user = userEvent.setup()
     const multiDiff = [

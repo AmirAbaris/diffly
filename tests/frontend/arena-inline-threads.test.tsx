@@ -269,4 +269,63 @@ describe("Arena inline threads, range selection, and keyboard shortcuts", () => 
     expect(screen.getByText("SQL Injection")).toBeInTheDocument()
     expect(screen.getByText("Missing cursor close")).toBeInTheDocument()
   })
+
+  it("renders inline verdict cards when backend returns nested anchor findings", async () => {
+    const response = {
+      submission_id: 23,
+      id: 23,
+      score: 100,
+      feedback: "Outstanding review!",
+      comments: "",
+      created_at: "2026-11-26T17:17:44Z",
+      detected_issues: [
+        {
+          id: "d1",
+          title: "SQL Injection",
+          severity: "critical",
+          matched_lines: [2],
+          finding_ids: ["f-hit"],
+          explanation: "Use parameterized queries.",
+        },
+      ],
+      missed_issues: [],
+      findings: [
+        {
+          id: "f-hit",
+          anchor: {
+            file_path: null,
+            start_line: 2,
+            end_line: 2,
+          },
+          body: "Unsanitized SQL",
+          severity: "critical",
+        },
+      ],
+      finding_verdicts: [
+        {
+          finding_id: "f-hit",
+          verdict: "matched",
+          defect_id: "d1",
+          line_score: 1,
+          severity_agrees: true,
+        },
+      ],
+    } as unknown as ReviewSubmissionResponse
+
+    const report = parseGradeReport(response)
+    render(
+      <AnnotatedCodeTab
+        codeSnippet={SAMPLE_CODE}
+        language="python"
+        gradeReport={report}
+      />
+    )
+
+    expect(await screen.findByTestId("annotated-code-tab")).toBeInTheDocument()
+    expect(
+      screen.getByTestId("verdict-thread-verdict-hit-2")
+    ).toBeInTheDocument()
+    expect(screen.getByText("SQL Injection")).toBeInTheDocument()
+    expect(screen.getByText("Unsanitized SQL")).toBeInTheDocument()
+  })
 })

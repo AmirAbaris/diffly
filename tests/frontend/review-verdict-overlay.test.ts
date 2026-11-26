@@ -145,4 +145,71 @@ describe("draft-codec & verdict-overlay", () => {
       )
     ).toEqual([])
   })
+
+  it("parses nested anchor findings returned by the backend review API", () => {
+    const backendResponse = {
+      submission_id: 23,
+      id: 23,
+      score: 100,
+      feedback: "Outstanding review!",
+      comments: "",
+      created_at: "2026-11-26T17:17:44.843305Z",
+      detected_issues: [
+        {
+          id: "crit-rce-eval",
+          title: "Arbitrary Code Execution via Unsanitized eval()",
+          severity: "critical",
+          matched_lines: [28, 29, 30, 31],
+          finding_ids: ["f1"],
+          explanation: "eval() allows RCE.",
+        },
+      ],
+      missed_issues: [],
+      flagged_lines: [28, 29, 30, 31],
+      findings: [
+        {
+          id: "f1",
+          anchor: {
+            file_path: null,
+            start_line: 28,
+            end_line: 31,
+          },
+          body: "eval allows RCE",
+          severity: "critical",
+        },
+      ],
+      finding_verdicts: [
+        {
+          finding_id: "f1",
+          verdict: "matched",
+          defect_id: "crit-rce-eval",
+          line_score: 1,
+          severity_agrees: true,
+        },
+      ],
+    } as unknown as ReviewSubmissionResponse
+
+    const report = parseGradeReport(backendResponse)
+    expect(report.findings).toEqual([
+      {
+        id: asFindingId("f1"),
+        anchor: { file: null, start: 28, end: 31 },
+        body: "eval allows RCE",
+        severity: "critical",
+      },
+    ])
+
+    const marks = buildVerdictOverlay(report)
+    expect(marks).toEqual([
+      {
+        file: null,
+        start: 28,
+        end: 31,
+        tone: "verdict-hit",
+        label: "Matched",
+        findingId: asFindingId("f1"),
+        defectId: "crit-rce-eval",
+      },
+    ])
+  })
 })
