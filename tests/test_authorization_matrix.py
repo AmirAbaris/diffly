@@ -15,6 +15,7 @@ from backend.core.config import settings
 from backend.core.guest_session import GuestSession, _encode
 from backend.core.security import create_access_token
 from backend.models.challenge import Category, Challenge, Difficulty, Language
+from backend.models.coach_thread import CoachMessage, CoachThread
 from backend.models.submission import Submission
 from backend.models.user import User
 
@@ -70,6 +71,12 @@ MATRIX: dict[tuple[str, str], dict[str, dict[str, int]]] = {
         },
     },
     ("POST", "/api/challenges/generate-custom"): {
+        "create_owned_custom": {
+            "user_a": 200,
+            "guest_a": 200,
+        },
+    },
+    ("POST", "/api/challenges/custom"): {
         "create_owned_custom": {
             "user_a": 200,
             "guest_a": 200,
@@ -305,6 +312,50 @@ MATRIX: dict[tuple[str, str], dict[str, dict[str, int]]] = {
             "inactive": 200,
         },
     },
+    ("GET", "/api/user/coach-patterns"): {
+        "own_coach_patterns": {
+            "anonymous": 200,
+            "guest_a": 200,
+            "guest_b": 200,
+            "guest_forged": 200,
+            "guest_tampered": 200,
+            "user_a": 200,
+            "user_b": 200,
+            "inactive": 200,
+        },
+    },
+    ("GET", "/api/user/coach-submissions/{challenge_slug}"): {
+        "public": {
+            "anonymous": 404,
+            "guest_a": 200,
+            "guest_b": 404,
+            "guest_forged": 404,
+            "guest_tampered": 404,
+            "user_a": 200,
+            "user_b": 404,
+            "inactive": 404,
+        },
+        "user_a_private": {
+            "anonymous": 404,
+            "guest_a": 404,
+            "guest_b": 404,
+            "guest_forged": 404,
+            "guest_tampered": 404,
+            "user_a": 200,
+            "user_b": 404,
+            "inactive": 404,
+        },
+        "guest_a_private": {
+            "anonymous": 404,
+            "guest_a": 200,
+            "guest_b": 404,
+            "guest_forged": 404,
+            "guest_tampered": 404,
+            "user_a": 404,
+            "user_b": 404,
+            "inactive": 404,
+        },
+    },
     ("GET", "/api/challenges/next"): {
         "public_drill_recommendation": {
             "anonymous": 200,
@@ -326,6 +377,140 @@ MATRIX: dict[tuple[str, str], dict[str, dict[str, int]]] = {
             "guest_tampered": 401,
             "user_a": 200,
             "inactive": 401,
+        },
+    },
+    ("GET", "/api/user/coach-threads"): {
+        "own_list": {
+            "anonymous": 200,
+            "guest_a": 200,
+            "guest_b": 200,
+            "guest_forged": 200,
+            "guest_tampered": 200,
+            "user_a": 200,
+            "user_b": 200,
+            "inactive": 200,
+        },
+    },
+    ("POST", "/api/user/coach-threads"): {
+        "create_owned_thread": {
+            "anonymous": 401,
+            "guest_a": 201,
+            "guest_b": 201,
+            "guest_forged": 401,
+            "guest_tampered": 401,
+            "user_a": 201,
+            "user_b": 201,
+            "inactive": 401,
+        },
+    },
+    ("GET", "/api/user/coach-threads/{thread_id}"): {
+        "user_a_thread": {
+            "anonymous": 404,
+            "guest_a": 404,
+            "guest_b": 404,
+            "guest_forged": 404,
+            "guest_tampered": 404,
+            "user_a": 200,
+            "user_b": 404,
+            "inactive": 404,
+        },
+        "guest_a_thread": {
+            "anonymous": 404,
+            "guest_a": 200,
+            "guest_b": 404,
+            "guest_forged": 404,
+            "guest_tampered": 404,
+            "user_a": 404,
+            "user_b": 404,
+            "inactive": 404,
+        },
+    },
+    ("PATCH", "/api/user/coach-threads/{thread_id}"): {
+        "user_a_thread": {
+            "anonymous": 404,
+            "guest_a": 404,
+            "guest_b": 404,
+            "guest_forged": 404,
+            "guest_tampered": 404,
+            "user_a": 200,
+            "user_b": 404,
+            "inactive": 404,
+        },
+        "guest_a_thread": {
+            "anonymous": 404,
+            "guest_a": 200,
+            "guest_b": 404,
+            "guest_forged": 404,
+            "guest_tampered": 404,
+            "user_a": 404,
+            "user_b": 404,
+            "inactive": 404,
+        },
+    },
+    ("DELETE", "/api/user/coach-threads/{thread_id}"): {
+        "user_a_thread": {
+            "anonymous": 404,
+            "guest_a": 404,
+            "guest_b": 404,
+            "guest_forged": 404,
+            "guest_tampered": 404,
+            "user_a": 204,
+            "user_b": 404,
+            "inactive": 404,
+        },
+        "guest_a_thread": {
+            "anonymous": 404,
+            "guest_a": 204,
+            "guest_b": 404,
+            "guest_forged": 404,
+            "guest_tampered": 404,
+            "user_a": 404,
+            "user_b": 404,
+            "inactive": 404,
+        },
+    },
+    ("POST", "/api/user/coach-threads/{thread_id}/messages"): {
+        "user_a_thread": {
+            "anonymous": 404,
+            "guest_a": 404,
+            "guest_b": 404,
+            "guest_forged": 404,
+            "guest_tampered": 404,
+            "user_a": 201,
+            "user_b": 404,
+            "inactive": 404,
+        },
+        "guest_a_thread": {
+            "anonymous": 404,
+            "guest_a": 201,
+            "guest_b": 404,
+            "guest_forged": 404,
+            "guest_tampered": 404,
+            "user_a": 404,
+            "user_b": 404,
+            "inactive": 404,
+        },
+    },
+    ("DELETE", "/api/user/coach-threads/{thread_id}/messages"): {
+        "user_a_thread": {
+            "anonymous": 404,
+            "guest_a": 404,
+            "guest_b": 404,
+            "guest_forged": 404,
+            "guest_tampered": 404,
+            "user_a": 200,
+            "user_b": 404,
+            "inactive": 404,
+        },
+        "guest_a_thread": {
+            "anonymous": 404,
+            "guest_a": 200,
+            "guest_b": 404,
+            "guest_forged": 404,
+            "guest_tampered": 404,
+            "user_a": 404,
+            "user_b": 404,
+            "inactive": 404,
         },
     },
 }
@@ -591,6 +776,47 @@ def _seed_matrix_resources(session: Session, user_a_id: int, guest_a_sid: str):
     return public_ch, user_a_private, guest_a_private
 
 
+def _seed_matrix_coach_threads(
+    session: Session,
+    user_a_id: int,
+    guest_a_sid: str,
+) -> tuple[CoachThread, CoachThread]:
+    user_thread = CoachThread(
+        user_id=user_a_id,
+        title="User A Secret Thread",
+        mode="patterns",
+    )
+    guest_thread = CoachThread(
+        user_id=None,
+        session_id=guest_a_sid,
+        title="Guest A Secret Thread",
+        mode="patterns",
+    )
+    session.add_all([user_thread, guest_thread])
+    session.commit()
+    session.refresh(user_thread)
+    session.refresh(guest_thread)
+
+    session.add_all(
+        [
+            CoachMessage(
+                thread_id=user_thread.id,
+                role="user",
+                parts_json=json.dumps([{"type": "text", "text": "User A question"}]),
+                sequence=0,
+            ),
+            CoachMessage(
+                thread_id=guest_thread.id,
+                role="user",
+                parts_json=json.dumps([{"type": "text", "text": "Guest A question"}]),
+                sequence=0,
+            ),
+        ]
+    )
+    session.commit()
+    return user_thread, guest_thread
+
+
 def test_authorization_matrix_enforcement(
     client: TestClient,
     session: Session,
@@ -604,6 +830,9 @@ def test_authorization_matrix_enforcement(
         session, client_factory, register_user, login_as, as_guest
     )
     public_ch, user_a_private, guest_a_private = _seed_matrix_resources(
+        session, meta["user_a"]["id"], meta["guest_a_sid"]
+    )
+    user_a_thread, guest_a_thread = _seed_matrix_coach_threads(
         session, meta["user_a"]["id"], meta["guest_a_sid"]
     )
 
@@ -776,6 +1005,50 @@ def test_authorization_matrix_enforcement(
             }
             assert analytics["trends"] == []
 
+    for actor_name, expected in MATRIX[("GET", "/api/user/coach-patterns")][
+        "own_coach_patterns"
+    ].items():
+        ac, headers = actors[actor_name]
+        res = ac.get("/api/user/coach-patterns", headers=headers)
+        assert res.status_code == expected, actor_name
+        patterns = res.json()
+        if actor_name == "user_a":
+            assert patterns["total_submissions"] == 3
+            missed_slugs = {
+                item["challenge_slug"] for item in patterns["recent_missed"]
+            }
+            assert guest_a_private.slug not in missed_slugs
+        elif actor_name == "guest_a":
+            assert patterns["total_submissions"] == 3
+            missed_slugs = {
+                item["challenge_slug"] for item in patterns["recent_missed"]
+            }
+            assert user_a_private.slug not in missed_slugs
+        else:
+            assert patterns["total_submissions"] == 0
+            assert patterns["total_missed_submissions"] == 0
+            assert patterns["weakest_slices"] == []
+            assert patterns["strongest_slices"] == []
+            assert patterns["recent_missed"] == []
+
+    for target_key, slug in targets.items():
+        for actor_name, expected in MATRIX[
+            ("GET", "/api/user/coach-submissions/{challenge_slug}")
+        ][target_key].items():
+            ac, headers = actors[actor_name]
+            res = ac.get(f"/api/user/coach-submissions/{slug}", headers=headers)
+            assert res.status_code == expected, f"{target_key} debrief <- {actor_name}"
+            if expected == 200:
+                debrief = res.json()
+                assert debrief["challenge_slug"] == slug
+                if target_key == "public":
+                    if actor_name == "user_a":
+                        assert "User A public submission" in debrief["comments"]
+                        assert "Guest A" not in debrief["comments"]
+                    elif actor_name == "guest_a":
+                        assert "Guest A public submission" in debrief["comments"]
+                        assert "User A" not in debrief["comments"]
+
     for actor_name, expected in MATRIX[("GET", "/api/challenges/next")][
         "public_drill_recommendation"
     ].items():
@@ -828,7 +1101,101 @@ def test_authorization_matrix_enforcement(
             res = ac.delete(f"/api/challenges/custom/{slug}", headers=headers)
             assert res.status_code == expected, f"{target_key} delete <- {actor_name}"
 
-    # 11. POST /api/user/claim-session and post-claim old-session isolation
+    # 12. Coach threads matrix (list, create, get, patch, messages, delete)
+    for actor_name, expected in MATRIX[("GET", "/api/user/coach-threads")][
+        "own_list"
+    ].items():
+        ac, headers = actors[actor_name]
+        res = ac.get("/api/user/coach-threads", headers=headers)
+        assert res.status_code == expected, f"list threads <- {actor_name}"
+        thread_ids = {item["id"] for item in res.json()["items"]}
+        if actor_name == "user_a":
+            assert thread_ids == {user_a_thread.id}
+        elif actor_name == "guest_a":
+            assert thread_ids == {guest_a_thread.id}
+        else:
+            assert thread_ids == set()
+
+    thread_targets = {
+        "user_a_thread": user_a_thread.id,
+        "guest_a_thread": guest_a_thread.id,
+    }
+    for target_key, tid in thread_targets.items():
+        for actor_name, expected in MATRIX[
+            ("GET", "/api/user/coach-threads/{thread_id}")
+        ][target_key].items():
+            ac, headers = actors[actor_name]
+            res = ac.get(f"/api/user/coach-threads/{tid}", headers=headers)
+            assert res.status_code == expected, f"{target_key} get <- {actor_name}"
+
+        for actor_name, expected in MATRIX[
+            ("PATCH", "/api/user/coach-threads/{thread_id}")
+        ][target_key].items():
+            ac, headers = actors[actor_name]
+            res = ac.patch(
+                f"/api/user/coach-threads/{tid}",
+                json={"title": f"Updated {target_key}"},
+                headers=headers,
+            )
+            assert res.status_code == expected, f"{target_key} patch <- {actor_name}"
+
+        for actor_name, expected in MATRIX[
+            ("POST", "/api/user/coach-threads/{thread_id}/messages")
+        ][target_key].items():
+            ac, headers = actors[actor_name]
+            res = ac.post(
+                f"/api/user/coach-threads/{tid}/messages",
+                json={
+                    "messages": [
+                        {
+                            "role": "user",
+                            "parts": [{"type": "text", "text": "Matrix probe"}],
+                        }
+                    ]
+                },
+                headers=headers,
+            )
+            assert res.status_code == expected, f"{target_key} msg post <- {actor_name}"
+
+        for actor_name, expected in MATRIX[
+            ("DELETE", "/api/user/coach-threads/{thread_id}/messages")
+        ][target_key].items():
+            ac, headers = actors[actor_name]
+            res = ac.delete(
+                f"/api/user/coach-threads/{tid}/messages?from_sequence=1",
+                headers=headers,
+            )
+            assert res.status_code == expected, f"{target_key} msg del <- {actor_name}"
+
+        for actor_name, expected in MATRIX[
+            ("DELETE", "/api/user/coach-threads/{thread_id}")
+        ][target_key].items():
+            if expected == 204:
+                continue
+            ac, headers = actors[actor_name]
+            res = ac.delete(f"/api/user/coach-threads/{tid}", headers=headers)
+            assert res.status_code == expected, f"{target_key} delete <- {actor_name}"
+
+    for actor_name, expected in MATRIX[("POST", "/api/user/coach-threads")][
+        "create_owned_thread"
+    ].items():
+        ac, headers = actors[actor_name]
+        res = ac.post(
+            "/api/user/coach-threads",
+            json={"mode": "patterns"},
+            headers=headers,
+        )
+        assert res.status_code == expected, f"create thread <- {actor_name}"
+        if expected == 201:
+            created_tid = res.json()["id"]
+            assert (
+                ac.delete(
+                    f"/api/user/coach-threads/{created_tid}", headers=headers
+                ).status_code
+                == 204
+            )
+
+    # 13. POST /api/user/claim-session and post-claim old-session isolation
     for actor_name, expected in MATRIX[("POST", "/api/user/claim-session")][
         "claim_guest_a"
     ].items():
@@ -847,6 +1214,7 @@ def test_authorization_matrix_enforcement(
     claim_res = actors["user_a"][0].post("/api/user/claim-session")
     assert claim_res.status_code == 200
     assert claim_res.json()["claimed_challenges_count"] == 1
+    assert claim_res.json()["claimed_threads_count"] == 1
     assert actors["user_a"][0].cookies.get(settings.GUEST_COOKIE_NAME) is None
 
     # Re-apply pre-claim Guest A cookie to ensure claimed rows cannot be accessed
@@ -878,8 +1246,61 @@ def test_authorization_matrix_enforcement(
         assert ac.get(f"/api/challenges/{public_ch.slug}/submissions").json() == []
         assert ac.get("/api/user/progress").json()["total_attempted"] == 0
         assert ac.get("/api/user/analytics").json()["total_submissions"] == 0
+        assert ac.get("/api/user/coach-patterns").json()["total_submissions"] == 0
+        assert (
+            ac.get(f"/api/user/coach-submissions/{public_ch.slug}").status_code == 404
+        )
+        assert (
+            ac.get(f"/api/user/coach-submissions/{guest_a_private.slug}").status_code
+            == 404
+        )
+        assert ac.get("/api/user/coach-threads").json()["items"] == []
+        assert ac.get(f"/api/user/coach-threads/{guest_a_thread.id}").status_code == 404
+        assert (
+            ac.patch(
+                f"/api/user/coach-threads/{guest_a_thread.id}",
+                json={"title": "Snooper rename"},
+            ).status_code
+            == 404
+        )
+        assert (
+            ac.post(
+                f"/api/user/coach-threads/{guest_a_thread.id}/messages",
+                json={
+                    "messages": [
+                        {
+                            "role": "user",
+                            "parts": [{"type": "text", "text": "Snooper append"}],
+                        }
+                    ]
+                },
+            ).status_code
+            == 404
+        )
+        assert (
+            ac.delete(
+                f"/api/user/coach-threads/{guest_a_thread.id}/messages?from_sequence=0"
+            ).status_code
+            == 404
+        )
+        assert (
+            ac.delete(f"/api/user/coach-threads/{guest_a_thread.id}").status_code == 404
+        )
 
-    # User A now owns both private challenges and can delete them
+    assert (
+        actors["user_a"][0]
+        .get(f"/api/user/coach-submissions/{guest_a_private.slug}")
+        .status_code
+        == 200
+    )
+    assert (
+        actors["user_a"][0]
+        .get(f"/api/user/coach-threads/{guest_a_thread.id}")
+        .status_code
+        == 200
+    )
+
+    # User A now owns both private challenges and both coach threads and can delete them
     assert (
         actors["user_a"][0]
         .delete(f"/api/challenges/custom/{user_a_private.slug}")
@@ -891,6 +1312,18 @@ def test_authorization_matrix_enforcement(
         .delete(f"/api/challenges/custom/{guest_a_private.slug}")
         .status_code
         == 200
+    )
+    assert (
+        actors["user_a"][0]
+        .delete(f"/api/user/coach-threads/{user_a_thread.id}")
+        .status_code
+        == 204
+    )
+    assert (
+        actors["user_a"][0]
+        .delete(f"/api/user/coach-threads/{guest_a_thread.id}")
+        .status_code
+        == 204
     )
 
 
@@ -978,6 +1411,183 @@ def test_generate_custom_challenge_owner_isolation(
             )
 
 
+def test_create_custom_challenge_owner_isolation(
+    session: Session,
+    client_factory: Callable[[], TestClient],
+    register_user: Callable[..., dict[str, Any]],
+    login_as: Callable[..., TestClient],
+    as_guest: Callable[[TestClient, str | None], str],
+):
+    """Custom challenges created via POST /api/challenges/custom isolate owners."""
+    actors, meta = _make_actors(
+        session, client_factory, register_user, login_as, as_guest
+    )
+
+    def _build_payload(slug: str) -> dict[str, Any]:
+        return {
+            "topic": "FastAPI Ownership Isolation",
+            "language": "python",
+            "difficulty": "Medium",
+            "slug": slug,
+            "title": "Custom Ownership Check",
+            "category": "Security",
+            "description": "Verify tenant ownership before returning records.",
+            "threat_model": "Cross-tenant IDOR read",
+            "defect_target": "Find missing ownership filter",
+            "code_snippet": (
+                "def fetch_invoice(db, invoice_id, actor):\n"
+                "    return db.query(Invoice).filter_by(id=invoice_id).first()\n"
+            ),
+            "expected_issues": [
+                {
+                    "id": "custom-idor-1",
+                    "title": "Missing owner filter",
+                    "severity": "high",
+                    "anchor_lines": [
+                        "return db.query(Invoice).filter_by(id=invoice_id).first()"
+                    ],
+                    "matched_lines": [2],
+                    "matched_keywords": ["owner", "idor", "authorization"],
+                    "explanation": "Invoice lookup omits tenant owner check.",
+                }
+            ],
+            "hints": [
+                {"tier": 1, "label": "Context", "text": "Check query filters."},
+                {"tier": 2, "label": "Class", "text": "Look for IDOR."},
+                {"tier": 3, "label": "Pointer", "text": "Inspect line 2."},
+            ],
+            "canonical_review": "Scope query to the authenticated owner.",
+            "recommended_fix_diff": (
+                "@@ -1,2 +1,4 @@\n"
+                " def fetch_invoice(db, invoice_id, actor):\n"
+                "-    return db.query(Invoice).filter_by(id=invoice_id).first()\n"
+                "+    return db.query(Invoice).filter_by(\n"
+                "+        id=invoice_id, owner_id=actor.id\n"
+                "+    ).first()"
+            ),
+            "user_id": meta["user_b"]["id"],
+            "session_id": meta["guest_b_sid"],
+            "is_public": True,
+            "share_token": "injected-share-token-must-be-ignored",
+            "id": 987654,
+        }
+
+    for creator_name in ("user_a", "guest_a"):
+        creator_client, creator_headers = actors[creator_name]
+        res = creator_client.post(
+            "/api/challenges/custom",
+            json=_build_payload(f"matrix-custom-{creator_name}"),
+            headers=creator_headers,
+        )
+        assert (
+            res.status_code
+            == MATRIX[("POST", "/api/challenges/custom")]["create_owned_custom"][
+                creator_name
+            ]
+        )
+        body = res.json()
+        created_slug = body["slug"]
+        assert body["id"] != 987654
+
+        db_challenge = session.exec(
+            select(Challenge).where(Challenge.slug == created_slug)
+        ).one()
+        assert db_challenge.is_public is False
+        assert db_challenge.share_token is None
+        if creator_name == "user_a":
+            assert db_challenge.user_id == meta["user_a"]["id"]
+            assert db_challenge.session_id is None
+        else:
+            assert db_challenge.user_id is None
+            assert db_challenge.session_id == meta["guest_a_sid"]
+
+        assert (
+            creator_client.get(
+                f"/api/challenges/{created_slug}", headers=creator_headers
+            ).status_code
+            == 200
+        )
+        assert (
+            creator_client.post(
+                f"/api/challenges/{created_slug}/review",
+                json={"flagged_lines": [2], "comments": "Owner review check"},
+                headers=creator_headers,
+            ).status_code
+            == 200
+        )
+
+        for other_name, (other_client, other_headers) in actors.items():
+            if other_name == creator_name:
+                continue
+            assert (
+                other_client.get(
+                    f"/api/challenges/{created_slug}", headers=other_headers
+                ).status_code
+                == 404
+            ), f"{creator_name} detail <- {other_name}"
+            assert (
+                other_client.get(
+                    f"/api/challenges/{created_slug}/hints", headers=other_headers
+                ).status_code
+                == 404
+            ), f"{creator_name} hints <- {other_name}"
+            assert (
+                other_client.get(
+                    f"/api/challenges/{created_slug}/solution?reveal=true",
+                    headers=other_headers,
+                ).status_code
+                == 404
+            ), f"{creator_name} solution <- {other_name}"
+            assert (
+                other_client.get(
+                    f"/api/challenges/{created_slug}/submissions",
+                    headers=other_headers,
+                ).status_code
+                == 404
+            ), f"{creator_name} submissions <- {other_name}"
+            assert (
+                other_client.post(
+                    f"/api/challenges/{created_slug}/review",
+                    json={"flagged_lines": [2], "comments": "Cross-actor review"},
+                    headers=other_headers,
+                ).status_code
+                == 404
+            ), f"{creator_name} review <- {other_name}"
+            assert (
+                other_client.patch(
+                    f"/api/challenges/custom/{created_slug}/share",
+                    json={"enabled": True},
+                    headers=other_headers,
+                ).status_code
+                == 404
+            ), f"{creator_name} share <- {other_name}"
+            assert (
+                other_client.delete(
+                    f"/api/challenges/custom/{created_slug}", headers=other_headers
+                ).status_code
+                == 404
+            ), f"{creator_name} delete <- {other_name}"
+
+    inactive_client, inactive_headers = actors["inactive"]
+    inactive_res = inactive_client.post(
+        "/api/challenges/custom",
+        json=_build_payload("matrix-custom-inactive-fallback"),
+        headers=inactive_headers,
+    )
+    assert inactive_res.status_code == 200
+    inactive_created = session.exec(
+        select(Challenge).where(Challenge.slug == inactive_res.json()["slug"])
+    ).one()
+    assert inactive_created.user_id is None
+    assert inactive_created.session_id is not None
+    assert (
+        session.exec(
+            select(Challenge).where(Challenge.user_id == meta["inactive"]["id"])
+        ).all()
+        == []
+    )
+
+
 def test_authenticated_actor_ignores_unclaimed_guest_session_cookie_and_header(
     session: Session,
     client_factory: Callable[[], TestClient],
@@ -990,6 +1600,9 @@ def test_authenticated_actor_ignores_unclaimed_guest_session_cookie_and_header(
         session, client_factory, register_user, login_as, as_guest
     )
     _, _, guest_a_private = _seed_matrix_resources(
+        session, meta["user_a"]["id"], meta["guest_a_sid"]
+    )
+    _, guest_a_thread = _seed_matrix_coach_threads(
         session, meta["user_a"]["id"], meta["guest_a_sid"]
     )
     guest_private_slug = guest_a_private.slug
@@ -1016,6 +1629,32 @@ def test_authenticated_actor_ignores_unclaimed_guest_session_cookie_and_header(
     assert (
         user_b_client.delete(
             f"/api/challenges/custom/{guest_private_slug}", headers=guest_headers
+        ).status_code
+        == 404
+    )
+    assert (
+        user_b_client.get("/api/user/coach-patterns", headers=guest_headers).json()[
+            "total_submissions"
+        ]
+        == 0
+    )
+    assert (
+        user_b_client.get(
+            f"/api/user/coach-submissions/{guest_private_slug}",
+            headers=guest_headers,
+        ).status_code
+        == 404
+    )
+    assert (
+        user_b_client.get("/api/user/coach-threads", headers=guest_headers).json()[
+            "items"
+        ]
+        == []
+    )
+    assert (
+        user_b_client.get(
+            f"/api/user/coach-threads/{guest_a_thread.id}",
+            headers=guest_headers,
         ).status_code
         == 404
     )
@@ -1148,7 +1787,13 @@ def test_claimed_rows_have_null_session_id(
         comments="Guest review",
         score=85,
     )
-    session.add(sub)
+    thread = CoachThread(
+        user_id=None,
+        session_id=guest_sid,
+        title="Guest thread null sid",
+        mode="patterns",
+    )
+    session.add_all([sub, thread])
     session.commit()
 
     user = register_user("null_sid_owner")
@@ -1157,14 +1802,20 @@ def test_claimed_rows_have_null_session_id(
 
     res = auth_client.post("/api/user/claim-session")
     assert res.status_code == 200
-    assert res.json()["claimed_count"] == 2
+    assert res.json()["claimed_count"] == 3
+    assert res.json()["claimed_threads_count"] == 1
 
     claimed_ch = session.exec(select(Challenge).where(Challenge.id == priv.id)).one()
     claimed_sub = session.exec(select(Submission).where(Submission.id == sub.id)).one()
+    claimed_thread = session.exec(
+        select(CoachThread).where(CoachThread.id == thread.id)
+    ).one()
     assert claimed_ch.user_id == user["id"]
     assert claimed_ch.session_id is None
     assert claimed_sub.user_id == user["id"]
     assert claimed_sub.session_id is None
+    assert claimed_thread.user_id == user["id"]
+    assert claimed_thread.session_id is None
 
 
 def test_share_token_read_only_boundary_and_isolation(
@@ -1326,6 +1977,18 @@ def test_share_token_read_only_boundary_and_isolation(
         },
     )
     assert recipient_review.status_code == 200
+    assert (
+        user_b_client.get(
+            f"/api/user/coach-submissions/{user_a_private.slug}?share_token={token}"
+        ).status_code
+        == 404
+    )
+    assert (
+        user_b_client.get(
+            f"/api/user/coach-submissions/{user_a_private.slug}"
+        ).status_code
+        == 404
+    )
     owner_subs = user_a_client.get(f"/api/challenges/{user_a_private.slug}/submissions")
     assert owner_subs.status_code == 200
     assert all(

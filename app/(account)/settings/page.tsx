@@ -6,7 +6,7 @@ import { SettingsView } from "@/components/account/settings-view"
 export const metadata: Metadata = {
   title: "Settings",
   description:
-    "Manage timezone preferences, GitHub OAuth connection, Gemini API key, and your Diffly session.",
+    "Manage timezone preferences, GitHub OAuth connection, AI provider connections, and your Diffly session.",
 }
 
 export const instant = false

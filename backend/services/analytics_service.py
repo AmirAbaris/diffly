@@ -10,6 +10,7 @@ from sqlmodel import Session, func, select
 
 from backend.models.challenge import Category, Challenge
 from backend.models.submission import Submission
+from backend.services.grading.review import normalize_scoped_flagged_lines
 from backend.services.ownership import Actor, submission_owner_filter
 
 
@@ -115,6 +116,15 @@ def compute_longest_streak_days(submission_dates: set[date]) -> int:
     return longest
 
 
+def has_submission_eval_metadata(sub: Submission) -> bool:
+    """Return True when a submission carries structured v2 grading metadata."""
+    return bool(
+        sub.get_detected_issues()
+        or sub.get_missed_issues()
+        or sub.get_false_positive_lines()
+    ) or (sub.line_precision_score > 0.0 or sub.concept_score > 0.0)
+
+
 def compute_submission_precision_recall(sub: Submission) -> tuple[float, float]:
     """Compute (precision, recall) percentages (0-100) for a submission."""
     flagged = sub.get_flagged_lines()
@@ -122,11 +132,8 @@ def compute_submission_precision_recall(sub: Submission) -> tuple[float, float]:
     detected = sub.get_detected_issues()
     missed = sub.get_missed_issues()
 
-    has_eval_metadata = bool(detected or missed or fp_lines) or (
-        sub.line_precision_score > 0.0
-    )
     fallback_score = float(max(0, min(100, sub.score)))
-    if not has_eval_metadata:
+    if not has_submission_eval_metadata(sub):
         return round(fallback_score, 1), round(fallback_score, 1)
 
     total_issues = len(detected) + len(missed)
@@ -135,8 +142,18 @@ def compute_submission_precision_recall(sub: Submission) -> tuple[float, float]:
     else:
         recall = fallback_score
 
-    unique_flagged = set(flagged)
-    unique_fp = set(fp_lines) & unique_flagged
+    flagged_scoped, flagged_has_scope = normalize_scoped_flagged_lines(flagged)
+    fp_scoped, fp_has_scope = normalize_scoped_flagged_lines(fp_lines)
+    unique_flagged = set(flagged_scoped)
+    if flagged_has_scope and fp_has_scope:
+        unique_fp = set(fp_scoped) & unique_flagged
+    else:
+        flagged_line_nums = {ln for _, ln in unique_flagged}
+        unique_fp = {
+            item
+            for item in set(fp_scoped)
+            if item in unique_flagged or item[1] in flagged_line_nums
+        }
 
     if len(unique_flagged) > 0:
         if not detected and missed:

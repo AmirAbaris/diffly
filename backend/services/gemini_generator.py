@@ -204,6 +204,9 @@ _CATEGORY_KEYWORDS: tuple[tuple[str, Category], ...] = (
     ("secur", Category.SECURITY),
 )
 _MAX_SCHEMA_ATTEMPTS = 2
+_RESERVED_CHALLENGE_SLUGS = frozenset(
+    {"custom", "evaluate-custom", "generate-custom", "next"}
+)
 
 
 def _normalize_category(category_val: Any) -> Category:
@@ -678,11 +681,12 @@ def sanitize_generated_challenge(
     code_lines = code_snippet.splitlines()
     line_count = max(len(code_lines), 1)
 
-    slug = str(raw_data.get("slug") or "").strip().lower()
+    raw_slug = str(raw_data.get("slug") or "").strip().lower()
+    slug = re.sub(r"[^a-z0-9]+", "-", raw_slug).strip("-")[:128].strip("-")
     if not slug:
         title = str(raw_data.get("title") or request.topic).lower()
-        slug = re.sub(r"[^a-z0-9]+", "-", title).strip("-")
-    if not slug:
+        slug = re.sub(r"[^a-z0-9]+", "-", title).strip("-")[:128].strip("-")
+    if not slug or slug.isdigit() or slug in _RESERVED_CHALLENGE_SLUGS:
         slug = f"custom-challenge-{request.language.value}"
 
     title = str(raw_data.get("title") or request.topic).strip()

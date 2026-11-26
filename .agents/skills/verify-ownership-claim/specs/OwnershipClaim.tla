@@ -4,7 +4,7 @@ EXTENDS Integers, FiniteSets
 CONSTANTS
     Users,          \* Set of authenticated user IDs (e.g., {u1, u2})
     Guests,         \* Set of verified guest session IDs (e.g., {g1})
-    Quota,          \* backend/services/ownership.py:22 (CUSTOM_CHALLENGE_QUOTA = 5; bounded for TLC)
+    Quota,          \* backend/services/ownership.py:24 (CUSTOM_CHALLENGE_QUOTA = 5; bounded for TLC)
     MaxChallenges   \* Finite bound on concurrent private custom Challenge rows in the model
 
 ChallengeIds == 1..MaxChallenges
@@ -12,8 +12,8 @@ Null == "NULL"
 
 VARIABLES
     challenges,     \* [ChallengeIds -> [ownerType: {"none", "guest", "user"}, user: Users \cup {Null}, guest: Guests \cup {Null}]]
-    userLock,       \* [Users -> BOOLEAN] -- SELECT User.id FOR UPDATE (backend/services/ownership.py:124-128)
-    guestLock,      \* [Guests -> BOOLEAN] -- pg_advisory_xact_lock(hashtext(guest_id)) (backend/services/ownership.py:130-138)
+    userLock,       \* [Users -> BOOLEAN] -- SELECT User.id FOR UPDATE (backend/services/ownership.py:150-154)
+    guestLock,      \* [Guests -> BOOLEAN] -- pg_advisory_xact_lock(hashtext(guest_id)) (backend/services/ownership.py:156-164)
     userTx,         \* [Users -> {"idle", "gen", "claim"}]
     guestTx,        \* [Guests -> {"idle", "gen"}]
     claimGuest,     \* [Users -> Guests \cup {Null}]
@@ -21,11 +21,11 @@ VARIABLES
 
 vars == <<challenges, userLock, guestLock, userTx, guestTx, claimGuest, claimSnapshot>>
 
-\* Matches Challenge.user_id == actor.user_id in backend/services/ownership.py:93-94, 155-160.
+\* Matches Challenge.user_id == actor.user_id in backend/services/ownership.py:95-96, 181-186.
 UserOwned(u) ==
     {c \in ChallengeIds : challenges[c].ownerType /= "none" /\ challenges[c].user = u}
 
-\* Matches Challenge.session_id == guest_id AND Challenge.user_id IS NULL in backend/services/ownership.py:95-101, 179-185.
+\* Matches Challenge.session_id == guest_id AND Challenge.user_id IS NULL in backend/services/ownership.py:97-103, 205-211.
 GuestUnclaimed(g) ==
     {c \in ChallengeIds :
         challenges[c].ownerType /= "none" /\ challenges[c].guest = g /\ challenges[c].user = Null}
@@ -34,7 +34,7 @@ FreeSlots ==
     {c \in ChallengeIds : challenges[c].ownerType = "none"}
 
 \* Domain invariant for challenge ownership fields, actor lock maps, and claim transaction state.
-\* Maps to Actor.resolve / _lock_actor_scope in backend/services/ownership.py:52-70, 123-138.
+\* Maps to Actor.resolve / _lock_actor_scope in backend/services/ownership.py:61-72, 149-164.
 TypeOK ==
     /\ challenges \in [ChallengeIds -> [ownerType: {"none", "guest", "user"},
                                         user: Users \cup {Null},
@@ -47,18 +47,18 @@ TypeOK ==
     /\ claimSnapshot \in [Users -> SUBSET ChallengeIds]
 
 \* Claimed or generated private challenges must never hold both user_id and session_id.
-\* backend/services/ownership.py:4-5, 60-70, 206-208; api/routes/challenges.py:292-293.
+\* backend/services/ownership.py:4-5, 61-72, 232-235; api/routes/challenges.py:398-399.
 NoSplitOwnership ==
     \A c \in ChallengeIds :
         ~(challenges[c].user /= Null /\ challenges[c].guest /= Null)
 
 \* Every authenticated user owns at most Quota private custom challenges.
-\* backend/services/ownership.py:22, 93-94, 141-167, 187-193; api/routes/challenges.py:259.
+\* backend/services/ownership.py:24, 95-96, 167-193, 213-219; api/routes/challenges.py:365.
 UserQuotaNeverExceeded ==
     \A u \in Users : Cardinality(UserOwned(u)) <= Quota
 
 \* Every guest session holds at most Quota unclaimed private custom challenges.
-\* backend/services/ownership.py:22, 95-101, 141-167; api/routes/challenges.py:259.
+\* backend/services/ownership.py:24, 97-103, 167-193; api/routes/challenges.py:365.
 GuestQuotaNeverExceeded ==
     \A g \in Guests : Cardinality(GuestUnclaimed(g)) <= Quota
 
@@ -71,8 +71,9 @@ Init ==
     /\ claimGuest = [u \in Users |-> Null]
     /\ claimSnapshot = [u \in Users |-> {}]
 
-\* Acquire User.id FOR UPDATE lock and verify ensure_custom_quota(lock=True) for user u.
-\* api/routes/challenges.py:258-265; backend/services/ownership.py:124-128, 149-167.
+\* Acquire User.id FOR UPDATE lock and verify ensure_custom_quota(lock=True) for user u
+\* in _persist_custom_challenge (shared by generate_custom_challenge_endpoint and create_custom_challenge_endpoint).
+\* api/routes/challenges.py:364-371, 504, 532; backend/services/ownership.py:150-154, 175-193.
 BeginGenerateUser(u) ==
     /\ ~userLock[u]
     /\ userTx[u] = "idle"
@@ -82,7 +83,7 @@ BeginGenerateUser(u) ==
     /\ UNCHANGED <<challenges, guestLock, guestTx, claimGuest, claimSnapshot>>
 
 \* Insert private custom challenge for user u, commit, and release User.id lock.
-\* api/routes/challenges.py:276-302; backend/services/ownership.py:65-67.
+\* api/routes/challenges.py:382-406; backend/services/ownership.py:68-69.
 CommitGenerateUser(u) ==
     /\ userLock[u]
     /\ userTx[u] = "gen"
@@ -94,8 +95,9 @@ CommitGenerateUser(u) ==
     /\ userTx' = [userTx EXCEPT ![u] = "idle"]
     /\ UNCHANGED <<guestLock, guestTx, claimGuest, claimSnapshot>>
 
-\* Acquire pg_advisory_xact_lock for guest g and verify ensure_custom_quota(lock=True).
-\* api/routes/challenges.py:258-265; backend/services/ownership.py:130-138, 149-167.
+\* Acquire pg_advisory_xact_lock for guest g and verify ensure_custom_quota(lock=True)
+\* in _persist_custom_challenge (shared by generate_custom_challenge_endpoint and create_custom_challenge_endpoint).
+\* api/routes/challenges.py:364-371, 504, 532; backend/services/ownership.py:156-164, 175-193.
 BeginGenerateGuest(g) ==
     /\ ~guestLock[g]
     /\ guestTx[g] = "idle"
@@ -105,7 +107,7 @@ BeginGenerateGuest(g) ==
     /\ UNCHANGED <<challenges, userLock, userTx, claimGuest, claimSnapshot>>
 
 \* Insert private custom challenge for guest g, commit, and release guest advisory lock.
-\* api/routes/challenges.py:276-302; backend/services/ownership.py:68-69.
+\* api/routes/challenges.py:382-406; backend/services/ownership.py:70-71.
 CommitGenerateGuest(g) ==
     /\ guestLock[g]
     /\ guestTx[g] = "gen"
@@ -118,7 +120,7 @@ CommitGenerateGuest(g) ==
     /\ UNCHANGED <<userLock, userTx, claimGuest, claimSnapshot>>
 
 \* Acquire User.id FOR UPDATE lock ONLY (not guestLock[g]) and snapshot unclaimed rows for g.
-\* backend/services/ownership.py:176-185; api/routes/auth.py:87-97, 177, 224; api/routes/user.py:261-265.
+\* backend/services/ownership.py:202-211; api/routes/auth.py:99-115, 190, 241, 502-507; api/routes/user.py:486-491.
 BeginClaim(u, g) ==
     /\ ~userLock[u]
     /\ userTx[u] = "idle"
@@ -129,7 +131,7 @@ BeginClaim(u, g) ==
     /\ UNCHANGED <<challenges, guestLock, guestTx>>
 
 \* Check user quota against snapshot; transfer rows with session_id=NULL or abort on CustomQuotaExceeded; release User.id lock.
-\* backend/services/ownership.py:162-167, 187-193, 206-213; api/routes/auth.py:98-102; api/routes/user.py:266-272.
+\* backend/services/ownership.py:188-193, 213-219, 232-239; api/routes/auth.py:110-113; api/routes/user.py:492-496.
 CommitClaim(u, g) ==
     /\ userLock[u]
     /\ userTx[u] = "claim"
@@ -151,7 +153,7 @@ CommitClaim(u, g) ==
     /\ UNCHANGED <<guestLock, guestTx>>
 
 \* Delete an allocated private custom challenge without acquiring _lock_actor_scope.
-\* api/routes/challenges.py:409-443.
+\* api/routes/challenges.py:607-647.
 DeleteChallenge(c) ==
     /\ challenges[c].ownerType /= "none"
     /\ challenges' = [challenges EXCEPT ![c] = [ownerType |-> "none", user |-> Null, guest |-> Null]]

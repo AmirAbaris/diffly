@@ -178,7 +178,13 @@ def run_migrations(target_engine: Engine | None = None, revision: str = "head") 
         table_names = set(inspect(connection).get_table_names())
         if connection.in_transaction():
             connection.rollback()
-        app_tables = {"users", "challenges", "submissions"}
+        app_tables = {
+            "users",
+            "challenges",
+            "submissions",
+            "coach_threads",
+            "coach_messages",
+        }
         if "alembic_version" not in table_names and (table_names & app_tables):
             existing = ", ".join(sorted(table_names & app_tables))
             raise RuntimeError(

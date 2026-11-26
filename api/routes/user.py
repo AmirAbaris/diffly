@@ -5,11 +5,12 @@ from collections import defaultdict
 from datetime import UTC, date, datetime, timedelta
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Query, Request, Response, status
+from fastapi import APIRouter, HTTPException, Path, Query, Request, Response, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlmodel import Session, func, select
 
 from api.deps import ActorDep, CurrentUserDep, GuestSessionDep, SessionDep
+from api.routes.coach_threads import router as coach_threads_router
 from backend.core.config import settings
 from backend.core.guest_session import clear_guest_cookie
 from backend.models.challenge import Challenge
@@ -24,8 +25,15 @@ from backend.services.analytics_service import (
     resolve_timezone,
     to_local_date,
 )
+from backend.services.coach_service import (
+    CoachPatternsResponse,
+    CoachSubmissionDebriefResponse,
+    get_actor_coach_patterns,
+    get_actor_submission_debrief,
+)
 from backend.services.ownership import (
     Actor,
+    CoachThreadQuotaExceeded,
     CustomQuotaExceeded,
     challenge_owner_filter,
     claim_guest_session,
@@ -142,6 +150,7 @@ class ClaimSessionResponse(BaseModel):
 
     claimed_count: int
     claimed_challenges_count: int = 0
+    claimed_threads_count: int = 0
     user_id: int
     session_id: str
 
@@ -401,6 +410,59 @@ def get_user_analytics(
     )
 
 
+@router.get(
+    "/coach-patterns",
+    response_model=CoachPatternsResponse,
+    status_code=status.HTTP_200_OK,
+)
+def get_user_coach_patterns(
+    session: SessionDep,
+    actor: ActorDep,
+    slice_limit: Annotated[
+        int,
+        Query(ge=1, le=20, description="Max weakest/strongest slices to return"),
+    ] = 5,
+    missed_limit: Annotated[
+        int,
+        Query(ge=1, le=50, description="Max recent missed submissions to return"),
+    ] = 10,
+) -> CoachPatternsResponse:
+    """Aggregate actor-scoped weakness slices and recent missed reviews."""
+    return get_actor_coach_patterns(
+        session,
+        actor,
+        slice_limit=slice_limit,
+        missed_limit=missed_limit,
+    )
+
+
+@router.get(
+    "/coach-submissions/{challenge_slug}",
+    response_model=CoachSubmissionDebriefResponse,
+    status_code=status.HTTP_200_OK,
+)
+def get_user_coach_submission_debrief(
+    challenge_slug: Annotated[
+        str,
+        Path(
+            min_length=1,
+            max_length=200,
+            description="Challenge slug to fetch latest submission debrief for",
+        ),
+    ],
+    session: SessionDep,
+    actor: ActorDep,
+) -> CoachSubmissionDebriefResponse:
+    """Retrieve actor-scoped submission debrief and challenge context for coaching."""
+    debrief = get_actor_submission_debrief(session, actor, challenge_slug)
+    if debrief is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Submission debrief not found",
+        )
+    return debrief
+
+
 async def _has_raw_session_input(request: Request) -> bool:
     if request.headers.get("X-Diffly-Session-Id", "").strip():
         return True
@@ -459,7 +521,7 @@ async def claim_guest_session_endpoint(
             user_id=current_user.id,
             guest=guest,
         )
-    except CustomQuotaExceeded as exc:
+    except (CustomQuotaExceeded, CoachThreadQuotaExceeded) as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=exc.message,
@@ -467,8 +529,12 @@ async def claim_guest_session_endpoint(
 
     clear_guest_cookie(response)
     return ClaimSessionResponse(
-        claimed_count=result.submissions + result.challenges,
+        claimed_count=result.submissions + result.challenges + result.coach_threads,
         claimed_challenges_count=result.challenges,
+        claimed_threads_count=result.coach_threads,
         user_id=current_user.id,
         session_id=guest.id,
     )
+
+
+router.include_router(coach_threads_router)

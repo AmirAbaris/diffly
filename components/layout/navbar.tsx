@@ -40,6 +40,19 @@ export function Navbar({ className }: NavbarProps) {
           >
             Code Review Arena
           </Link>
+          <span
+            aria-hidden="true"
+            className="hidden text-sm text-border select-none sm:inline"
+          >
+            /
+          </span>
+          <Link
+            href="/coach"
+            data-testid="navbar-coach-link"
+            className="hidden text-xs font-medium text-muted-foreground transition-colors hover:text-foreground sm:inline"
+          >
+            Agent Coach
+          </Link>
         </div>
 
         <div className="flex shrink-0 items-center gap-1.5 sm:gap-2.5">

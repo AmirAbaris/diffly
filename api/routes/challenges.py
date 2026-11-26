@@ -53,6 +53,7 @@ from backend.services.gemini_generator import (
     GeminiRateLimitError,
     GeminiSchemaError,
     generate_custom_challenge,
+    sanitize_generated_challenge,
 )
 from backend.services.grading import (
     DetectedIssue,
@@ -316,66 +317,62 @@ class CustomEvaluationResponse(BaseModel):
     judge: dict[str, Any] | None = None
 
 
-@router.post(
-    "/generate-custom",
-    response_model=CustomChallengeResponse,
-    status_code=status.HTTP_200_OK,
-    dependencies=[Depends(rate_limit("generate-custom", 10, 60))],
-)
-async def generate_custom_challenge_endpoint(
-    payload: GenerateCustomChallengeRequest,
-    session: SessionDep,
-    actor: OwnerActorDep,
-    x_gemini_key: Annotated[
-        str | None,
-        Header(
-            alias="X-Gemini-Key",
-            description="User-supplied Google Gemini API key",
-        ),
-    ] = None,
+CustomAnchorLineStr = Annotated[str, Field(max_length=500)]
+CustomKeywordStr = Annotated[str, Field(max_length=100)]
+CustomLineNumberInt = Annotated[int, Field(ge=1, le=100_000)]
+CustomHintTierStr = Annotated[str, Field(max_length=20)]
+
+
+class CustomIssueInput(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    id: str | None = Field(default=None, max_length=100)
+    title: str | None = Field(default=None, max_length=300)
+    severity: str | None = Field(default=None, max_length=50)
+    anchor_lines: list[CustomAnchorLineStr] = Field(
+        default_factory=list,
+        max_length=50,
+    )
+    matched_lines: list[CustomLineNumberInt] = Field(
+        default_factory=list,
+        max_length=100,
+    )
+    matched_keywords: list[CustomKeywordStr] = Field(
+        default_factory=list,
+        max_length=50,
+    )
+    explanation: str | None = Field(default=None, max_length=5000)
+
+
+class CustomHintInput(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    tier: int | CustomHintTierStr | None = Field(default=None)
+    label: str | None = Field(default=None, max_length=200)
+    text: str | None = Field(default=None, max_length=2000)
+
+
+class CreateCustomChallengeRequest(GenerateCustomChallengeRequest):
+    model_config = ConfigDict(extra="ignore")
+
+    slug: str | None = Field(default=None, max_length=200)
+    title: str | None = Field(default=None, max_length=300)
+    category: str | None = Field(default=None, max_length=100)
+    description: str | None = Field(default=None, max_length=10000)
+    threat_model: str = Field(default="", max_length=10000)
+    defect_target: str = Field(default="", max_length=2000)
+    code_snippet: str = Field(..., min_length=1, max_length=50000)
+    expected_issues: list[CustomIssueInput] = Field(..., min_length=1, max_length=20)
+    hints: list[CustomHintInput] = Field(default_factory=list, max_length=10)
+    canonical_review: str = Field(default="", max_length=20000)
+    recommended_fix_diff: str = Field(default="", max_length=50000)
+
+
+def _persist_custom_challenge(
+    session: Session,
+    actor: Actor,
+    generated: CustomChallengeResponse,
 ) -> CustomChallengeResponse:
-    """Generate a custom challenge and persist to PostgreSQL (max 5 quota)."""
-    if not x_gemini_key or not x_gemini_key.strip():
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=(
-                "Missing or invalid Gemini API key. "
-                "Provide a valid key in the X-Gemini-Key header."
-            ),
-        )
-
-    try:
-        ensure_custom_quota(session, actor, lock=False)
-    except CustomQuotaExceeded as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=_QUOTA_REACHED_DETAIL,
-        ) from exc
-    finally:
-        # Release read transaction and pooled connection before external Gemini HTTP I/O
-        session.rollback()
-
-    try:
-        generated = await generate_custom_challenge(
-            request=payload,
-            api_key=x_gemini_key,
-        )
-    except GeminiAuthError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=str(exc),
-        ) from exc
-    except GeminiRateLimitError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=str(exc),
-        ) from exc
-    except (GeminiAPIError, GeminiSchemaError) as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=str(exc),
-        ) from exc
-
     max_persist_attempts = 5
     new_challenge: Challenge | None = None
     base_slug = generated.slug
@@ -463,6 +460,97 @@ async def generate_custom_challenge_endpoint(
         is_custom=True,
         session_id=actor.guest_session_id,
     )
+
+
+@router.post(
+    "/generate-custom",
+    response_model=CustomChallengeResponse,
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(rate_limit("generate-custom", 10, 60))],
+)
+async def generate_custom_challenge_endpoint(
+    payload: GenerateCustomChallengeRequest,
+    session: SessionDep,
+    actor: OwnerActorDep,
+    x_gemini_key: Annotated[
+        str | None,
+        Header(
+            alias="X-Gemini-Key",
+            description="User-supplied Google Gemini API key",
+        ),
+    ] = None,
+) -> CustomChallengeResponse:
+    """Generate a custom challenge and persist to PostgreSQL (max 5 quota)."""
+    if not x_gemini_key or not x_gemini_key.strip():
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=(
+                "Missing or invalid Gemini API key. "
+                "Provide a valid key in the X-Gemini-Key header."
+            ),
+        )
+
+    try:
+        ensure_custom_quota(session, actor, lock=False)
+    except CustomQuotaExceeded as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=_QUOTA_REACHED_DETAIL,
+        ) from exc
+    finally:
+        # Release read transaction and pooled connection before external Gemini HTTP I/O
+        session.rollback()
+
+    try:
+        generated = await generate_custom_challenge(
+            request=payload,
+            api_key=x_gemini_key,
+        )
+    except GeminiAuthError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(exc),
+        ) from exc
+    except GeminiRateLimitError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=str(exc),
+        ) from exc
+    except (GeminiAPIError, GeminiSchemaError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+    return _persist_custom_challenge(session, actor, generated)
+
+
+@router.post(
+    "/custom",
+    response_model=CustomChallengeResponse,
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(rate_limit("create-custom", 10, 60))],
+)
+def create_custom_challenge_endpoint(
+    payload: CreateCustomChallengeRequest,
+    session: SessionDep,
+    actor: OwnerActorDep,
+) -> CustomChallengeResponse:
+    """Sanitize and persist a pre-generated custom challenge (max 5 quota)."""
+    raw_data = {
+        **payload.model_dump(),
+        "expected_issues": [issue.model_dump() for issue in payload.expected_issues],
+        "hints": [hint.model_dump() for hint in payload.hints],
+    }
+    try:
+        sanitized = sanitize_generated_challenge(raw_data, payload)
+    except GeminiSchemaError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        ) from exc
+
+    return _persist_custom_challenge(session, actor, sanitized)
 
 
 @router.get("/custom", response_model=CustomChallengesListResponse)

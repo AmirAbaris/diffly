@@ -1,6 +1,7 @@
 import { act, renderHook } from "@testing-library/react"
 import { AxiosError } from "axios"
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import { AI_CONNECTION_SWR_KEY } from "@/hooks/use-ai-connection"
 import {
   CUSTOM_CHALLENGE_GENERATE_TIMEOUT_MS,
   CUSTOM_CHALLENGES_SWR_KEY,
@@ -28,13 +29,14 @@ vi.mock("swr", () => ({
 
 describe("useCustomChallenges timeout and quota-sync behavior", () => {
   beforeEach(() => {
+    window.localStorage.clear()
     mockMutate.mockReset()
     mockGlobalMutate.mockReset()
     mockMutate.mockResolvedValue(undefined)
     mockGlobalMutate.mockResolvedValue(undefined)
   })
 
-  it("keeps apiClient default timeout at 10s while passing extended timeout on generateCustomChallenge", async () => {
+  it("posts to /api/ai/challenges/generate with extended timeout and no X-Gemini-Key header or localStorage", async () => {
     expect(apiClient.defaults.timeout).toBe(10000)
     expect(CUSTOM_CHALLENGE_GENERATE_TIMEOUT_MS).toBeGreaterThanOrEqual(45000)
 
@@ -45,22 +47,29 @@ describe("useCustomChallenges timeout and quota-sync behavior", () => {
     const { result } = renderHook(() => useCustomChallenges())
 
     await act(async () => {
-      await result.current.generateCustomChallenge(
-        { topic: "SQL injection", language: "python", difficulty: "Medium" },
-        "  AIzaSyKey  "
-      )
+      await result.current.generateCustomChallenge({
+        topic: "SQL injection",
+        language: "python",
+        difficulty: "Medium",
+      })
     })
 
     expect(postSpy).toHaveBeenCalledWith(
-      "/api/challenges/generate-custom",
+      "/api/ai/challenges/generate",
       { topic: "SQL injection", language: "python", difficulty: "Medium" },
       {
         timeout: CUSTOM_CHALLENGE_GENERATE_TIMEOUT_MS,
-        headers: { "X-Gemini-Key": "AIzaSyKey" },
       }
     )
     expect(mockMutate).toHaveBeenCalledTimes(1)
-    expect(mockGlobalMutate).toHaveBeenCalledWith("/api/challenges")
+    expect(mockGlobalMutate).toHaveBeenCalledTimes(1)
+    const predicate = mockGlobalMutate.mock.calls[0][0] as (
+      key: unknown
+    ) => boolean
+    expect(predicate("/api/challenges")).toBe(true)
+    expect(predicate("/api/challenges?language=python")).toBe(true)
+    expect(predicate("/api/challenges/custom")).toBe(false)
+    expect(window.localStorage.getItem("diffly_gemini_key")).toBeNull()
     expect(result.current.quotaSyncState).toBe("idle")
     postSpy.mockRestore()
   })
@@ -79,15 +88,21 @@ describe("useCustomChallenges timeout and quota-sync behavior", () => {
 
     await act(async () => {
       await expect(
-        result.current.generateCustomChallenge(
-          { topic: "Race condition", language: "go", difficulty: "Hard" },
-          "AIzaSyKey"
-        )
+        result.current.generateCustomChallenge({
+          topic: "Race condition",
+          language: "go",
+          difficulty: "Hard",
+        })
       ).rejects.toBe(timeoutErr)
     })
 
     expect(mockMutate).toHaveBeenCalledTimes(1)
-    expect(mockGlobalMutate).toHaveBeenCalledWith("/api/challenges")
+    expect(mockGlobalMutate).toHaveBeenCalledTimes(1)
+    const predicate = mockGlobalMutate.mock.calls[0][0] as (
+      key: unknown
+    ) => boolean
+    expect(predicate("/api/challenges")).toBe(true)
+    expect(predicate("/api/challenges?difficulty=Hard")).toBe(true)
     expect(result.current.quotaSyncState).toBe("synced")
     expect(result.current.isSyncingQuota).toBe(false)
     expect(CUSTOM_CHALLENGES_SWR_KEY).toBe("/api/challenges/custom")
@@ -144,7 +159,6 @@ describe("useCustomChallenges timeout and quota-sync behavior", () => {
     expect(predicate("/api/challenges/custom-ssrf-2")).toBe(false)
     expect(predicate("/api/challenges/custom-ssrf/hints")).toBe(false)
 
-    // When enabled: false (as in Arena OwnerShareControls), revalidates CUSTOM_CHALLENGES_SWR_KEY via cacheMutate
     mockMutate.mockClear()
     mockGlobalMutate.mockClear()
     patchSpy.mockResolvedValueOnce({
@@ -164,5 +178,86 @@ describe("useCustomChallenges timeout and quota-sync behavior", () => {
     expect(mockMutate).not.toHaveBeenCalled()
     expect(mockGlobalMutate).toHaveBeenCalledWith(CUSTOM_CHALLENGES_SWR_KEY)
     patchSpy.mockRestore()
+  })
+
+  it("revalidates AI_CONNECTION_SWR_KEY when generation fails with HTTP 401", async () => {
+    const unauthorizedErr = new AxiosError(
+      "Unauthorized",
+      "ERR_BAD_REQUEST",
+      undefined,
+      undefined,
+      {
+        status: 401,
+        statusText: "Unauthorized",
+        headers: {},
+        config: {} as never,
+        data: { error: "AI provider cookie expired" },
+      }
+    )
+    const postSpy = vi
+      .spyOn(apiClient, "post")
+      .mockRejectedValueOnce(unauthorizedErr)
+
+    const { result } = renderHook(() => useCustomChallenges())
+
+    await act(async () => {
+      await expect(
+        result.current.generateCustomChallenge({
+          topic: "JWT signature bypass",
+          language: "python",
+          difficulty: "Medium",
+        })
+      ).rejects.toBe(unauthorizedErr)
+    })
+
+    expect(mockGlobalMutate).toHaveBeenCalledWith(AI_CONNECTION_SWR_KEY)
+    postSpy.mockRestore()
+  })
+
+  it("revalidates coach patterns and user stats caches immediately when deleting a custom challenge", async () => {
+    const deleteSpy = vi.spyOn(apiClient, "delete").mockResolvedValueOnce({
+      data: {
+        detail: "Custom challenge deleted successfully",
+        id: 12,
+        slug: "custom-race-bug",
+      },
+    })
+
+    const { result } = renderHook(() => useCustomChallenges())
+
+    await act(async () => {
+      await result.current.deleteCustomChallenge("custom-race-bug")
+    })
+
+    expect(deleteSpy).toHaveBeenCalledWith(
+      "/api/challenges/custom/custom-race-bug"
+    )
+    expect(mockMutate).toHaveBeenCalledTimes(1)
+
+    const predicates = mockGlobalMutate.mock.calls
+      .map((call) => call[0])
+      .filter(
+        (arg): arg is (key: unknown) => boolean => typeof arg === "function"
+      )
+
+    expect(
+      predicates.some((pred) =>
+        pred("/api/user/coach-patterns?slice_limit=5&missed_limit=6")
+      )
+    ).toBe(true)
+    expect(predicates.some((pred) => pred("/api/user/coach-patterns"))).toBe(
+      true
+    )
+    expect(predicates.some((pred) => pred("/api/challenges"))).toBe(true)
+    expect(predicates.some((pred) => pred("/api/user/progress?tz=UTC"))).toBe(
+      true
+    )
+    expect(
+      predicates.some((pred) => pred("/api/user/analytics?tz=UTC&days=90"))
+    ).toBe(true)
+    expect(
+      predicates.some((pred) => pred("/api/challenges/next?exclude=1"))
+    ).toBe(true)
+    deleteSpy.mockRestore()
   })
 })

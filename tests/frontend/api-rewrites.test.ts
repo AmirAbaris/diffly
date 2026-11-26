@@ -12,7 +12,7 @@ describe("api-rewrites configuration", () => {
       buildApiRewrites({ BACKEND_URL: "https://backend.diffly.dev/" })
     ).toEqual([
       {
-        source: "/api/:path*",
+        source: "/api/:path((?!ai(?:/|$)|coach(?:/|$)).*)",
         destination: "https://backend.diffly.dev/api/:path*",
       },
     ])
@@ -46,7 +46,7 @@ describe("api-rewrites configuration", () => {
     )
     expect(buildApiRewrites({ NODE_ENV: "development" })).toEqual([
       {
-        source: "/api/:path*",
+        source: "/api/:path((?!ai(?:/|$)|coach(?:/|$)).*)",
         destination: "http://127.0.0.1:8000/api/:path*",
       },
     ])
@@ -58,7 +58,7 @@ describe("api-rewrites configuration", () => {
     )
     expect(buildApiRewrites({ NODE_ENV: "production" })).toEqual([
       {
-        source: "/api/:path*",
+        source: "/api/:path((?!ai(?:/|$)|coach(?:/|$)).*)",
         destination: "http://backend:8000/api/:path*",
       },
     ])

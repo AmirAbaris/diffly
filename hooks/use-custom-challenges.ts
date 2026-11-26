@@ -3,6 +3,7 @@
 import * as React from "react"
 import axios from "axios"
 import useSWR, { useSWRConfig } from "swr"
+import { AI_CONNECTION_SWR_KEY } from "@/hooks/use-ai-connection"
 import { apiClient } from "@/lib/axios"
 import type {
   CustomChallengeResponse,
@@ -12,7 +13,6 @@ import type {
 } from "@/types/challenge"
 
 export const CUSTOM_CHALLENGES_SWR_KEY = "/api/challenges/custom"
-export const GEMINI_API_KEY_STORAGE_KEY = "diffly_gemini_key"
 export const CUSTOM_CHALLENGE_GENERATE_TIMEOUT_MS = 60_000
 
 export type QuotaSyncState = "idle" | "syncing" | "synced" | "error"
@@ -30,28 +30,11 @@ export function isRequestTimeoutError(err: unknown): boolean {
   return err.message.toLowerCase().includes("timeout")
 }
 
-export function getStoredGeminiKey(): string {
-  if (typeof window === "undefined") {
-    return ""
-  }
-  try {
-    return window.localStorage.getItem(GEMINI_API_KEY_STORAGE_KEY)?.trim() ?? ""
-  } catch {
-    return ""
-  }
-}
-
-export function setStoredGeminiKey(key: string, remember: boolean): void {
-  if (typeof window === "undefined") {
-    return
-  }
-  try {
-    if (remember && key.trim()) {
-      window.localStorage.setItem(GEMINI_API_KEY_STORAGE_KEY, key.trim())
-    } else {
-      window.localStorage.removeItem(GEMINI_API_KEY_STORAGE_KEY)
-    }
-  } catch {}
+function isCatalogChallengesKey(key: unknown): boolean {
+  return (
+    typeof key === "string" &&
+    (key === "/api/challenges" || key.startsWith("/api/challenges?"))
+  )
 }
 
 function isChallengeDetailKey(key: unknown, slug: string): boolean {
@@ -59,6 +42,23 @@ function isChallengeDetailKey(key: unknown, slug: string): boolean {
     typeof key === "string" &&
     (key === `/api/challenges/${slug}` ||
       key.startsWith(`/api/challenges/${slug}?`))
+  )
+}
+
+function isCoachPatternsKey(key: unknown): boolean {
+  return (
+    typeof key === "string" &&
+    (key === "/api/user/coach-patterns" ||
+      key.startsWith("/api/user/coach-patterns?"))
+  )
+}
+
+function isUserStatsKey(key: unknown): boolean {
+  return (
+    typeof key === "string" &&
+    (key.startsWith("/api/user/progress") ||
+      key.startsWith("/api/user/analytics") ||
+      key.startsWith("/api/challenges/next"))
   )
 }
 
@@ -96,8 +96,12 @@ export function useCustomChallenges(options?: { enabled?: boolean }) {
       const response = await apiClient.delete(
         `/api/challenges/custom/${identifier}`
       )
-      await revalidateCustomLibrary()
-      void cacheMutate("/api/challenges")
+      await Promise.all([
+        revalidateCustomLibrary(),
+        cacheMutate(isCoachPatternsKey),
+      ])
+      void cacheMutate(isCatalogChallengesKey)
+      void cacheMutate(isUserStatsKey)
       return response.data
     },
     [revalidateCustomLibrary, cacheMutate]
@@ -127,32 +131,30 @@ export function useCustomChallenges(options?: { enabled?: boolean }) {
 
   const generateCustomChallenge = React.useCallback(
     async (
-      payload: GenerateCustomChallengePayload,
-      apiKey: string
+      payload: GenerateCustomChallengePayload
     ): Promise<CustomChallengeResponse> => {
-      const trimmedKey = apiKey.trim()
       setQuotaSyncState("idle")
       try {
         const response = await apiClient.post<CustomChallengeResponse>(
-          "/api/challenges/generate-custom",
+          "/api/ai/challenges/generate",
           payload,
           {
             timeout: CUSTOM_CHALLENGE_GENERATE_TIMEOUT_MS,
-            headers: {
-              "X-Gemini-Key": trimmedKey,
-            },
           }
         )
         await revalidateCustomLibrary()
-        void cacheMutate("/api/challenges")
+        void cacheMutate(isCatalogChallengesKey)
         return response.data
       } catch (err: unknown) {
+        if (axios.isAxiosError(err) && err.response?.status === 401) {
+          void cacheMutate(AI_CONNECTION_SWR_KEY)
+        }
         if (isRequestTimeoutError(err)) {
           setQuotaSyncState("syncing")
           try {
             await Promise.all([
               revalidateCustomLibrary(),
-              cacheMutate("/api/challenges"),
+              cacheMutate(isCatalogChallengesKey),
             ])
             setQuotaSyncState("synced")
           } catch {

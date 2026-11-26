@@ -10,16 +10,16 @@ Run this check whenever a change touches private custom challenge creation, dele
 
 ## Coverage record
 
-- `sync_commit`: `13b2723`
+- `sync_commit`: `75be1fb`
 - Covered files and functions:
   - `backend/services/ownership.py`: `CUSTOM_CHALLENGE_QUOTA`, `Actor.resolve`, `challenge_owner_filter`, `_lock_actor_scope`, `ensure_custom_quota`, `claim_guest_session`
-  - `api/routes/challenges.py`: `generate_custom_challenge_endpoint`, `delete_custom_challenge`
-  - `api/routes/auth.py`: `adopt_guest_on_sign_in`, `register`, `login`
+  - `api/routes/challenges.py`: `_persist_custom_challenge`, `generate_custom_challenge_endpoint`, `create_custom_challenge_endpoint`, `delete_custom_challenge`
+  - `api/routes/auth.py`: `adopt_guest_on_sign_in`, `register`, `login`, `github_oauth_callback`
   - `api/routes/user.py`: `claim_guest_session_endpoint`
 - Check for drift since `sync_commit`:
 
 ```bash
-git diff 13b2723..HEAD -- backend/services/ownership.py api/routes/challenges.py api/routes/auth.py api/routes/user.py
+git diff 75be1fb..HEAD -- backend/services/ownership.py api/routes/challenges.py api/routes/auth.py api/routes/user.py
 ```
 
 Move `sync_commit` forward only after confirming that `specs/OwnershipClaim.tla` and `specs/OwnershipClaim.cfg` still match the implementation at the new commit.
@@ -43,7 +43,7 @@ The script requires `java` (11+) on `PATH`. It looks for `tla2tools.jar` at `$TL
 
 - Bounded constants in `specs/OwnershipClaim.cfg`: `Users = {u1, u2}`, `Guests = {g1}`, `Quota = 2`, `MaxChallenges = 4`. Production sets `CUSTOM_CHALLENGE_QUOTA = 5`.
 - Assumes PostgreSQL lock semantics (`SELECT ... FOR UPDATE` on `User.id` and `pg_advisory_xact_lock` on `guest_id`). SQLite development runs skip the guest advisory lock.
-- Does not model `Submission` row transfers, public catalog challenges (`is_public = True`), slug collision retries, or Gemini HTTP calls.
+- Does not model `Submission` row transfers, public catalog challenges (`is_public = True`), unlisted `share_token` read-only access or revocation (`has_valid_share_token` / `toggle_custom_challenge_share`), slug collision retries, or external LLM HTTP calls (Gemini or Next.js AI SDK).
 - Does not enforce liveness or absence of silent cross-user overwrite if two distinct authenticated users concurrently claim the same guest cookie.
 
 ## Interpreting results with `/statechart`

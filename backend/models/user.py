@@ -9,6 +9,7 @@ from sqlmodel import Field, Relationship, SQLModel
 
 if TYPE_CHECKING:
     from backend.models.challenge import Challenge
+    from backend.models.coach_thread import CoachThread
     from backend.models.submission import Submission
 
 
@@ -37,6 +38,10 @@ class User(UserBase, table=True):
 
     submissions: list["Submission"] = Relationship(back_populates="user")
     challenges: list["Challenge"] = Relationship(back_populates="user")
+    coach_threads: list["CoachThread"] = Relationship(
+        back_populates="user",
+        cascade_delete=True,
+    )
 
     @property
     def has_password(self) -> bool:

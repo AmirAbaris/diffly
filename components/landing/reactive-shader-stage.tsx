@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { ArrowRight, Sparkles, Terminal } from "lucide-react"
+import { ArrowRight, Terminal } from "lucide-react"
 import { useTheme } from "next-themes"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -13,7 +13,6 @@ import type {
   ShaderSignalBridge,
 } from "@/lib/landing/shader-signal-bridge"
 import { cn } from "@/lib/utils"
-import { useCustomChallengeModalStore } from "@/stores/custom-challenge-modal-store"
 
 export interface ReactiveShaderStageProps {
   readonly bridge: ShaderSignalBridge
@@ -35,9 +34,6 @@ export function ReactiveShaderStage({
 }: ReactiveShaderStageProps) {
   const { resolvedTheme } = useTheme()
   const isDark = resolvedTheme !== "light"
-  const openModal = useCustomChallengeModalStore(
-    (s) => s.openCustomChallengeModal
-  )
 
   const { canvasRef, status, triggerSingleFrame } = useReactiveDiffShader({
     bridge,
@@ -131,15 +127,15 @@ export function ReactiveShaderStage({
           </Button>
 
           <Button
-            type="button"
+            asChild
             variant="outline"
             size="lg"
-            onClick={() => openModal("generate")}
             data-testid="landing-generate-ai-cta"
             className="bg-background/85 backdrop-blur-xs"
           >
-            <Sparkles aria-hidden="true" data-icon="inline-start" />
-            <span>Generate Challenge</span>
+            <Link href="/coach">
+              <span>Open AI Coach</span>
+            </Link>
           </Button>
         </div>
       </div>
