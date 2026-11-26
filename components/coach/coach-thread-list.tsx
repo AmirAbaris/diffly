@@ -1,14 +1,8 @@
 "use client"
 
 import * as React from "react"
-import {
-  Check,
-  MessageSquare,
-  Pencil,
-  SquarePen,
-  Trash2,
-  X,
-} from "lucide-react"
+import { MessageSquare, SquarePen } from "lucide-react"
+import { CoachThreadListItem } from "@/components/coach/coach-thread-list-item"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -25,9 +19,7 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty"
-import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
-import { cn } from "@/lib/utils"
 import type { CoachThreadSummary } from "@/types/coach-thread"
 
 export interface CoachThreadListProps {
@@ -38,37 +30,6 @@ export interface CoachThreadListProps {
   onNewChat: () => void
   onRenameThread: (threadId: string, title: string) => Promise<unknown>
   onDeleteThread: (threadId: string) => Promise<void>
-}
-
-const SHORT_MONTHS = [
-  "Jan",
-  "Feb",
-  "Mar",
-  "Apr",
-  "May",
-  "Jun",
-  "Jul",
-  "Aug",
-  "Sep",
-  "Oct",
-  "Nov",
-  "Dec",
-] as const
-
-function formatRelativeTime(isoDate: string): string {
-  const timestamp = Date.parse(isoDate)
-  if (Number.isNaN(timestamp)) return ""
-  const diffSeconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000))
-  if (diffSeconds < 60) return "Just now"
-  const diffMinutes = Math.floor(diffSeconds / 60)
-  if (diffMinutes < 60) return `${diffMinutes}m ago`
-  const diffHours = Math.floor(diffMinutes / 60)
-  if (diffHours < 24) return `${diffHours}h ago`
-  const diffDays = Math.floor(diffHours / 24)
-  if (diffDays === 1) return "Yesterday"
-  if (diffDays < 7) return `${diffDays}d ago`
-  const date = new Date(timestamp)
-  return `${SHORT_MONTHS[date.getMonth()]} ${date.getDate()}`
 }
 
 export function CoachThreadList({
@@ -173,113 +134,22 @@ export function CoachThreadList({
           data-testid="coach-thread-list"
           className="flex flex-1 flex-col gap-1 overflow-y-auto overscroll-contain px-3 pb-3"
         >
-          {threads.map((thread) => {
-            const isActive = thread.id === activeThreadId
-            const isEditing = editingId === thread.id
-            const isSaving = savingId === thread.id
-
-            return (
-              <li
-                key={thread.id}
-                data-testid={`coach-thread-item-${thread.id}`}
-                data-active={isActive ? "true" : undefined}
-                className={cn(
-                  "group flex items-center gap-1 rounded-lg border px-2 py-1.5 transition-colors",
-                  isActive
-                    ? "border-border bg-muted/70 text-foreground"
-                    : "border-transparent hover:border-border/60 hover:bg-muted/40"
-                )}
-              >
-                {isEditing ? (
-                  <div className="flex min-w-0 flex-1 items-center gap-1">
-                    <Input
-                      value={editingTitle}
-                      onChange={(event) => setEditingTitle(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") {
-                          event.preventDefault()
-                          void submitRename(thread)
-                        } else if (event.key === "Escape") {
-                          event.preventDefault()
-                          cancelRename()
-                        }
-                      }}
-                      disabled={isSaving}
-                      aria-label="Conversation title"
-                      data-testid={`coach-thread-rename-input-${thread.id}`}
-                      autoFocus
-                      className="h-7 px-2 text-xs"
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-xs"
-                      disabled={isSaving}
-                      onClick={() => void submitRename(thread)}
-                      aria-label="Save title"
-                      data-testid={`coach-thread-rename-save-${thread.id}`}
-                      className="shrink-0"
-                    >
-                      <Check aria-hidden="true" className="size-3.5" />
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-xs"
-                      disabled={isSaving}
-                      onClick={cancelRename}
-                      aria-label="Cancel rename"
-                      data-testid={`coach-thread-rename-cancel-${thread.id}`}
-                      className="shrink-0"
-                    >
-                      <X aria-hidden="true" className="size-3.5" />
-                    </Button>
-                  </div>
-                ) : (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => onSelectThread(thread.id)}
-                      aria-current={isActive ? "true" : undefined}
-                      data-testid={`coach-thread-select-${thread.id}`}
-                      className="flex min-w-0 flex-1 flex-col gap-0.5 rounded-sm text-left focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
-                    >
-                      <span className="truncate text-xs font-medium text-foreground">
-                        {thread.title}
-                      </span>
-                      <span className="text-xs text-muted-foreground tabular-nums">
-                        {formatRelativeTime(thread.updated_at)}
-                      </span>
-                    </button>
-                    <div className="flex shrink-0 items-center gap-0.5">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon-xs"
-                        onClick={() => startRename(thread)}
-                        aria-label={`Rename ${thread.title}`}
-                        data-testid={`coach-thread-rename-${thread.id}`}
-                        className="text-muted-foreground hover:text-foreground"
-                      >
-                        <Pencil aria-hidden="true" className="size-3" />
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon-xs"
-                        onClick={() => setPendingDelete(thread)}
-                        aria-label={`Delete ${thread.title}`}
-                        data-testid={`coach-thread-delete-${thread.id}`}
-                        className="text-muted-foreground hover:text-destructive"
-                      >
-                        <Trash2 aria-hidden="true" className="size-3" />
-                      </Button>
-                    </div>
-                  </>
-                )}
-              </li>
-            )
-          })}
+          {threads.map((thread) => (
+            <CoachThreadListItem
+              key={thread.id}
+              thread={thread}
+              isActive={thread.id === activeThreadId}
+              isEditing={editingId === thread.id}
+              editingTitle={editingTitle}
+              isSaving={savingId === thread.id}
+              onSelect={() => onSelectThread(thread.id)}
+              onStartRename={() => startRename(thread)}
+              onEditingTitleChange={setEditingTitle}
+              onSubmitRename={() => void submitRename(thread)}
+              onCancelRename={cancelRename}
+              onRequestDelete={() => setPendingDelete(thread)}
+            />
+          ))}
         </ul>
       )}
 

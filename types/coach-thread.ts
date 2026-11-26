@@ -35,9 +35,19 @@ export interface CoachThreadListResponse {
   total: number
 }
 
+export interface TruncateCoachMessagesResponse {
+  deleted_count: number
+  remaining_count: number
+}
+
 export type CoachThreadSessionState =
   | { kind: "fresh" }
   | { kind: "loading"; threadId: string }
-  | { kind: "active"; threadId: string }
+  | {
+      kind: "active"
+      threadId: string
+      mode?: CoachMode
+      challengeSlug?: string | null
+    }
   | { kind: "ephemeral"; reason: CoachPersistenceDegradationReason }
   | { kind: "error"; threadId: string; status?: number; message: string }

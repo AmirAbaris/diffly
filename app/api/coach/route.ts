@@ -237,7 +237,13 @@ export async function POST(request: NextRequest): Promise<Response> {
     )
     if (fetched instanceof Response) return fetched
     upstreamHeaders.push(fetched.headers)
-    promptInput = { mode: "patterns", patterns: fetched.patterns }
+    promptInput = {
+      mode: "patterns",
+      patterns: fetched.patterns,
+      ...(parsed.value.debriefChallengeSlug
+        ? { debriefChallengeSlug: parsed.value.debriefChallengeSlug }
+        : {}),
+    }
 
     if (parsed.value.threadId) {
       activeThreadId = parsed.value.threadId

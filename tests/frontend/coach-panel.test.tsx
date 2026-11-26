@@ -22,6 +22,7 @@ import {
 const mockPush = vi.fn()
 const mockReplace = vi.fn()
 const mockSendMessage = vi.fn()
+const mockRegenerate = vi.fn()
 const mockAddToolOutput = vi.fn()
 const mockStop = vi.fn()
 const mockSetMessages = vi.fn()
@@ -54,6 +55,7 @@ vi.mock("@ai-sdk/react", () => ({
     status: mockChatState.status,
     error: mockChatState.error,
     sendMessage: mockSendMessage,
+    regenerate: mockRegenerate,
     addToolOutput: mockAddToolOutput,
     stop: mockStop,
     setMessages: mockSetMessages,
@@ -291,10 +293,8 @@ describe("Agent Coach UI components", () => {
     const toggle = screen.getByTestId("debrief-coach-toggle")
     expect(toggle).toHaveAttribute("aria-expanded", "false")
     expect(screen.queryByTestId("coach-panel")).not.toBeInTheDocument()
-    expect(screen.getByTestId("debrief-open-full-coach")).toHaveAttribute(
-      "href",
-      "/coach"
-    )
+    const continueBtn = screen.getByTestId("debrief-continue-in-coach")
+    expect(continueBtn).toHaveTextContent("Continue in Coach")
 
     await user.click(toggle)
 
@@ -303,6 +303,11 @@ describe("Agent Coach UI components", () => {
     expect(
       screen.getByTestId("coach-quick-prompt-missed-defects")
     ).toBeInTheDocument()
+
+    await user.click(continueBtn)
+    expect(mockPush).toHaveBeenCalledWith(
+      expect.stringContaining("/coach?prompt=")
+    )
   })
 
   it("routes top bar, sidebar rail, and composer menu triggers to in-chat challenge creation and deletes custom challenges", async () => {

@@ -13,7 +13,12 @@ import {
 } from "@/components/coach/use-coach-chat"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
-import type { TargetedDrillSuggestion } from "@/lib/ai/coach"
+import type { CoachUIMessage, TargetedDrillSuggestion } from "@/lib/ai/coach"
+
+export interface CoachPanelHandle {
+  getMessages: () => CoachUIMessage[]
+  isStreaming: () => boolean
+}
 
 export interface CoachPanelProps {
   chatId?: string
@@ -23,6 +28,7 @@ export interface CoachPanelProps {
   emptyDescription?: string
   placeholder?: string
   onGenerateDrill?: (drill: TargetedDrillSuggestion) => void
+  panelRef?: React.Ref<CoachPanelHandle>
 }
 
 export function CoachPanel({
@@ -33,6 +39,7 @@ export function CoachPanel({
   emptyDescription = "Pick a prompt below or ask a question about this submission.",
   placeholder = "Ask Agent Coach a question…",
   onGenerateDrill,
+  panelRef,
 }: CoachPanelProps) {
   const [draft, setDraft] = React.useState("")
   const {
@@ -40,17 +47,33 @@ export function CoachPanel({
     messages,
     connectionSummary,
     challengeTool,
+    mutatingAction,
+    actionError,
+    clearActionError,
     sendPrompt,
+    regenerateLastReply,
+    editAndResendMessage,
     stop,
     clearError,
     resetConversation,
   } = useCoachChat({ chatId, target })
 
   const isStreaming = state.kind === "streaming"
+  const isMutating = mutatingAction.kind !== "idle"
   const statusPhase = state.kind === "streaming" ? state.phase : undefined
+  const hasMessages = messages.length > 0
+
+  React.useImperativeHandle(
+    panelRef,
+    () => ({
+      getMessages: () => messages,
+      isStreaming: () => isStreaming,
+    }),
+    [isStreaming, messages]
+  )
 
   const handleSubmit = () => {
-    if (isStreaming) return
+    if (isStreaming || isMutating) return
     const trimmed = draft.trim()
     if (!trimmed) return
     sendPrompt(trimmed)
@@ -97,9 +120,16 @@ export function CoachPanel({
     )
   }
 
+  const bannerError =
+    state.kind === "error"
+      ? { message: state.message, isAuthError: state.isAuthError }
+      : actionError
+        ? { message: actionError, isAuthError: false }
+        : null
+
   return (
     <div data-testid="coach-panel" className="flex flex-col gap-3">
-      {messages.length === 0 ? (
+      {!hasMessages ? (
         <div className="flex flex-col gap-3 rounded-xl border border-border/70 bg-muted/15 p-4">
           <div className="flex flex-col gap-0.5">
             <span className="text-sm font-medium text-foreground">
@@ -137,14 +167,17 @@ export function CoachPanel({
               messages={messages}
               isStreaming={isStreaming}
               statusPhase={statusPhase}
+              isMutating={isMutating}
               onGenerateDrill={onGenerateDrill}
               challengeTool={challengeTool}
+              onRegenerate={() => void regenerateLastReply()}
+              onEditAndResend={editAndResendMessage}
             />
           </CoachConversation>
         </div>
       )}
 
-      {state.kind === "error" ? (
+      {bannerError ? (
         <div
           role="alert"
           data-testid="coach-error-banner"
@@ -152,10 +185,10 @@ export function CoachPanel({
         >
           <div className="flex items-center gap-2">
             <AlertCircle aria-hidden="true" className="size-4 shrink-0" />
-            <span>{state.message}</span>
+            <span>{bannerError.message}</span>
           </div>
           <div className="flex items-center gap-2">
-            {state.isAuthError ? (
+            {bannerError.isAuthError ? (
               <Link href="/settings" className="font-medium underline">
                 Open Settings
               </Link>
@@ -164,7 +197,10 @@ export function CoachPanel({
               type="button"
               variant="ghost"
               size="xs"
-              onClick={clearError}
+              onClick={() => {
+                clearError()
+                clearActionError()
+              }}
             >
               Dismiss
             </Button>
@@ -181,7 +217,7 @@ export function CoachPanel({
         connectionSummary={connectionSummary}
         placeholder={placeholder}
         conversationAction={
-          messages.length > 0
+          hasMessages
             ? { kind: "reset", onAction: resetConversation }
             : undefined
         }
