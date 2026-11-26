@@ -180,8 +180,11 @@ export function CoachPanel({
         isStreaming={isStreaming}
         connectionSummary={connectionSummary}
         placeholder={placeholder}
-        hasMessages={messages.length > 0}
-        onReset={resetConversation}
+        conversationAction={
+          messages.length > 0
+            ? { kind: "reset", onAction: resetConversation }
+            : undefined
+        }
       />
     </div>
   )

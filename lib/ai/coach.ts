@@ -34,6 +34,9 @@ export * from "@/lib/ai/coach-submission-debrief"
 export type CoachMode = "patterns" | "debrief"
 export const COACH_MAX_STEPS = 3
 export const COACH_STREAM_TIMEOUT_MS = 50_000
+export const COACH_MAX_REQUEST_MESSAGES = 40
+export const COACH_MAX_TEXT_PART_CHARS = 16_000
+export const COACH_MESSAGE_ID_REGEX = /^[A-Za-z0-9._:-]{1,128}$/
 export const COACH_SUGGEST_DRILL_TOOL_NAME = "suggest_targeted_drill" as const
 export const COACH_TOOL_NAMES = [
   COACH_SUGGEST_DRILL_TOOL_NAME,
@@ -120,6 +123,7 @@ export interface PatternsCoachRequest {
   messages: CoachUIMessage[]
   sliceLimit: number
   missedLimit: number
+  threadId?: string
 }
 
 export interface DebriefCoachRequest {
@@ -137,7 +141,10 @@ const posInt = z.number().int().min(1)
 const pct = z.number().min(0).max(100)
 const optText = (max: number) => z.string().max(max).nullable().optional()
 const textLikePart = (type: "text" | "reasoning") =>
-  z.looseObject({ type: z.literal(type), text: z.string().max(8_000) })
+  z.looseObject({
+    type: z.literal(type),
+    text: z.string().max(COACH_MAX_TEXT_PART_CHARS),
+  })
 
 const CoachToolPartSchemas = COACH_TOOL_NAMES.map((name) =>
   z
@@ -177,7 +184,7 @@ const CoachMessagesSchema = z
       )
   )
   .min(1)
-  .max(40)
+  .max(COACH_MAX_REQUEST_MESSAGES)
 
 const FlaggedLineSchema = z.union([
   posInt,
@@ -229,6 +236,7 @@ const CoachRequestSchema = z.discriminatedUnion("mode", [
     messages: CoachMessagesSchema,
     sliceLimit: z.number().int().min(1).max(20).optional().default(5),
     missedLimit: z.number().int().min(1).max(50).optional().default(10),
+    threadId: z.string().uuid().optional(),
   }),
   z.object({
     mode: z.literal("debrief"),
@@ -317,18 +325,15 @@ export function parseCoachRequest(body: unknown): ParseResult<CoachRequest> {
   )
   if (!parsed.ok) return parsed
 
-  const messages: CoachUIMessage[] = parsed.value.messages.map((msg, i) => ({
-    id: msg.id ?? `msg-${i}`,
+  const messages: CoachUIMessage[] = parsed.value.messages.map((msg) => ({
+    id:
+      msg.id && COACH_MESSAGE_ID_REGEX.test(msg.id)
+        ? msg.id
+        : crypto.randomUUID(),
     role: msg.role,
     parts: msg.parts as CoachUIMessage["parts"],
   }))
-  return {
-    ok: true,
-    value:
-      parsed.value.mode === "patterns"
-        ? { ...parsed.value, messages }
-        : { ...parsed.value, messages },
-  }
+  return { ok: true, value: { ...parsed.value, messages } }
 }
 
 export function parseCoachPatternsSnapshot(

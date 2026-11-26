@@ -8,6 +8,7 @@ import {
   RotateCcwIcon,
   SettingsIcon,
   SquareIcon,
+  SquarePenIcon,
 } from "lucide-react"
 import {
   DropdownMenu,
@@ -25,6 +26,10 @@ import {
   InputGroupTextarea,
 } from "@/components/ui/input-group"
 
+export type CoachConversationAction =
+  | { kind: "new-chat"; onAction: () => void }
+  | { kind: "reset"; onAction: () => void }
+
 export interface CoachPromptInputProps {
   value: string
   onChange: (value: string) => void
@@ -33,8 +38,7 @@ export interface CoachPromptInputProps {
   isStreaming: boolean
   connectionSummary: string | null
   placeholder?: string
-  hasMessages?: boolean
-  onReset?: () => void
+  conversationAction?: CoachConversationAction
   onCreateChallenge?: () => void
 }
 
@@ -46,8 +50,7 @@ export function CoachPromptInput({
   isStreaming,
   connectionSummary,
   placeholder = "Ask Agent Coach anything about your reviews…",
-  hasMessages = false,
-  onReset,
+  conversationAction,
   onCreateChallenge,
 }: CoachPromptInputProps) {
   const formRef = React.useRef<HTMLFormElement>(null)
@@ -114,9 +117,17 @@ export function CoachPromptInput({
                     <span>Generate Custom Challenge</span>
                   </DropdownMenuItem>
                 ) : null}
-                {hasMessages && onReset ? (
+                {conversationAction?.kind === "new-chat" ? (
                   <DropdownMenuItem
-                    onClick={onReset}
+                    onClick={conversationAction.onAction}
+                    data-testid="coach-menu-new-chat"
+                  >
+                    <SquarePenIcon aria-hidden="true" />
+                    <span>New Chat</span>
+                  </DropdownMenuItem>
+                ) : conversationAction?.kind === "reset" ? (
+                  <DropdownMenuItem
+                    onClick={conversationAction.onAction}
                     data-testid="coach-reset-button"
                   >
                     <RotateCcwIcon aria-hidden="true" />
