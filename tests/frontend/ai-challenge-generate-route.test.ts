@@ -24,8 +24,8 @@ import {
 } from "@/lib/server/backend-client"
 
 const GENERATED_OUTPUT: GeneratedChallenge = {
-  slug: "sql-injection-order-lookup",
-  title: "SQL Injection in Order Lookup",
+  slug: "order-lookup-service",
+  title: "Order Lookup Service",
   difficulty: "Medium",
   category: "Security",
   language: "python",

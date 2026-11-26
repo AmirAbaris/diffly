@@ -39,7 +39,18 @@ const DIFFICULTY_GUIDANCE: Readonly<Record<Difficulty, string>> = {
 
 const SPOILER_COMMENT_PATTERN =
   /(?:\/\/|#)\s*(?:VULNERABLE|BUG|DEFECT|INSECURE|EXPLOIT|SPOILER)\b/i
+const SPOILER_SLUG_PATTERN =
+  /(?:^|-)(?:ssrf|sqli|sql-injection|xss|idor|rce|csrf|xxe|lfi|rfi|path-traversal|command-injection|race-condition|auth-bypass|vuln|vulnerability|bug|exploit)(?:-|$)/i
 const HINT_LINE_NUMBER_PATTERN = /\blines?\s+\d+/i
+const MIN_MATCHED_KEYWORDS = 2
+
+function hasUnifiedDiffChanges(diff: string): boolean {
+  const lines = diff.split(/\r?\n/)
+  return (
+    lines.some((line) => line.startsWith("-") && !line.startsWith("---")) &&
+    lines.some((line) => line.startsWith("+") && !line.startsWith("+++"))
+  )
+}
 
 export const GeneratedChallengeSchema = z.object({
   slug: z.string(),
@@ -166,7 +177,7 @@ export function buildChallengeGenerationPrompt(
     '- Category: choose the best fit from "Security", "Concurrency", "Performance", "Logic Flaws", or "Agent Antipaths".',
     "",
     "Anti-Spoiler Metadata:",
-    "- title and description: describe the service/PR purpose without naming the vulnerability or offending line.",
+    "- slug, title, and description: describe the service/PR purpose without naming the vulnerability class (no ssrf, sqli, idor, xss, race-condition) or offending line.",
     "- defect_target: state defect count, severity, and broad area without naming the exact variable, call, or line.",
     "- threat_model: describe attacker capability and real-world impact without revealing exact lines.",
     "",
@@ -178,12 +189,12 @@ export function buildChallengeGenerationPrompt(
     "",
     "Grading Precision:",
     "- expected_issues: keep each defect localized to its root-cause line(s); never leave duplicate ungraded leaks of the same flaw elsewhere in code_snippet.",
-    "- Include every root-cause line in anchor_lines (verbatim lines from code_snippet) and matched_lines (1-indexed) so strong reviewers are not penalized as false positives.",
-    '- Provide 4 to 6 matched_keywords per issue, severity ("low", "medium", "high", or "critical"), and a clear root-cause explanation.',
+    "- Include every root-cause line (both flawed validation/guard lines and vulnerable sink lines) in anchor_lines (verbatim lines from code_snippet) and matched_lines (1-indexed) so strong reviewers are not penalized as false positives.",
+    '- Provide 4 to 6 matched_keywords per issue naming review concepts and vulnerability terms (for example "ssrf", "dns rebinding", "private ip"), never raw syntax tokens copied from code_snippet (such as "await", "json", "payload"). Include severity ("low", "medium", "high", or "critical") and a clear root-cause explanation.',
     "",
     "Progressive Hints:",
     "- hints: provide tiers 1, 2, and 3 (tier, label, text): Tier 1 (Contextual Clue, no vulnerability name or line numbers), Tier 2 (Vulnerability Class, no line numbers), Tier 3 (Line Pointer referencing exact matched_lines and remediation direction).",
-    "- Also provide canonical_review (exemplary staff-level critique), recommended_fix_diff (minimal unified diff), and slug (lowercase kebab-case).",
+    "- Also provide canonical_review (exemplary staff-level critique), recommended_fix_diff (minimal unified diff with - and + lines that resolves the root cause described in canonical_review), and slug (lowercase kebab-case).",
   ]
 
   const corrections = (options?.previousIssues ?? [])
@@ -211,13 +222,24 @@ export function validateGeneratedChallengeQuality(
     "defect_target",
     "code_snippet",
     "canonical_review",
+    "recommended_fix_diff",
   ] as const) {
     if (!output[field].trim()) reasons.push(`${field} must be non-empty.`)
+  }
+  if (
+    output.recommended_fix_diff.trim() &&
+    !hasUnifiedDiffChanges(output.recommended_fix_diff)
+  ) {
+    reasons.push(
+      "recommended_fix_diff must be a unified diff containing removed (-) and added (+) lines."
+    )
+  }
+  if (SPOILER_SLUG_PATTERN.test(output.slug)) {
+    reasons.push("slug must not contain spoiler vulnerability names.")
   }
 
   const codeLines = output.code_snippet.split(/\r?\n/)
   const trimmedCodeLines = new Set(codeLines.map((line) => line.trim()))
-
   if (SPOILER_COMMENT_PATTERN.test(output.code_snippet)) {
     reasons.push("code_snippet must not contain spoiler comments.")
   }
@@ -231,10 +253,24 @@ export function validateGeneratedChallengeQuality(
     if (!issue.explanation.trim()) {
       reasons.push(`${label}.explanation must be non-empty.`)
     }
-
     const anchors = issue.anchor_lines.map((l) => l.trim()).filter(Boolean)
     if (anchors.length === 0 && !issue.matched_lines.some((l) => l >= 1)) {
       reasons.push(`${label} needs non-empty anchor_lines or matched_lines.`)
+    }
+    const keywords = issue.matched_keywords
+      .map((kw) => kw.trim().toLowerCase())
+      .filter(Boolean)
+    if (keywords.length < MIN_MATCHED_KEYWORDS) {
+      reasons.push(
+        `${label}.matched_keywords must contain at least ${MIN_MATCHED_KEYWORDS} review concepts.`
+      )
+    } else if (
+      anchors.length > 0 &&
+      keywords.every((kw) => anchors.join("\n").toLowerCase().includes(kw))
+    ) {
+      reasons.push(
+        `${label}.matched_keywords must include review concepts rather than only raw code tokens from anchor_lines.`
+      )
     }
 
     for (const line of issue.matched_lines) {

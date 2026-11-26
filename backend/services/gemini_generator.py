@@ -538,7 +538,15 @@ def _align_tier3_hint(text: str, all_resolved_lines: list[int]) -> str:
     cursor = 0
     for match, should_replace in zip(matches, replace_flags, strict=True):
         parts.append(text[cursor : match.start()])
-        parts.append(formatted if should_replace else match.group(0))
+        if should_replace:
+            replacement = (
+                formatted[0].upper() + formatted[1:]
+                if match.group(0)[:1].isupper()
+                else formatted
+            )
+            parts.append(replacement)
+        else:
+            parts.append(match.group(0))
         cursor = match.end()
     parts.append(text[cursor:])
     return "".join(parts)
