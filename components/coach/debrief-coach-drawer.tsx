@@ -3,21 +3,33 @@
 import * as React from "react"
 import Link from "next/link"
 import {
+  AlertCircle,
   ArrowUpRight,
   ChevronDown,
   ChevronUp,
+  Loader2,
   MessageSquareCode,
 } from "lucide-react"
-import { CoachPanel } from "@/components/coach/coach-panel"
+import {
+  CoachPanel,
+  type CoachPanelHandle,
+} from "@/components/coach/coach-panel"
 import {
   DEBRIEF_QUICK_PROMPTS,
   type CoachTarget,
 } from "@/components/coach/use-coach-chat"
+import { useDebriefHandoff } from "@/components/coach/use-debrief-handoff"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import type { DebriefContext, TargetedDrillSuggestion } from "@/lib/ai/coach"
+import type {
+  CoachUIMessage,
+  DebriefContext,
+  TargetedDrillSuggestion,
+} from "@/lib/ai/coach"
 import type { GradeReport } from "@/lib/review"
 import { cn } from "@/lib/utils"
+import { useAuthModalStore } from "@/stores/auth-modal-store"
 import type {
   ChallengeFile,
   ChallengeSolutionResponse,
@@ -37,26 +49,7 @@ export interface DebriefCoachDrawerProps {
   onGenerateDrill?: (drill: TargetedDrillSuggestion) => void
 }
 
-function DebriefCoachPanelBody({
-  resolvedSlug,
-  target,
-  onGenerateDrill,
-}: {
-  resolvedSlug: string
-  target: CoachTarget
-  onGenerateDrill?: (drill: TargetedDrillSuggestion) => void
-}) {
-  return (
-    <CoachPanel
-      chatId={`debrief:${resolvedSlug}`}
-      target={target}
-      quickPrompts={DEBRIEF_QUICK_PROMPTS}
-      emptyTitle="Debrief this submission"
-      emptyDescription="Ask why you missed a defect, review your flagged lines, or launch a follow-up drill."
-      onGenerateDrill={onGenerateDrill}
-    />
-  )
-}
+const EMPTY_MESSAGES: CoachUIMessage[] = []
 
 export function DebriefCoachDrawer({
   challengeSlug,
@@ -72,9 +65,21 @@ export function DebriefCoachDrawer({
 }: DebriefCoachDrawerProps) {
   const [isOpen, setIsOpen] = React.useState(false)
   const [hasOpened, setHasOpened] = React.useState(false)
+  const panelRef = React.useRef<CoachPanelHandle>(null)
   const panelId = React.useId()
+  const openAuthModal = useAuthModalStore((s) => s.openAuthModal)
 
   const resolvedSlug = challengeSlug || solution?.slug || "challenge"
+
+  const {
+    state: handoffState,
+    isSubmitting: isHandingOff,
+    handoffToCoach,
+    clearError: clearHandoffError,
+  } = useDebriefHandoff({
+    challengeSlug: resolvedSlug,
+    challengeTitle,
+  })
 
   const target = React.useMemo<CoachTarget>(() => {
     const context: DebriefContext = {
@@ -156,7 +161,7 @@ export function DebriefCoachDrawer({
       data-testid="debrief-coach-drawer"
       className="gap-0 overflow-hidden border-border/80 bg-background py-0 shadow-none"
     >
-      <div className="flex items-center justify-between gap-2 pr-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 pr-3">
         <button
           type="button"
           onClick={handleToggle}
@@ -192,25 +197,89 @@ export function DebriefCoachDrawer({
           </span>
         </button>
 
-        <Link
-          href="/coach"
-          data-testid="debrief-open-full-coach"
-          className="hidden shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none sm:inline-flex"
+        <Button
+          type="button"
+          variant="outline"
+          size="xs"
+          disabled={isHandingOff}
+          onClick={() =>
+            void handoffToCoach(
+              panelRef.current?.getMessages() ?? EMPTY_MESSAGES,
+              panelRef.current?.isStreaming() ?? false
+            )
+          }
+          data-testid="debrief-continue-in-coach"
+          className="mb-2 ml-4 shrink-0 sm:mb-0 sm:ml-0"
         >
-          <span>Open full Coach</span>
-          <ArrowUpRight aria-hidden="true" className="size-3.5" />
-        </Link>
+          <span>{isHandingOff ? "Saving…" : "Continue in Coach"}</span>
+          {isHandingOff ? (
+            <Loader2
+              data-icon="inline-end"
+              aria-hidden="true"
+              className="animate-spin"
+            />
+          ) : (
+            <ArrowUpRight data-icon="inline-end" aria-hidden="true" />
+          )}
+        </Button>
       </div>
+
+      {handoffState.kind === "error" ? (
+        <div
+          role="alert"
+          data-testid="debrief-handoff-error"
+          className="mx-4 mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive"
+        >
+          <div className="flex items-center gap-2">
+            <AlertCircle aria-hidden="true" className="size-4 shrink-0" />
+            <span>{handoffState.message}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            {handoffState.errorKind === "unauthenticated" ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="xs"
+                onClick={() => openAuthModal("signin")}
+                data-testid="debrief-handoff-signin"
+              >
+                Sign In
+              </Button>
+            ) : null}
+            {handoffState.errorKind === "quota-exceeded" ? (
+              <Link
+                href="/coach"
+                className="font-medium underline"
+                data-testid="debrief-handoff-open-coach"
+              >
+                Open Coach
+              </Link>
+            ) : null}
+            <Button
+              type="button"
+              variant="ghost"
+              size="xs"
+              onClick={clearHandoffError}
+            >
+              Dismiss
+            </Button>
+          </div>
+        </div>
+      ) : null}
 
       {hasOpened ? (
         <div
           id={panelId}
           className={cn("border-t border-border/70 p-4", !isOpen && "hidden")}
         >
-          <DebriefCoachPanelBody
-            resolvedSlug={resolvedSlug}
+          <CoachPanel
+            chatId={`debrief:${resolvedSlug}`}
             target={target}
+            quickPrompts={DEBRIEF_QUICK_PROMPTS}
+            emptyTitle="Debrief this submission"
+            emptyDescription="Ask why you missed a defect, review your flagged lines, or launch a follow-up drill."
             onGenerateDrill={onGenerateDrill}
+            panelRef={panelRef}
           />
         </div>
       ) : null}
