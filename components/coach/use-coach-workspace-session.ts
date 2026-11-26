@@ -155,6 +155,9 @@ export function useCoachWorkspaceSession(): UseCoachWorkspaceSessionResult {
 
       void fetchThread(threadId, { signal: controller.signal })
         .then(({ thread, messages, sequenceByMessageId }) => {
+          if (loadAbortRef.current === controller) {
+            loadAbortRef.current = null
+          }
           if (epoch !== sessionEpochRef.current || controller.signal.aborted) {
             return
           }
@@ -170,6 +173,9 @@ export function useCoachWorkspaceSession(): UseCoachWorkspaceSessionResult {
           })
         })
         .catch((err: unknown) => {
+          if (loadAbortRef.current === controller) {
+            loadAbortRef.current = null
+          }
           if (epoch !== sessionEpochRef.current || controller.signal.aborted) {
             return
           }
@@ -281,7 +287,11 @@ export function useCoachWorkspaceSession(): UseCoachWorkspaceSessionResult {
 
   React.useEffect(() => {
     return () => {
-      loadAbortRef.current?.abort()
+      if (loadAbortRef.current) {
+        loadAbortRef.current.abort()
+        loadAbortRef.current = null
+        activeThreadIdRef.current = null
+      }
     }
   }, [])
 
