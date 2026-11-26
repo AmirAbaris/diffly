@@ -1,7 +1,6 @@
 "use client"
 
 import * as React from "react"
-import axios from "axios"
 import { useSearchParams } from "next/navigation"
 import {
   useCoachChat,
@@ -9,10 +8,14 @@ import {
   type CoachTarget,
   type UseCoachChatResult,
 } from "@/components/coach/use-coach-chat"
+import {
+  buildPersistenceNotice,
+  getThreadLoadError,
+  useCoachThreadHistory,
+} from "@/components/coach/use-coach-thread-history"
 import { useAuth } from "@/hooks/use-auth"
 import { useCoachThreads } from "@/hooks/use-coach-threads"
 import type {
-  CoachPersistenceDegradationReason,
   CoachPersistenceNotice,
   CoachThreadSessionState,
   CoachThreadSummary,
@@ -22,54 +25,6 @@ const WORKSPACE_TARGET: CoachTarget = {
   mode: "patterns",
   sliceLimit: 5,
   missedLimit: 10,
-}
-
-function buildPersistenceNotice(
-  reason: CoachPersistenceDegradationReason
-): CoachPersistenceNotice {
-  if (reason === "unauthenticated") {
-    return {
-      reason,
-      message:
-        "Sign in to save Coach conversations across devices and sessions.",
-    }
-  }
-  if (reason === "quota-exceeded") {
-    return {
-      reason,
-      message:
-        "Saved conversation limit reached. This chat is temporary until you delete an older thread.",
-    }
-  }
-  return {
-    reason,
-    message:
-      "Conversation history is temporarily unavailable. This chat will not be saved.",
-  }
-}
-
-function getThreadLoadError(err: unknown): {
-  status?: number
-  message: string
-} {
-  const status = axios.isAxiosError(err) ? err.response?.status : undefined
-  if (status === 404) {
-    return {
-      status,
-      message:
-        "This conversation could not be found. It may have been deleted.",
-    }
-  }
-  if (status === 401 || status === 403) {
-    return {
-      status,
-      message: "You do not have access to this conversation.",
-    }
-  }
-  return {
-    status,
-    message: "Unable to load this conversation right now.",
-  }
 }
 
 export interface UseCoachWorkspaceSessionResult {
@@ -94,6 +49,7 @@ export function useCoachWorkspaceSession(): UseCoachWorkspaceSessionResult {
     items: threads,
     isLoading: threadsLoading,
     fetchThread,
+    truncateMessages,
     renameThread,
     deleteThread: removeThread,
     revalidate,
@@ -105,21 +61,37 @@ export function useCoachWorkspaceSession(): UseCoachWorkspaceSessionResult {
     React.useState<CoachPersistenceNotice | null>(null)
 
   const activeThreadIdRef = React.useRef<string | null>(null)
+  const activeDebriefSlugRef = React.useRef<string | null>(null)
   const sessionEpochRef = React.useRef(0)
   const loadAbortRef = React.useRef<AbortController | null>(null)
   const consumedPromptRef = React.useRef<string | null>(null)
   const lastActorKeyRef = React.useRef<string | null>(null)
 
+  const { setSequences, clearSequences, prepareHistoryMutation } =
+    useCoachThreadHistory({
+      getThreadId: () => activeThreadIdRef.current,
+      getSessionEpoch: () => sessionEpochRef.current,
+      fetchThread,
+      truncateMessages,
+      revalidate,
+    })
+
   const persistence = React.useMemo<CoachChatPersistenceAdapter>(
     () => ({
       getThreadId: () => activeThreadIdRef.current,
+      getDebriefChallengeSlug: () => activeDebriefSlugRef.current,
       getSessionEpoch: () => sessionEpochRef.current,
+      prepareHistoryMutation,
       onThreadIdResolved: (threadId, requestEpoch) => {
         if (requestEpoch !== sessionEpochRef.current) return
         if (activeThreadIdRef.current !== threadId) {
           activeThreadIdRef.current = threadId
           setPersistenceNotice(null)
-          setSessionState({ kind: "active", threadId })
+          setSessionState((prev) =>
+            prev.kind === "active" && prev.threadId === threadId
+              ? prev
+              : { kind: "active", threadId }
+          )
           if (typeof window !== "undefined") {
             window.history.replaceState(
               window.history.state,
@@ -139,7 +111,7 @@ export function useCoachWorkspaceSession(): UseCoachWorkspaceSessionResult {
         void revalidate()
       },
     }),
-    [revalidate]
+    [prepareHistoryMutation, revalidate]
   )
 
   const chat = useCoachChat({
@@ -155,6 +127,8 @@ export function useCoachWorkspaceSession(): UseCoachWorkspaceSessionResult {
       loadAbortRef.current?.abort()
       loadAbortRef.current = null
       activeThreadIdRef.current = null
+      activeDebriefSlugRef.current = null
+      clearSequences()
       setPersistenceNotice(null)
       setSessionState({ kind: "fresh" })
       hydrateMessages([])
@@ -162,7 +136,7 @@ export function useCoachWorkspaceSession(): UseCoachWorkspaceSessionResult {
         window.history.replaceState(window.history.state, "", "/coach")
       }
     },
-    [hydrateMessages]
+    [clearSequences, hydrateMessages]
   )
 
   const loadThreadById = React.useCallback(
@@ -173,17 +147,27 @@ export function useCoachWorkspaceSession(): UseCoachWorkspaceSessionResult {
       const controller = new AbortController()
       loadAbortRef.current = controller
       activeThreadIdRef.current = threadId
+      activeDebriefSlugRef.current = null
+      clearSequences()
       setPersistenceNotice(null)
       setSessionState({ kind: "loading", threadId })
       hydrateMessages([])
 
       void fetchThread(threadId, { signal: controller.signal })
-        .then(({ thread, messages }) => {
+        .then(({ thread, messages, sequenceByMessageId }) => {
           if (epoch !== sessionEpochRef.current || controller.signal.aborted) {
             return
           }
+          activeDebriefSlugRef.current =
+            thread.mode === "debrief" ? thread.challenge_slug : null
+          setSequences(sequenceByMessageId)
           hydrateMessages(messages)
-          setSessionState({ kind: "active", threadId: thread.id })
+          setSessionState({
+            kind: "active",
+            threadId: thread.id,
+            mode: thread.mode,
+            challengeSlug: thread.challenge_slug,
+          })
         })
         .catch((err: unknown) => {
           if (epoch !== sessionEpochRef.current || controller.signal.aborted) {
@@ -193,7 +177,7 @@ export function useCoachWorkspaceSession(): UseCoachWorkspaceSessionResult {
           setSessionState({ kind: "error", threadId, status, message })
         })
     },
-    [fetchThread, hydrateMessages]
+    [clearSequences, fetchThread, hydrateMessages, setSequences]
   )
 
   const selectThread = React.useCallback(
