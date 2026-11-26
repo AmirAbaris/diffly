@@ -1,0 +1,1040 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Diffly | Presentation Deck</title>
+  <style>
+    :root {
+      --background: oklch(1 0 0);
+      --foreground: oklch(0.145 0 0);
+      --card: oklch(1 0 0);
+      --card-foreground: oklch(0.145 0 0);
+      --primary: oklch(0.205 0 0);
+      --primary-foreground: oklch(0.985 0 0);
+      --secondary: oklch(0.97 0 0);
+      --secondary-foreground: oklch(0.205 0 0);
+      --muted: oklch(0.97 0 0);
+      --muted-foreground: oklch(0.556 0 0);
+      --accent: oklch(0.97 0 0);
+      --accent-foreground: oklch(0.205 0 0);
+      --border: oklch(0.922 0 0);
+      --ring: oklch(0.708 0 0);
+      --radius: 0.5rem;
+      --font-sans: "Geist", "Geist Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      --font-display: "Geist Pixel Square", "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color-scheme: light;
+    }
+
+    html.dark {
+      --background: oklch(0.13 0 0);
+      --foreground: oklch(0.985 0 0);
+      --card: oklch(0.165 0 0);
+      --card-foreground: oklch(0.985 0 0);
+      --primary: oklch(0.985 0 0);
+      --primary-foreground: oklch(0.145 0 0);
+      --secondary: oklch(0.22 0 0);
+      --secondary-foreground: oklch(0.985 0 0);
+      --muted: oklch(0.22 0 0);
+      --muted-foreground: oklch(0.68 0 0);
+      --accent: oklch(0.22 0 0);
+      --accent-foreground: oklch(0.985 0 0);
+      --border: oklch(1 0 0 / 11%);
+      --ring: oklch(0.556 0 0);
+      color-scheme: dark;
+    }
+
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html,
+    body {
+      height: 100%;
+      background-color: var(--background);
+      color: var(--foreground);
+      font-family: var(--font-sans);
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      overflow: hidden;
+    }
+
+    body {
+      display: flex;
+      flex-direction: column;
+      min-height: 100dvh;
+    }
+
+    button,
+    a {
+      font: inherit;
+      color: inherit;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    button {
+      background: none;
+      border: none;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+
+    :focus-visible {
+      outline: 3px solid color-mix(in oklch, var(--ring) 55%, transparent);
+      outline-offset: 2px;
+    }
+
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      height: 3.5rem;
+      padding: 0 clamp(1rem, 3vw, 2.5rem);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    .topbar-left,
+    .topbar-right {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .slide-counter {
+      font-family: var(--font-mono);
+      font-size: 0.8125rem;
+      font-weight: 500;
+      letter-spacing: 0.04em;
+      font-variant-numeric: tabular-nums;
+      color: var(--muted-foreground);
+      margin-right: 0.5rem;
+    }
+
+    .slide-dots {
+      display: flex;
+      align-items: center;
+      gap: 0.375rem;
+    }
+
+    .slide-dot {
+      width: 1.75rem;
+      height: 1.75rem;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: calc(var(--radius) * 0.75);
+      border: 1px solid var(--border);
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      font-variant-numeric: tabular-nums;
+      color: var(--muted-foreground);
+      transition: background-color 140ms ease, color 140ms ease, border-color 140ms ease;
+    }
+
+    .slide-dot:hover {
+      background-color: var(--secondary);
+      color: var(--foreground);
+    }
+
+    .slide-dot[aria-current="step"] {
+      background-color: var(--primary);
+      color: var(--primary-foreground);
+      border-color: var(--primary);
+    }
+
+    .ctrl-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      height: 2rem;
+      padding: 0 0.7rem;
+      border-radius: calc(var(--radius) * 0.75);
+      border: 1px solid var(--border);
+      background-color: var(--card);
+      color: var(--foreground);
+      font-size: 0.8125rem;
+      font-weight: 500;
+      transition: background-color 140ms ease, border-color 140ms ease;
+    }
+
+    .ctrl-btn:hover {
+      background-color: var(--secondary);
+    }
+
+    .ctrl-btn[aria-pressed="true"] {
+      background-color: var(--primary);
+      color: var(--primary-foreground);
+      border-color: var(--primary);
+    }
+
+    .ctrl-btn svg {
+      width: 0.95rem;
+      height: 0.95rem;
+      flex-shrink: 0;
+    }
+
+    .stage {
+      position: relative;
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      place-items: center;
+      padding: clamp(1.25rem, 3.5vh, 3rem) clamp(1.5rem, 5vw, 4.5rem);
+    }
+
+    .slide {
+      width: 100%;
+      max-width: 72rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+    }
+
+    .slide[hidden] {
+      display: none;
+    }
+
+    .slide-intro {
+      gap: clamp(1.25rem, 3vh, 2.25rem);
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.45rem 0.95rem;
+      border-radius: 9999px;
+      border: 1px solid var(--border);
+      background-color: var(--secondary);
+      color: var(--secondary-foreground);
+      font-family: var(--font-mono);
+      font-size: clamp(0.75rem, 1.15vw, 0.9375rem);
+      font-weight: 600;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    .eyebrow-dot {
+      width: 0.45rem;
+      height: 0.45rem;
+      border-radius: 9999px;
+      background-color: var(--foreground);
+    }
+
+    .wordmark {
+      font-family: var(--font-display);
+      font-size: clamp(4.75rem, 13vw, 10.5rem);
+      font-weight: 800;
+      letter-spacing: -0.055em;
+      line-height: 0.92;
+      color: var(--foreground);
+      text-wrap: balance;
+    }
+
+    .tagline {
+      max-width: 34ch;
+      font-size: clamp(1.35rem, 2.75vw, 2.35rem);
+      font-weight: 450;
+      line-height: 1.3;
+      letter-spacing: -0.02em;
+      color: var(--muted-foreground);
+      text-wrap: balance;
+    }
+
+    .intro-rule {
+      width: 3.5rem;
+      height: 1px;
+      background-color: var(--border);
+      margin: clamp(0.25rem, 1vh, 0.75rem) 0;
+    }
+
+    .presenter {
+      font-size: clamp(1.125rem, 1.75vw, 1.5rem);
+      font-weight: 500;
+      letter-spacing: -0.01em;
+      color: var(--foreground);
+    }
+
+    .demo-link {
+      margin-top: clamp(0.5rem, 1.5vh, 1.25rem);
+      display: inline-flex;
+      align-items: center;
+      gap: 0.65rem;
+      padding: 0.65rem 1.1rem;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      background-color: var(--card);
+      text-decoration: none;
+      font-size: clamp(0.875rem, 1.15vw, 1rem);
+      font-weight: 500;
+      color: var(--foreground);
+      transition: background-color 140ms ease, border-color 140ms ease;
+    }
+
+    .demo-link:hover {
+      background-color: var(--secondary);
+    }
+
+    .demo-link-path {
+      font-family: var(--font-mono);
+      font-size: 0.85em;
+      color: var(--muted-foreground);
+    }
+
+    .slide-cta {
+      gap: clamp(1rem, 2.4vh, 1.75rem);
+    }
+
+    .cta-heading {
+      font-family: var(--font-display);
+      font-size: clamp(2.25rem, 5vw, 4rem);
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      line-height: 1.05;
+      text-wrap: balance;
+    }
+
+    .qr-toggle {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.25rem;
+      border-radius: 9999px;
+      border: 1px solid var(--border);
+      background-color: var(--secondary);
+      gap: 0.25rem;
+    }
+
+    .qr-toggle-btn {
+      padding: 0.45rem 1.15rem;
+      border-radius: 9999px;
+      font-size: clamp(0.875rem, 1.2vw, 1.05rem);
+      font-weight: 600;
+      color: var(--muted-foreground);
+      transition: background-color 140ms ease, color 140ms ease;
+    }
+
+    .qr-toggle-btn:hover {
+      color: var(--foreground);
+    }
+
+    .qr-toggle-btn[aria-pressed="true"] {
+      background-color: var(--primary);
+      color: var(--primary-foreground);
+    }
+
+    .qr-frame {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: clamp(14.5rem, 36vh, 22.5rem);
+      height: clamp(14.5rem, 36vh, 22.5rem);
+      padding: clamp(0.65rem, 1.4vh, 1rem);
+      border-radius: calc(var(--radius) * 1.5);
+      border: 1px solid var(--border);
+      background-color: oklch(1 0 0);
+    }
+
+    .qr-frame svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    .cta-url {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-family: var(--font-mono);
+      font-size: clamp(1.35rem, 3vw, 2.5rem);
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      color: var(--foreground);
+      text-decoration: none;
+      padding: 0.25rem 0.75rem;
+      border-radius: var(--radius);
+      border-bottom: 2px solid var(--border);
+      transition: background-color 140ms ease, border-color 140ms ease;
+    }
+
+    .cta-url:hover {
+      background-color: var(--secondary);
+      border-bottom-color: var(--foreground);
+    }
+
+    .closing-line {
+      max-width: 44ch;
+      font-size: clamp(1.05rem, 1.8vw, 1.5rem);
+      font-weight: 450;
+      line-height: 1.35;
+      color: var(--muted-foreground);
+      text-wrap: balance;
+    }
+
+    .bottombar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      height: 3rem;
+      padding: 0 clamp(1rem, 3vw, 2.5rem);
+      border-top: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    .legend {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.9rem;
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      color: var(--muted-foreground);
+    }
+
+    .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+
+    .kbd {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 1.35rem;
+      height: 1.35rem;
+      padding: 0 0.35rem;
+      border-radius: 0.25rem;
+      border: 1px solid var(--border);
+      background-color: var(--secondary);
+      color: var(--foreground);
+      font-family: var(--font-mono);
+      font-size: 0.6875rem;
+      font-weight: 600;
+    }
+
+    .nav-controls {
+      display: flex;
+      align-items: center;
+      gap: 0.375rem;
+    }
+
+    .nav-btn {
+      width: 2rem;
+      height: 2rem;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: calc(var(--radius) * 0.75);
+      border: 1px solid var(--border);
+      background-color: var(--card);
+      color: var(--foreground);
+      transition: background-color 140ms ease, opacity 140ms ease;
+    }
+
+    .nav-btn:hover:not(:disabled) {
+      background-color: var(--secondary);
+    }
+
+    .nav-btn:disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+    }
+
+    .notes-drawer {
+      position: fixed;
+      right: clamp(0.75rem, 2vw, 1.5rem);
+      bottom: 3.75rem;
+      width: min(29rem, calc(100vw - 1.5rem));
+      max-height: calc(100dvh - 8.5rem);
+      overflow-y: auto;
+      border-radius: calc(var(--radius) * 1.25);
+      border: 1px solid var(--border);
+      background-color: var(--card);
+      color: var(--card-foreground);
+      padding: 1rem 1.15rem;
+      z-index: 20;
+    }
+
+    .notes-drawer[hidden] {
+      display: none;
+    }
+
+    .notes-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      padding-bottom: 0.75rem;
+      margin-bottom: 0.75rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .notes-title {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted-foreground);
+    }
+
+    .notes-close {
+      width: 1.75rem;
+      height: 1.75rem;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: calc(var(--radius) * 0.6);
+      border: 1px solid var(--border);
+      color: var(--muted-foreground);
+    }
+
+    .notes-close:hover {
+      background-color: var(--secondary);
+      color: var(--foreground);
+    }
+
+    .notes-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 0.85rem;
+    }
+
+    .notes-beat {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+      padding: 0.65rem 0.75rem;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      background-color: var(--background);
+    }
+
+    .notes-beat-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--foreground);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .notes-beat-text {
+      font-size: 0.875rem;
+      line-height: 1.45;
+      color: var(--muted-foreground);
+      text-wrap: pretty;
+    }
+
+    @media (max-width: 720px) {
+      .legend {
+        display: none;
+      }
+
+      .ctrl-label {
+        display: none;
+      }
+
+      .demo-link-path {
+        display: none;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *,
+      *::before,
+      *::after {
+        transition-duration: 0s !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="live-region" class="sr-only" aria-live="polite" aria-atomic="true"></div>
+
+  <header class="topbar">
+    <div class="topbar-left">
+      <span id="slide-counter" class="slide-counter">01 / 02</span>
+      <nav class="slide-dots" aria-label="Slide navigation">
+        <button id="dot-0" class="slide-dot" type="button" aria-label="Go to slide 1">1</button>
+        <button id="dot-1" class="slide-dot" type="button" aria-label="Go to slide 2">2</button>
+      </nav>
+    </div>
+
+    <div class="topbar-right">
+      <button id="btn-theme" class="ctrl-btn" type="button" aria-label="Toggle color theme" aria-pressed="false">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="4"></circle>
+          <path d="M12 2v2"></path>
+          <path d="M12 20v2"></path>
+          <path d="m4.93 4.93 1.41 1.41"></path>
+          <path d="m17.66 17.66 1.41 1.41"></path>
+          <path d="M2 12h2"></path>
+          <path d="M20 12h2"></path>
+          <path d="m6.34 17.66-1.41 1.41"></path>
+          <path d="m19.07 4.93-1.41 1.41"></path>
+        </svg>
+        <span id="theme-label" class="ctrl-label">Light</span>
+      </button>
+
+      <button id="btn-notes" class="ctrl-btn" type="button" aria-label="Toggle speaker notes" aria-pressed="false" aria-controls="notes-drawer">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+          <polyline points="14 2 14 8 20 8"></polyline>
+          <line x1="8" y1="13" x2="16" y2="13"></line>
+          <line x1="8" y1="17" x2="13" y2="17"></line>
+        </svg>
+        <span class="ctrl-label">Notes</span>
+      </button>
+
+      <button id="btn-fullscreen" class="ctrl-btn" type="button" aria-label="Toggle fullscreen">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <polyline points="15 3 21 3 21 9"></polyline>
+          <polyline points="9 21 3 21 3 15"></polyline>
+          <line x1="21" y1="3" x2="14" y2="10"></line>
+          <line x1="3" y1="21" x2="10" y2="14"></line>
+        </svg>
+        <span class="ctrl-label">Fullscreen</span>
+      </button>
+    </div>
+  </header>
+
+  <main class="stage">
+    <section id="slide-intro" class="slide slide-intro" aria-label="Slide 1: Diffly">
+      <div class="eyebrow">
+        <span class="eyebrow-dot" aria-hidden="true"></span>
+        <span>OPEN-SOURCE CODE REVIEW ARENA</span>
+      </div>
+      <h1 class="wordmark">Diffly</h1>
+      <p class="tagline">Train to catch the subtle bugs AI agents ship in pull requests.</p>
+      <div class="intro-rule" aria-hidden="true"></div>
+      <p class="presenter">Amir Abaris</p>
+      <a class="demo-link" href="/challenges/agent-unsanitized-exec" target="_blank" rel="noopener noreferrer">
+        <span>Open live demo challenge</span>
+        <span class="demo-link-path">/challenges/agent-unsanitized-exec</span>
+        <span aria-hidden="true">&#8599;</span>
+      </a>
+    </section>
+
+    <section id="slide-cta" class="slide slide-cta" aria-label="Slide 2: Try a challenge now" hidden>
+      <h1 class="cta-heading">Try a challenge now</h1>
+
+      <div class="qr-toggle" role="group" aria-label="QR code destination">
+        <button id="qr-btn-live" class="qr-toggle-btn" type="button" aria-pressed="true">Live Arena</button>
+        <button id="qr-btn-github" class="qr-toggle-btn" type="button" aria-pressed="false">GitHub Repo</button>
+      </div>
+
+      <div id="qr-frame" class="qr-frame"></div>
+
+      <a id="cta-url" class="cta-url" href="https://diffly-sigma.vercel.app" target="_blank" rel="noopener noreferrer">
+        diffly-sigma.vercel.app
+      </a>
+
+      <p class="closing-line">AI made writing code cheap. Keep your review skills sharp.</p>
+    </section>
+  </main>
+
+  <aside id="notes-drawer" class="notes-drawer" aria-label="Speaker notes" hidden>
+    <div class="notes-header">
+      <span id="notes-heading" class="notes-title">Speaker Notes</span>
+      <button id="btn-notes-close" class="notes-close" type="button" aria-label="Close speaker notes">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+    <ul id="notes-list" class="notes-list"></ul>
+  </aside>
+
+  <footer class="bottombar">
+    <div class="legend" aria-label="Keyboard shortcuts">
+      <span class="legend-item"><span class="kbd">&larr;</span><span class="kbd">&rarr;</span> Slide</span>
+      <span class="legend-item"><span class="kbd">1</span><span class="kbd">2</span> Jump</span>
+      <span class="legend-item"><span class="kbd">T</span> Theme</span>
+      <span class="legend-item"><span class="kbd">Q</span> QR</span>
+      <span class="legend-item"><span class="kbd">N</span> Notes</span>
+      <span class="legend-item"><span class="kbd">F</span> Fullscreen</span>
+    </div>
+
+    <div class="nav-controls">
+      <button id="btn-prev" class="nav-btn" type="button" aria-label="Previous slide">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <polyline points="15 18 9 12 15 6"></polyline>
+        </svg>
+      </button>
+      <button id="btn-next" class="nav-btn" type="button" aria-label="Next slide">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <polyline points="9 18 15 12 9 6"></polyline>
+        </svg>
+      </button>
+    </div>
+  </footer>
+
+  <script>
+    const SLIDES = [
+      { id: "intro", number: 1, title: "Diffly" },
+      { id: "cta", number: 2, title: "Try a challenge now" }
+    ];
+
+    const QR_TARGETS = {
+      live: {
+        label: "Live Arena",
+        url: "https://diffly-sigma.vercel.app",
+        displayUrl: "diffly-sigma.vercel.app",
+        svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 37 37" shape-rendering="crispEdges" role="img" aria-label="QR code for https://diffly-sigma.vercel.app"><path fill="#ffffff" d="M0 0h37v37H0z"/><path fill="none" stroke="#000000" stroke-width="1" d="M4 4.5h7m2 0h1m5 0h4m1 0h1m1 0h7M4 5.5h1m5 0h1m1 0h1m1 0h1m2 0h2m2 0h1m1 0h2m1 0h1m5 0h1M4 6.5h1m1 0h3m1 0h1m3 0h3m2 0h1m2 0h3m1 0h1m1 0h3m1 0h1M4 7.5h1m1 0h3m1 0h1m1 0h2m2 0h1m3 0h2m1 0h2m1 0h1m1 0h3m1 0h1M4 8.5h1m1 0h3m1 0h1m1 0h2m8 0h2m2 0h1m1 0h3m1 0h1M4 9.5h1m5 0h1m5 0h5m3 0h1m1 0h1m5 0h1M4 10.5h7m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h7M12 11.5h1m2 0h1m1 0h1m4 0h3M5 12.5h1m1 0h4m1 0h1m1 0h1m2 0h2m2 0h1m3 0h2m1 0h2m1 0h1M4 13.5h2m1 0h2m3 0h3m1 0h1m5 0h2m3 0h5M5 14.5h1m1 0h1m1 0h2m1 0h1m3 0h3m6 0h3m1 0h1M4 15.5h1m4 0h1m1 0h1m1 0h3m2 0h2m1 0h2m1 0h1m3 0h2m2 0h1M4 16.5h1m1 0h1m1 0h4m2 0h1m2 0h4m2 0h4m2 0h1m1 0h1M4 17.5h2m1 0h2m3 0h2m1 0h5m2 0h1m3 0h1m1 0h1m1 0h1m1 0h1M4 18.5h2m1 0h2m1 0h1m6 0h1m2 0h1m1 0h2m2 0h2m1 0h1m2 0h1M4 19.5h2m2 0h1m3 0h5m1 0h1m6 0h2m1 0h5M7 20.5h2m1 0h2m1 0h5m1 0h1m4 0h1m4 0h1m1 0h2M4 21.5h2m2 0h2m2 0h3m1 0h3m4 0h3m2 0h3M4 22.5h2m2 0h3m1 0h3m1 0h2m2 0h2m1 0h1m3 0h1m2 0h1m1 0h1M4 23.5h2m3 0h1m1 0h3m2 0h5m1 0h1m1 0h4m2 0h3M4 24.5h3m1 0h1m1 0h2m2 0h2m5 0h1m1 0h8M12 25.5h2m3 0h3m4 0h1m3 0h3M4 26.5h7m2 0h2m1 0h2m1 0h6m1 0h1m1 0h1m1 0h1M4 27.5h1m5 0h1m1 0h1m1 0h2m1 0h1m3 0h4m3 0h2m1 0h1M4 28.5h1m1 0h3m1 0h1m1 0h2m1 0h1m1 0h2m1 0h1m2 0h6m2 0h2M4 29.5h1m1 0h3m1 0h1m1 0h1m1 0h1m2 0h1m3 0h1m5 0h1m1 0h3M4 30.5h1m1 0h3m1 0h1m2 0h1m1 0h1m3 0h2m1 0h1m1 0h2m1 0h2m2 0h2M4 31.5h1m5 0h1m1 0h4m1 0h2m1 0h1m5 0h1m1 0h1m1 0h1m1 0h1M4 32.5h7m3 0h1m2 0h1m1 0h1m2 0h7"/></svg>'
+      },
+      github: {
+        label: "GitHub Repo",
+        url: "https://github.com/AmirAbaris/diffly",
+        displayUrl: "github.com/AmirAbaris/diffly",
+        svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 41 41" shape-rendering="crispEdges" role="img" aria-label="QR code for https://github.com/AmirAbaris/diffly"><path fill="#ffffff" d="M0 0h41v41H0z"/><path fill="none" stroke="#000000" stroke-width="1" d="M4 4.5h7m1 0h2m2 0h2m3 0h3m1 0h3m2 0h7M4 5.5h1m5 0h1m2 0h1m1 0h1m2 0h2m2 0h1m1 0h1m2 0h2m1 0h1m5 0h1M4 6.5h1m1 0h3m1 0h1m1 0h1m1 0h1m1 0h2m1 0h2m1 0h1m1 0h4m2 0h1m1 0h3m1 0h1M4 7.5h1m1 0h3m1 0h1m1 0h1m4 0h2m2 0h2m1 0h4m2 0h1m1 0h3m1 0h1M4 8.5h1m1 0h3m1 0h1m2 0h3m4 0h5m3 0h1m1 0h1m1 0h3m1 0h1M4 9.5h1m5 0h1m1 0h2m1 0h1m3 0h1m3 0h1m4 0h1m1 0h1m5 0h1M4 10.5h7m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h7M12 11.5h3m1 0h1m1 0h2m1 0h2m2 0h3M5 12.5h1m1 0h1m1 0h4m1 0h1m3 0h2m5 0h2m2 0h3m1 0h2m1 0h1M4 13.5h1m3 0h2m1 0h2m1 0h3m1 0h1m1 0h3m1 0h2m2 0h4m3 0h2M5 14.5h1m1 0h1m1 0h2m1 0h1m1 0h1m2 0h1m4 0h2m4 0h1m1 0h3m1 0h1m1 0h1M6 15.5h1m2 0h1m2 0h1m4 0h1m2 0h1m1 0h5m2 0h2m1 0h2m1 0h1M5 16.5h3m1 0h3m1 0h3m1 0h4m1 0h1m1 0h1m1 0h2m1 0h2m2 0h1m2 0h1M5 17.5h1m2 0h2m2 0h4m3 0h4m1 0h1m3 0h1m1 0h1m1 0h2m1 0h2M4 18.5h4m2 0h1m1 0h1m3 0h2m4 0h2m1 0h1m1 0h5m2 0h2M5 19.5h4m2 0h1m1 0h2m2 0h1m1 0h2m1 0h1m1 0h2m1 0h2m1 0h1m1 0h1m2 0h1M4 20.5h2m2 0h1m1 0h2m1 0h1m4 0h1m1 0h2m2 0h5m1 0h1m1 0h2m1 0h1M4 21.5h2m2 0h2m1 0h4m2 0h7m3 0h3m1 0h1m1 0h1m1 0h1M4 22.5h1m1 0h3m1 0h1m1 0h1m4 0h1m2 0h1m4 0h1m2 0h1m5 0h3M4 23.5h1m1 0h1m4 0h1m1 0h1m2 0h4m3 0h2m1 0h4m1 0h1m3 0h1M7 24.5h2m1 0h3m1 0h1m1 0h1m1 0h1m2 0h1m1 0h2m2 0h3M6 25.5h2m1 0h1m1 0h1m3 0h1m1 0h1m3 0h3m1 0h1m2 0h4m1 0h1m1 0h2M4 26.5h2m2 0h4m1 0h1m3 0h1m1 0h2m2 0h1m1 0h1m2 0h1m1 0h3m3 0h1M5 27.5h1m1 0h1m5 0h1m1 0h2m2 0h1m2 0h7m2 0h1m1 0h1m1 0h2M4 28.5h1m1 0h1m1 0h1m1 0h4m3 0h4m1 0h1m1 0h2m2 0h5m2 0h2M12 29.5h4m2 0h6m1 0h2m1 0h1m3 0h2M4 30.5h7m1 0h6m1 0h1m2 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h4M4 31.5h1m5 0h1m1 0h1m1 0h1m1 0h5m2 0h4m1 0h1m3 0h1m2 0h2M4 32.5h1m1 0h3m1 0h1m4 0h2m5 0h1m1 0h1m3 0h6m1 0h2M4 33.5h1m1 0h3m1 0h1m1 0h1m1 0h1m3 0h2m1 0h1m1 0h1m2 0h2m2 0h1m1 0h1m1 0h2M4 34.5h1m1 0h3m1 0h1m4 0h1m1 0h3m1 0h1m1 0h3m6 0h3m1 0h1M4 35.5h1m5 0h1m1 0h1m1 0h2m6 0h4m1 0h3M4 36.5h7m3 0h2m1 0h2m2 0h1m1 0h1m1 0h1m2 0h1m1 0h1m1 0h1m2 0h1"/></svg>'
+      }
+    };
+
+    const SPEAKER_NOTES = {
+      intro: [
+        {
+          time: "0:00-0:45",
+          label: "Hook",
+          text: "AI agents ship plausible pull requests in seconds, complete with clean formatting and passing unit tests. The bugs that survive are subtle review misses. Diffly is an open-source arena built to train that review instinct."
+        },
+        {
+          time: "0:45-3:15",
+          label: "Live Crowd Play",
+          text: "Open /challenges/agent-unsanitized-exec in a new tab. Read the diff with the room, ask the crowd to call out the vulnerable line before clicking, submit together, and unpack why an agent wrote it."
+        }
+      ],
+      cta: [
+        {
+          time: "3:15-4:15",
+          label: "Zoom Out",
+          text: "Show how Diffly scales beyond a single demo: real agent-authored diffs, line-level review scoring, and open-source challenges anyone can contribute."
+        },
+        {
+          time: "4:15-5:00",
+          label: "Close + QR",
+          text: "Return to #2. Invite everyone to scan the Live Arena QR and try a challenge on their phone, or press Q for the GitHub Repo QR. End on: AI made writing code cheap. Keep your review skills sharp."
+        }
+      ]
+    };
+
+    function parseSlideIndexFromHash(hash) {
+      const num = Number.parseInt(hash.replace(/^#/, ""), 10);
+      const found = SLIDES.findIndex((slide) => slide.number === num);
+      return found === -1 ? 0 : found;
+    }
+
+    function parseInitialTheme(search) {
+      const param = new URLSearchParams(search).get("theme");
+      return param === "dark" ? "dark" : "light";
+    }
+
+    function applyAction(state, action) {
+      switch (action.type) {
+        case "NEXT_SLIDE":
+          return {
+            ...state,
+            slideIndex: Math.min(SLIDES.length - 1, state.slideIndex + 1)
+          };
+        case "PREV_SLIDE":
+          return {
+            ...state,
+            slideIndex: Math.max(0, state.slideIndex - 1)
+          };
+        case "GO_TO_SLIDE": {
+          const clamped = Math.max(0, Math.min(SLIDES.length - 1, action.index));
+          return { ...state, slideIndex: clamped };
+        }
+        case "TOGGLE_THEME":
+          return {
+            ...state,
+            theme: state.theme === "dark" ? "light" : "dark"
+          };
+        case "SET_QR_TARGET":
+          return action.target === "live" || action.target === "github"
+            ? { ...state, qrTarget: action.target }
+            : state;
+        case "TOGGLE_QR_TARGET":
+          return {
+            ...state,
+            qrTarget: state.qrTarget === "live" ? "github" : "live"
+          };
+        case "TOGGLE_NOTES":
+          return { ...state, notesOpen: !state.notesOpen };
+        case "CLOSE_NOTES":
+          return state.notesOpen ? { ...state, notesOpen: false } : state;
+        default:
+          return state;
+      }
+    }
+
+    const els = {
+      liveRegion: document.getElementById("live-region"),
+      slideCounter: document.getElementById("slide-counter"),
+      dots: [document.getElementById("dot-0"), document.getElementById("dot-1")],
+      slides: [document.getElementById("slide-intro"), document.getElementById("slide-cta")],
+      btnTheme: document.getElementById("btn-theme"),
+      themeLabel: document.getElementById("theme-label"),
+      btnNotes: document.getElementById("btn-notes"),
+      btnNotesClose: document.getElementById("btn-notes-close"),
+      btnFullscreen: document.getElementById("btn-fullscreen"),
+      btnPrev: document.getElementById("btn-prev"),
+      btnNext: document.getElementById("btn-next"),
+      qrBtnLive: document.getElementById("qr-btn-live"),
+      qrBtnGithub: document.getElementById("qr-btn-github"),
+      qrFrame: document.getElementById("qr-frame"),
+      ctaUrl: document.getElementById("cta-url"),
+      notesDrawer: document.getElementById("notes-drawer"),
+      notesHeading: document.getElementById("notes-heading"),
+      notesList: document.getElementById("notes-list")
+    };
+
+    let state = {
+      slideIndex: parseSlideIndexFromHash(window.location.hash),
+      theme: parseInitialTheme(window.location.search),
+      qrTarget: "live",
+      notesOpen: false
+    };
+
+    function syncHash(slideNumber) {
+      const targetHash = "#" + slideNumber;
+      if (window.location.hash === targetHash) {
+        return;
+      }
+      if (window.location.protocol === "file:") {
+        window.location.hash = targetHash;
+        return;
+      }
+      window.history.replaceState(null, "", targetHash);
+    }
+
+    function render(nextState, announcement) {
+      const activeSlide = SLIDES[nextState.slideIndex];
+      const activeQr = QR_TARGETS[nextState.qrTarget];
+
+      document.documentElement.classList.toggle("dark", nextState.theme === "dark");
+      els.btnTheme.setAttribute("aria-pressed", String(nextState.theme === "dark"));
+      els.themeLabel.textContent = nextState.theme === "dark" ? "Dark" : "Light";
+
+      els.slideCounter.textContent = "0" + activeSlide.number + " / 0" + SLIDES.length;
+
+      els.slides.forEach((section, index) => {
+        section.hidden = index !== nextState.slideIndex;
+      });
+
+      els.dots.forEach((dot, index) => {
+        if (index === nextState.slideIndex) {
+          dot.setAttribute("aria-current", "step");
+        } else {
+          dot.removeAttribute("aria-current");
+        }
+      });
+
+      els.btnPrev.disabled = nextState.slideIndex === 0;
+      els.btnNext.disabled = nextState.slideIndex === SLIDES.length - 1;
+
+      els.qrBtnLive.setAttribute("aria-pressed", String(nextState.qrTarget === "live"));
+      els.qrBtnGithub.setAttribute("aria-pressed", String(nextState.qrTarget === "github"));
+      els.qrFrame.innerHTML = activeQr.svg;
+      els.ctaUrl.href = activeQr.url;
+      els.ctaUrl.textContent = activeQr.displayUrl;
+
+      els.notesDrawer.hidden = !nextState.notesOpen;
+      els.btnNotes.setAttribute("aria-pressed", String(nextState.notesOpen));
+      els.notesHeading.textContent = "Speaker Notes (Slide " + activeSlide.number + ")";
+
+      const beats = SPEAKER_NOTES[activeSlide.id];
+      els.notesList.innerHTML = beats
+        .map(
+          (beat) =>
+            '<li class="notes-beat">' +
+            '<div class="notes-beat-meta"><span>' +
+            beat.label +
+            "</span><span>" +
+            beat.time +
+            "</span></div>" +
+            '<p class="notes-beat-text">' +
+            beat.text +
+            "</p>" +
+            "</li>"
+        )
+        .join("");
+
+      syncHash(activeSlide.number);
+
+      if (announcement) {
+        els.liveRegion.textContent = announcement;
+      }
+    }
+
+    function dispatch(action, announcement) {
+      const prev = state;
+      state = applyAction(state, action);
+      const changed =
+        prev.slideIndex !== state.slideIndex ||
+        prev.theme !== state.theme ||
+        prev.qrTarget !== state.qrTarget ||
+        prev.notesOpen !== state.notesOpen;
+      if (changed) {
+        render(state, announcement);
+      }
+    }
+
+    function toggleFullscreen() {
+      if (!document.fullscreenEnabled) {
+        return;
+      }
+      if (document.fullscreenElement) {
+        void document.exitFullscreen();
+      } else if (document.documentElement.requestFullscreen) {
+        void document.documentElement.requestFullscreen();
+      }
+    }
+
+    els.dots[0].addEventListener("click", () => {
+      dispatch({ type: "GO_TO_SLIDE", index: 0 }, "Slide 1 of 2: Diffly");
+    });
+
+    els.dots[1].addEventListener("click", () => {
+      dispatch({ type: "GO_TO_SLIDE", index: 1 }, "Slide 2 of 2: Try a challenge now");
+    });
+
+    els.btnPrev.addEventListener("click", () => {
+      dispatch({ type: "PREV_SLIDE" }, "Slide 1 of 2: Diffly");
+    });
+
+    els.btnNext.addEventListener("click", () => {
+      dispatch({ type: "NEXT_SLIDE" }, "Slide 2 of 2: Try a challenge now");
+    });
+
+    els.btnTheme.addEventListener("click", () => {
+      const nextTheme = state.theme === "dark" ? "light" : "dark";
+      dispatch({ type: "TOGGLE_THEME" }, "Switched to " + nextTheme + " theme");
+    });
+
+    els.btnNotes.addEventListener("click", () => {
+      dispatch({ type: "TOGGLE_NOTES" }, state.notesOpen ? "Speaker notes closed" : "Speaker notes opened");
+    });
+
+    els.btnNotesClose.addEventListener("click", () => {
+      dispatch({ type: "CLOSE_NOTES" }, "Speaker notes closed");
+    });
+
+    els.btnFullscreen.addEventListener("click", toggleFullscreen);
+
+    els.qrBtnLive.addEventListener("click", () => {
+      dispatch({ type: "SET_QR_TARGET", target: "live" }, "Showing QR code for Live Arena");
+    });
+
+    els.qrBtnGithub.addEventListener("click", () => {
+      dispatch({ type: "SET_QR_TARGET", target: "github" }, "Showing QR code for GitHub Repo");
+    });
+
+    window.addEventListener("hashchange", () => {
+      const index = parseSlideIndexFromHash(window.location.hash);
+      const slide = SLIDES[index];
+      dispatch({ type: "GO_TO_SLIDE", index }, "Slide " + slide.number + " of " + SLIDES.length + ": " + slide.title);
+    });
+
+    document.addEventListener("keydown", (event) => {
+      if (event.metaKey || event.ctrlKey || event.altKey) {
+        return;
+      }
+
+      const tag = document.activeElement ? document.activeElement.tagName : "";
+      if (tag === "INPUT" || tag === "TEXTAREA") {
+        return;
+      }
+
+      switch (event.key) {
+        case "ArrowRight":
+        case "PageDown":
+          event.preventDefault();
+          dispatch({ type: "NEXT_SLIDE" }, "Slide 2 of 2: Try a challenge now");
+          break;
+        case " ":
+          if (tag === "BUTTON" || tag === "A") {
+            return;
+          }
+          event.preventDefault();
+          dispatch({ type: "NEXT_SLIDE" }, "Slide 2 of 2: Try a challenge now");
+          break;
+        case "ArrowLeft":
+        case "PageUp":
+          event.preventDefault();
+          dispatch({ type: "PREV_SLIDE" }, "Slide 1 of 2: Diffly");
+          break;
+        case "1":
+          event.preventDefault();
+          dispatch({ type: "GO_TO_SLIDE", index: 0 }, "Slide 1 of 2: Diffly");
+          break;
+        case "2":
+          event.preventDefault();
+          dispatch({ type: "GO_TO_SLIDE", index: 1 }, "Slide 2 of 2: Try a challenge now");
+          break;
+        case "t":
+        case "T": {
+          event.preventDefault();
+          const nextTheme = state.theme === "dark" ? "light" : "dark";
+          dispatch({ type: "TOGGLE_THEME" }, "Switched to " + nextTheme + " theme");
+          break;
+        }
+        case "q":
+        case "Q":
+          if (state.slideIndex === 1) {
+            event.preventDefault();
+            const nextLabel = state.qrTarget === "live" ? "GitHub Repo" : "Live Arena";
+            dispatch({ type: "TOGGLE_QR_TARGET" }, "Showing QR code for " + nextLabel);
+          }
+          break;
+        case "n":
+        case "N":
+          event.preventDefault();
+          dispatch({ type: "TOGGLE_NOTES" }, state.notesOpen ? "Speaker notes closed" : "Speaker notes opened");
+          break;
+        case "Escape":
+          if (state.notesOpen) {
+            event.preventDefault();
+            dispatch({ type: "CLOSE_NOTES" }, "Speaker notes closed");
+          }
+          break;
+        case "f":
+        case "F":
+          event.preventDefault();
+          toggleFullscreen();
+          break;
+        default:
+          break;
+      }
+    });
+
+    render(state, "");
+  </script>
+</body>
+</html>
