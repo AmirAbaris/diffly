@@ -6,6 +6,7 @@ import {
   User as UserIcon,
   BarChart3,
   MessageSquare,
+  Trophy,
   Settings,
   LogOut,
   ChevronDown,
@@ -187,6 +188,20 @@ export function UserNav({ className, onOpenStats }: UserNavProps) {
                     className="size-3.5 text-muted-foreground"
                   />
                   <span>Agent Coach</span>
+                </Link>
+              </DropdownMenuItem>
+
+              <DropdownMenuItem
+                asChild
+                className="cursor-pointer gap-2 text-xs"
+                data-testid="user-menu-leaderboard"
+              >
+                <Link href="/leaderboard">
+                  <Trophy
+                    aria-hidden="true"
+                    className="size-3.5 text-muted-foreground"
+                  />
+                  <span>Leaderboard</span>
                 </Link>
               </DropdownMenuItem>
 

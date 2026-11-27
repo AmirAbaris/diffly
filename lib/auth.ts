@@ -5,6 +5,7 @@ import useSWR, { useSWRConfig, type ScopedMutator } from "swr"
 import { apiClient } from "@/lib/axios"
 import { isCoachThreadsKey } from "@/hooks/use-coach-threads"
 import { CUSTOM_CHALLENGES_SWR_KEY } from "@/hooks/use-custom-challenges"
+import { isLeaderboardKey } from "@/hooks/use-leaderboard"
 import { toast } from "@/hooks/use-toast"
 import { USER_PROGRESS_SWR_KEY } from "@/hooks/use-user-stats"
 
@@ -221,6 +222,9 @@ async function revalidateAuthScopedCaches(
         typeof key === "string" &&
         (key === "/api/challenges" || key.startsWith("/api/challenges?"))
     ),
+    clearPrivate
+      ? mutateCache(isLeaderboardKey, undefined, { revalidate: true })
+      : mutateCache(isLeaderboardKey),
     clearPrivate
       ? mutateCache(CUSTOM_CHALLENGES_SWR_KEY, undefined, { revalidate: true })
       : mutateCache(CUSTOM_CHALLENGES_SWR_KEY),

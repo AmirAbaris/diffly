@@ -53,6 +53,19 @@ export function Navbar({ className }: NavbarProps) {
           >
             Agent Coach
           </Link>
+          <span
+            aria-hidden="true"
+            className="hidden text-sm text-border select-none sm:inline"
+          >
+            /
+          </span>
+          <Link
+            href="/leaderboard"
+            data-testid="navbar-leaderboard-link"
+            className="hidden text-xs font-medium text-muted-foreground transition-colors hover:text-foreground sm:inline"
+          >
+            Leaderboard
+          </Link>
         </div>
 
         <div className="flex shrink-0 items-center gap-1.5 sm:gap-2.5">
