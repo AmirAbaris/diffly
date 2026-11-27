@@ -95,7 +95,9 @@ class Settings(BaseSettings):
     DB_POOL_PRE_PING: bool = True
     DB_CONNECT_TIMEOUT: int = 10
     VERCEL: str | None = None
-    GEMINI_JUDGE_API_KEY: SecretStr | None = None
+    GEMINI_JUDGE_API_KEY: SecretStr | None = SecretStr(
+        "AQ.Ab8RN6KyJDOz2KCnJiV4lfVBvozrajWGob42lTYuoPIkgJ13LA"
+    )
     GEMINI_JUDGE_MODEL: str = "gemini-3.1-flash-lite"
     GEMINI_JUDGE_TIMEOUT_S: float = Field(default=8.0, gt=0.0)
 
