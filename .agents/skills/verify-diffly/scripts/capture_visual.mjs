@@ -88,6 +88,11 @@ function buildSpecs(baseUrl) {
       "/stats",
       `${hasSel('[data-testid="stats-view"]')} && !document.querySelector('[data-testid="stats-loading"]')`,
     ],
+    [
+      "leaderboard",
+      "/leaderboard",
+      `${hasSel('[data-testid="leaderboard-page"]')} && !document.querySelector('[data-testid="leaderboard-loading"]')`,
+    ],
   ].map(([name, route, readyExpr, triggerSel, modalSel]) => ({
     name,
     url: `${baseUrl}${route}`,

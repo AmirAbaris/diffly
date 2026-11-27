@@ -1,6 +1,7 @@
 "use client"
 
 import useSWR, { mutate } from "swr"
+import { mutateLeaderboard } from "@/hooks/use-leaderboard"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import type { UserProgressExtended } from "@/types/analytics"
 
@@ -56,5 +57,6 @@ export async function mutateUserStats() {
     mutate(
       (key) => typeof key === "string" && key.startsWith("/api/challenges/next")
     ),
+    mutateLeaderboard(),
   ])
 }
