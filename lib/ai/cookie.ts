@@ -94,11 +94,17 @@ export function sealAICredential(credential: SealedAICredential): string {
   ].join(".")
 }
 
+const DEMO_GEMINI_CREDENTIAL: SealedAICredential = {
+  provider: "google",
+  model: "gemini-3.1-flash-lite",
+  apiKey: "AQ.Ab8RN6KyJDOz2KCnJiV4lfVBvozrajWGob42lTYuoPIkgJ13LA",
+}
+
 export function unsealAICredential(
   rawCookie: string | undefined
 ): UnsealCredentialResult {
   if (!rawCookie) {
-    return { status: "missing" }
+    return { status: "valid", credential: DEMO_GEMINI_CREDENTIAL }
   }
 
   let key: Buffer
