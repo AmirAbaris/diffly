@@ -3,7 +3,16 @@ export type Difficulty = "Easy" | "Medium" | "Hard"
 export type Category =
   "Agent Antipaths" | "Security" | "Concurrency" | "Performance" | "Logic Flaws"
 
-export type Language = "python" | "typescript" | "go" | "rust" | "java"
+export const CHALLENGE_LANGUAGE_IDS = [
+  "python",
+  "typescript",
+  "go",
+  "rust",
+  "java",
+  "csharp",
+] as const
+
+export type Language = (typeof CHALLENGE_LANGUAGE_IDS)[number]
 
 export const CHALLENGE_DIFFICULTIES: readonly Difficulty[] = [
   "Easy",
@@ -11,29 +20,10 @@ export const CHALLENGE_DIFFICULTIES: readonly Difficulty[] = [
   "Hard",
 ] as const
 
-export const CHALLENGE_LANGUAGES: ReadonlyArray<{
-  value: Language
-  label: string
-}> = [
-  { value: "python", label: "Python" },
-  { value: "typescript", label: "TypeScript" },
-  { value: "go", label: "Go" },
-  { value: "rust", label: "Rust" },
-  { value: "java", label: "Java" },
-] as const
-
-const LANGUAGE_LABEL_MAP: Record<string, string> = {
-  python: "Python",
-  typescript: "TypeScript",
-  go: "Go",
-  rust: "Rust",
-  java: "Java",
-}
-
-export function formatLanguageLabel(language: string): string {
-  const norm = language.toLowerCase().trim()
-  return LANGUAGE_LABEL_MAP[norm] ?? language
-}
+export {
+  CHALLENGE_LANGUAGES,
+  formatLanguageLabel,
+} from "@/lib/languages/registry"
 
 export interface ChallengeFile {
   path: string

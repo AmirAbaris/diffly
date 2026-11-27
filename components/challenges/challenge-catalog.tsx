@@ -19,6 +19,7 @@ import {
   DEFAULT_CATALOG_PAGE_SIZE,
   useChallenges,
 } from "@/hooks/use-challenges"
+import { isSupportedLanguage } from "@/lib/languages/registry"
 import type { Category, Difficulty, Language } from "@/types/challenge"
 
 const VALID_DIFFICULTIES = new Set<Difficulty>(["Easy", "Medium", "Hard"])
@@ -28,13 +29,6 @@ const VALID_CATEGORIES = new Set<Category>([
   "Concurrency",
   "Performance",
   "Logic Flaws",
-])
-const VALID_LANGUAGES = new Set<Language>([
-  "python",
-  "typescript",
-  "go",
-  "rust",
-  "java",
 ])
 
 interface ParsedCatalogParams {
@@ -56,7 +50,7 @@ function parseCatalogSearchParams(
 ): ParsedCatalogParams {
   const rawDifficulty = searchParams.get("difficulty") as Difficulty | null
   const rawCategory = searchParams.get("category") as Category | null
-  const rawLanguage = searchParams.get("language") as Language | null
+  const rawLanguage = searchParams.get("language")
 
   return {
     difficulty:
@@ -65,8 +59,7 @@ function parseCatalogSearchParams(
         : "All",
     category:
       rawCategory && VALID_CATEGORIES.has(rawCategory) ? rawCategory : "All",
-    language:
-      rawLanguage && VALID_LANGUAGES.has(rawLanguage) ? rawLanguage : "All",
+    language: isSupportedLanguage(rawLanguage) ? rawLanguage : "All",
     urlSearch: searchParams.get("search") ?? "",
     page: parsePageParam(searchParams.get("page")),
   }

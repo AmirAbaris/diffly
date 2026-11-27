@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { CodeViewer } from "@/components/review/code-viewer"
+import { inferLanguageFromPath } from "@/components/review/code-viewer/language"
 import { MarkdownPreview } from "@/components/review/markdown-preview"
 
 describe("CodeViewer Component", () => {
@@ -260,6 +261,63 @@ describe("CodeViewer Component", () => {
     expect(keywordTokens).toContain("public")
     expect(keywordTokens).toContain("class")
     expect(keywordTokens).toContain("private")
+  })
+
+  it("normalizes csharp aliases, defaults to Solution.cs, infers .cs paths, and highlights C# keywords", async () => {
+    const sampleCSharpCode = `public sealed class InvoiceService
+{
+    public async Task<string> GetAsync(string id)
+    {
+        return id;
+    }
+}`
+
+    expect(inferLanguageFromPath("Services/InvoiceService.cs")).toBe("csharp")
+
+    for (const alias of ["csharp", "cs", "c#", "dotnet"]) {
+      const { container, unmount } = render(
+        <CodeViewer
+          code={sampleCSharpCode}
+          language={alias}
+          flaggedLines={[]}
+          onToggleLine={vi.fn()}
+        />
+      )
+
+      expect(await screen.findByText("Solution.cs")).toBeInTheDocument()
+      expect(screen.getByText(/^csharp$/i)).toBeInTheDocument()
+
+      const keywordTokens = Array.from(
+        container.querySelectorAll(".token.keyword")
+      ).map((el) => el.textContent)
+      expect(keywordTokens).toContain("public")
+      expect(keywordTokens).toContain("class")
+      expect(keywordTokens).toContain("async")
+      unmount()
+    }
+  })
+
+  it("highlights fenced c# and csharp code blocks in MarkdownPreview", async () => {
+    const markdown = [
+      "Review fix:",
+      "",
+      "```c#",
+      "public sealed record InvoiceQuery(string TenantId);",
+      "public async Task RunAsync() => await Task.CompletedTask;",
+      "```",
+    ].join("\n")
+
+    const { container } = render(<MarkdownPreview content={markdown} />)
+
+    expect(await screen.findByTestId("markdown-preview")).toBeInTheDocument()
+    expect(screen.getByText(/^csharp$/i)).toBeInTheDocument()
+
+    const keywordTokens = Array.from(
+      container.querySelectorAll(".token.keyword")
+    ).map((el) => el.textContent)
+    expect(keywordTokens).toContain("public")
+    expect(keywordTokens).toContain("async")
+    expect(keywordTokens).toContain("await")
   })
 
   it("renders skeleton without fake code metadata or line buttons when status is loading", () => {
