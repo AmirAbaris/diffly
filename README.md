@@ -383,7 +383,7 @@ Diffly is released under the [MIT License](LICENSE).
 
 The bundled `geist` font package (`geist` in `package.json`, loaded in `app/layout.tsx`) is licensed under the SIL Open Font License 1.1.
 
-Settings
+Settings 
 	•	AI Coach: an optional assistant that gives feedback on your work.
 	•	Hybrid LLM Judge: combines a model's judgement with fixed rules.
 	•	Multi-provider (BYOK): lets you use your own API key from one or more AI providers
