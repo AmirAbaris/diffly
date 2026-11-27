@@ -481,10 +481,7 @@ async def generate_custom_challenge_endpoint(
     ] = None,
 ) -> CustomChallengeResponse:
     """Generate a custom challenge and persist to PostgreSQL (max 5 quota)."""
-    effective_gemini_key = (x_gemini_key or "").strip()
-    if not effective_gemini_key and settings.GEMINI_JUDGE_API_KEY is not None:
-        effective_gemini_key = settings.GEMINI_JUDGE_API_KEY.get_secret_value().strip()
-    if not effective_gemini_key:
+    if not x_gemini_key or not x_gemini_key.strip():
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=(
@@ -507,7 +504,7 @@ async def generate_custom_challenge_endpoint(
     try:
         generated = await generate_custom_challenge(
             request=payload,
-            api_key=effective_gemini_key,
+            api_key=x_gemini_key,
         )
     except GeminiAuthError as exc:
         raise HTTPException(
