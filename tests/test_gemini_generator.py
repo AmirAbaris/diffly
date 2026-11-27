@@ -1234,3 +1234,67 @@ def test_sanitize_preserves_capitalization_when_aligning_tier3_hint():
     result = sanitize_generated_challenge(raw, req)
     tier3 = next(h for h in result.hints if h.tier == 3)
     assert tier3.text == "Line 3 execute untrusted input directly."
+
+
+def test_is_non_trivial_code_line_preserves_csharp_preprocessor_directives():
+    from backend.services.gemini_generator import _is_non_trivial_code_line
+
+    directives = [
+        "#nullable enable",
+        "#pragma warning disable CS8618",
+        "#region Helpers",
+        "#endregion",
+        "#if DEBUG",
+        "#endif",
+    ]
+    for directive in directives:
+        assert _is_non_trivial_code_line(directive, language=Language.CSHARP) is True
+        assert _is_non_trivial_code_line(directive, language=None) is True
+
+    assert _is_non_trivial_code_line("// C# comment", language=Language.CSHARP) is False
+    assert (
+        _is_non_trivial_code_line("# Python comment", language=Language.PYTHON) is False
+    )
+    assert _is_non_trivial_code_line("# Python comment", language=None) is False
+    assert _is_non_trivial_code_line("#[derive(Debug)]", language=None) is True
+
+
+def test_sanitize_grounds_csharp_preprocessor_and_alias_request():
+    code = (
+        "#nullable disable\n"
+        "using System.Net.Http;\n"
+        "public sealed class PricingClient\n"
+        "{\n"
+        "    public Task<string> FetchAsync(string url)\n"
+        "    {\n"
+        "        using var client = new HttpClient();\n"
+        "        return client.GetStringAsync(url);\n"
+        "    }\n"
+        "}\n"
+    )
+    raw = {
+        **SAMPLE_GEMINI_OUTPUT,
+        "slug": "csharp-nullable-and-httpclient",
+        "language": "csharp",
+        "code_snippet": code,
+        "expected_issues": [
+            {
+                "id": "csharp-directive-1",
+                "title": "Nullable disabled",
+                "severity": "medium",
+                "anchor_lines": ["#nullable disable"],
+                "matched_lines": [1],
+                "matched_keywords": ["nullable"],
+                "explanation": "Disabling nullable reference checks hides null bugs.",
+            }
+        ],
+    }
+    req = GenerateCustomChallengeRequest(
+        topic="HttpClient socket exhaustion",
+        language="c#",
+        difficulty=Difficulty.EASY,
+    )
+    assert req.language is Language.CSHARP
+    result = sanitize_generated_challenge(raw, req)
+    assert result.language is Language.CSHARP
+    assert result.expected_issues[0].lines == [1]

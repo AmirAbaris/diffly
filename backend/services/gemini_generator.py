@@ -5,7 +5,7 @@ User API keys are used strictly in-memory and are never stored or logged.
 """
 
 import re
-from typing import Any
+from typing import Any, Final
 
 import httpx
 from pydantic import ValidationError
@@ -256,7 +256,36 @@ _LINE_RANGE_RE = re.compile(r"(\d+)\s*(?:[-–]|to)\s*L?(\d+)", re.IGNORECASE)
 _HUNK_HEADER_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$")
 
 
-def _is_non_trivial_code_line(line: str) -> bool:
+_C_FAMILY_LANGUAGES: Final[frozenset[Language]] = frozenset(
+    {
+        Language.TYPESCRIPT,
+        Language.GO,
+        Language.RUST,
+        Language.JAVA,
+        Language.CSHARP,
+    }
+)
+_CSHARP_DIRECTIVE_PREFIXES: Final[tuple[str, ...]] = (
+    "#nullable",
+    "#pragma",
+    "#region",
+    "#endregion",
+    "#if",
+    "#elif",
+    "#else",
+    "#endif",
+    "#define",
+    "#undef",
+    "#line",
+    "#error",
+    "#warning",
+)
+
+
+def _is_non_trivial_code_line(
+    line: str,
+    language: Language | None = None,
+) -> bool:
     """Return True if a code line is non-empty and not a pure comment or docstring."""
     stripped = line.strip()
     if not stripped:
@@ -269,8 +298,12 @@ def _is_non_trivial_code_line(line: str) -> bool:
         return False
     if stripped.startswith("//"):
         return False
-    if stripped.startswith("#") and not stripped.startswith(("#[", "#![")):
-        return False
+    if stripped.startswith("#"):
+        if language in _C_FAMILY_LANGUAGES:
+            return True
+        return language is None and stripped.startswith(
+            ("#[", "#![", *_CSHARP_DIRECTIVE_PREFIXES)
+        )
     if stripped.startswith("/*") and (stripped.endswith("*/") or "*/" not in stripped):
         return False
     if stripped.endswith("*/") and "/*" not in stripped:
@@ -292,16 +325,19 @@ def _match_anchor_in_code(
     anchor: str,
     code_lines: list[str],
     hint_lines: list[int],
+    language: Language | None = None,
 ) -> int | None:
     """Match a non-trivial anchor string to a 1-indexed non-trivial code line."""
     anchor_stripped = anchor.strip()
-    if not anchor_stripped or not _is_non_trivial_code_line(anchor_stripped):
+    if not anchor_stripped or not _is_non_trivial_code_line(
+        anchor_stripped, language=language
+    ):
         return None
 
     non_trivial = [
         (ln, line)
         for ln, line in enumerate(code_lines, start=1)
-        if _is_non_trivial_code_line(line)
+        if _is_non_trivial_code_line(line, language=language)
     ]
     if not non_trivial:
         return None
@@ -335,18 +371,24 @@ def _resolve_lines_from_anchors(
     anchors: list[str],
     code_lines: list[str],
     hint_lines: list[int],
+    language: Language | None = None,
 ) -> list[int]:
     """Resolve sorted unique 1-indexed line numbers from anchor strings."""
     resolved: list[int] = []
     for entry in anchors:
         for sub_line in str(entry).splitlines():
-            matched = _match_anchor_in_code(sub_line, code_lines, hint_lines)
+            matched = _match_anchor_in_code(
+                sub_line, code_lines, hint_lines, language=language
+            )
             if matched is not None and matched not in resolved:
                 resolved.append(matched)
     return sorted(resolved)
 
 
-def _extract_diff_removed_lines(diff_text: str) -> list[str]:
+def _extract_diff_removed_lines(
+    diff_text: str,
+    language: Language | None = None,
+) -> list[str]:
     """Extract non-trivial removed lines from a unified diff."""
     if not diff_text:
         return []
@@ -354,7 +396,7 @@ def _extract_diff_removed_lines(diff_text: str) -> list[str]:
     for line in diff_text.splitlines():
         if line.startswith("-") and not line.startswith("---"):
             content = line[1:]
-            if _is_non_trivial_code_line(content):
+            if _is_non_trivial_code_line(content, language=language):
                 removed.append(content)
     return removed
 
@@ -411,6 +453,7 @@ def _resolve_valid_lines(
     defect_index: int,
     diff_removed_lines: list[str] | None = None,
     total_defects: int = 1,
+    language: Language | None = None,
 ) -> list[int]:
     """Resolve 1-indexed defect lines using anchors, diff lines, or keywords."""
     raw_lines = item.get("matched_lines") or item.get("lines") or []
@@ -434,6 +477,7 @@ def _resolve_valid_lines(
             [str(a) for a in raw_anchors if a is not None],
             code_lines,
             hint_lines,
+            language=language,
         )
         if anchor_matches:
             return anchor_matches
@@ -442,7 +486,8 @@ def _resolve_valid_lines(
         dict.fromkeys(
             ln
             for ln in hint_lines
-            if 1 <= ln <= line_count and _is_non_trivial_code_line(code_lines[ln - 1])
+            if 1 <= ln <= line_count
+            and _is_non_trivial_code_line(code_lines[ln - 1], language=language)
         )
     )
 
@@ -452,7 +497,7 @@ def _resolve_valid_lines(
 
     if not valid_lines and diff_removed_lines:
         diff_matches = _resolve_lines_from_anchors(
-            diff_removed_lines, code_lines, hint_lines
+            diff_removed_lines, code_lines, hint_lines, language=language
         )
         if diff_matches:
             if total_defects == 1:
@@ -464,7 +509,7 @@ def _resolve_valid_lines(
 
     if not valid_lines and keywords:
         for ln_idx, line_str in enumerate(code_lines, start=1):
-            if not _is_non_trivial_code_line(line_str):
+            if not _is_non_trivial_code_line(line_str, language=language):
                 continue
             if any(
                 kw.strip().lower() in line_str.lower()
@@ -595,6 +640,7 @@ def _find_hunk_match_start(
     removed_lines: list[str],
     code_lines: list[str],
     old_start: int,
+    language: Language | None = None,
 ) -> int | None:
     """Locate actual 1-indexed start line for a diff hunk in code_lines."""
     seq_match = _find_sequence_in_code(old_lines, code_lines, old_start)
@@ -611,7 +657,12 @@ def _find_hunk_match_start(
     matched_positions = [
         pos
         for rem in removed_lines
-        if (pos := _match_anchor_in_code(rem, code_lines, [old_start])) is not None
+        if (
+            pos := _match_anchor_in_code(
+                rem, code_lines, [old_start], language=language
+            )
+        )
+        is not None
     ]
     if matched_positions:
         return min(matched_positions)
@@ -619,7 +670,11 @@ def _find_hunk_match_start(
     return None
 
 
-def _realign_diff_hunk_headers(diff_text: str, code_lines: list[str]) -> str:
+def _realign_diff_hunk_headers(
+    diff_text: str,
+    code_lines: list[str],
+    language: Language | None = None,
+) -> str:
     """Rewrite drifted @@ hunk headers when old-side lines match elsewhere in code."""
     if not diff_text or not code_lines or "@@" not in diff_text:
         return diff_text
@@ -652,7 +707,7 @@ def _realign_diff_hunk_headers(diff_text: str, code_lines: list[str]) -> str:
         new_lines = [ln[1:] for ln in hunk_body if ln.startswith((" ", "+"))]
 
         match_start = _find_hunk_match_start(
-            old_lines, removed_lines, code_lines, old_start
+            old_lines, removed_lines, code_lines, old_start, language=language
         )
         window_end = old_start + max(old_count, 1) - 1
         if match_start is not None and not (old_start <= match_start <= window_end):
@@ -712,7 +767,9 @@ def sanitize_generated_challenge(
     if not isinstance(raw_expected, list) or len(raw_expected) == 0:
         raise GeminiSchemaError("Generated challenge missing expected_issues")
 
-    diff_removed_lines = _extract_diff_removed_lines(recommended_fix_diff)
+    diff_removed_lines = _extract_diff_removed_lines(
+        recommended_fix_diff, language=request.language
+    )
     raw_issue_dicts = [item for item in raw_expected if isinstance(item, dict)]
     total_defects = len(raw_issue_dicts)
 
@@ -725,6 +782,7 @@ def sanitize_generated_challenge(
             idx,
             diff_removed_lines=diff_removed_lines,
             total_defects=total_defects,
+            language=request.language,
         )
 
         raw_keywords = item.get("matched_keywords") or item.get("keywords") or []
@@ -768,7 +826,7 @@ def sanitize_generated_challenge(
 
     if recommended_fix_diff:
         recommended_fix_diff = _realign_diff_hunk_headers(
-            recommended_fix_diff, code_lines
+            recommended_fix_diff, code_lines, language=request.language
         )
 
     all_resolved_lines = sorted({ln for issue in expected_issues for ln in issue.lines})

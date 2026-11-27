@@ -129,6 +129,9 @@ def test_list_challenges_filter_by_language(client: TestClient, session: Session
     expected_go = sum(1 for ch in CHALLENGES_DATA if ch["language"] == Language.GO)
     expected_rs = sum(1 for ch in CHALLENGES_DATA if ch["language"] == Language.RUST)
     expected_java = sum(1 for ch in CHALLENGES_DATA if ch["language"] == Language.JAVA)
+    expected_csharp = sum(
+        1 for ch in CHALLENGES_DATA if ch["language"] == Language.CSHARP
+    )
 
     res = client.get("/api/challenges?language=typescript")
     assert res.status_code == 200
@@ -153,6 +156,44 @@ def test_list_challenges_filter_by_language(client: TestClient, session: Session
     java_items = res_java.json()
     assert len(java_items) == expected_java
     assert all(item["language"] == "java" for item in java_items)
+
+    res_csharp = client.get("/api/challenges?language=csharp")
+    assert res_csharp.status_code == 200
+    csharp_items = res_csharp.json()
+    assert len(csharp_items) == expected_csharp
+    assert all(item["language"] == "csharp" for item in csharp_items)
+
+
+def test_list_challenges_filter_by_csharp_persisted_row(
+    client: TestClient, session: Session
+):
+    """GET /api/challenges?language=csharp returns persisted C# challenges."""
+    from backend.models.challenge import Challenge
+
+    csharp_ch = Challenge(
+        slug="csharp-filter-test",
+        title="C# Filter Verification",
+        difficulty=Difficulty.EASY,
+        category=Category.PERFORMANCE,
+        language=Language.CSHARP,
+        description="Verify C# language filtering.",
+        code_snippet="using var client = new HttpClient();\n",
+        is_public=True,
+    )
+    session.add(csharp_ch)
+    session.commit()
+
+    res = client.get("/api/challenges?language=csharp")
+    assert res.status_code == 200
+    items = res.json()
+    assert any(
+        item["slug"] == "csharp-filter-test" and item["language"] == "csharp"
+        for item in items
+    )
+
+    res_alias = client.get("/api/challenges?language=cs")
+    assert res_alias.status_code == 200
+    assert any(item["slug"] == "csharp-filter-test" for item in res_alias.json())
 
 
 def test_list_challenges_filter_by_search(client: TestClient, session: Session):

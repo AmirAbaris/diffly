@@ -141,7 +141,7 @@ describe("CoachChallengeConfigCard interactive 3-step wizard", () => {
     expect(
       screen.getByTestId("coach-config-language-group")
     ).toBeInTheDocument()
-    for (const label of ["Python", "TypeScript", "Go", "Rust", "Java"]) {
+    for (const label of ["Python", "TypeScript", "Go", "Rust", "Java", "C#"]) {
       expect(screen.getByRole("radio", { name: label })).toBeInTheDocument()
     }
 
@@ -202,13 +202,13 @@ describe("CoachChallengeConfigCard interactive 3-step wizard", () => {
 
     render(<CoachWorkspace />)
 
-    await user.click(screen.getByRole("radio", { name: "Go" }))
+    await user.click(screen.getByRole("radio", { name: "C#" }))
     await user.click(screen.getByRole("radio", { name: "Medium" }))
 
     expect(screen.queryByText("Flask IDOR")).not.toBeInTheDocument()
-    const goDefaultLabel = getDefaultTopicsForLanguage("go")[0].label
+    const csharpDefaultLabel = getDefaultTopicsForLanguage("csharp")[0].label
     expect(
-      screen.getByRole("radio", { name: goDefaultLabel })
+      screen.getByRole("radio", { name: csharpDefaultLabel })
     ).toBeInTheDocument()
   })
 

@@ -7,6 +7,11 @@ import {
   type SealedAICredential,
 } from "@/lib/ai/provider"
 import { hasControlChars } from "@/lib/ai/url-validation"
+import {
+  formatSupportedLanguagesList,
+  isSupportedLanguage,
+  SUPPORTED_LANGUAGE_IDS,
+} from "@/lib/languages/registry"
 import type {
   Difficulty,
   GenerateCustomChallengePayload,
@@ -21,13 +26,6 @@ const MAX_TOPIC_LENGTH = 200
 const INVALID_CHALLENGE_STRUCTURE_MESSAGE =
   "AI provider returned an invalid challenge structure. Please try again."
 
-const SUPPORTED_LANGUAGES = [
-  "python",
-  "typescript",
-  "go",
-  "rust",
-  "java",
-] as const
 const SUPPORTED_DIFFICULTIES = ["Easy", "Medium", "Hard"] as const
 
 const DIFFICULTY_GUIDANCE: Readonly<Record<Difficulty, string>> = {
@@ -63,7 +61,7 @@ export const GeneratedChallengeSchema = z.object({
     "Logic Flaws",
     "Agent Antipaths",
   ]),
-  language: z.enum(SUPPORTED_LANGUAGES),
+  language: z.enum(SUPPORTED_LANGUAGE_IDS),
   description: z.string(),
   threat_model: z.string(),
   defect_target: z.string(),
@@ -141,14 +139,14 @@ export function parseGenerateChallengePayload(
     return err("Topic must be between 3 and 200 characters.")
   }
 
-  const language: Language =
+  const language: Language | null =
     record.language === undefined
       ? "python"
-      : isOneOf(SUPPORTED_LANGUAGES, record.language)
+      : isSupportedLanguage(record.language)
         ? record.language
-        : ("" as Language)
+        : null
   if (!language) {
-    return err("Language must be python, typescript, go, rust, or java.")
+    return err(`Language must be ${formatSupportedLanguagesList()}.`)
   }
 
   const difficulty: Difficulty =

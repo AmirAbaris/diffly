@@ -200,4 +200,31 @@ describe("ChallengeCatalog server filtering and pagination", () => {
 
     expect(await screen.findByTestId("catalog-error-state")).toBeInTheDocument()
   })
+
+  it("accepts language=csharp from URL search params and queries the server", async () => {
+    currentSearchParams = new URLSearchParams("language=csharp")
+    const getSpy = vi.spyOn(apiClient, "get").mockResolvedValue({
+      data: [
+        makeSummary(32, {
+          slug: "csharp-httpclient-socket-exhaustion",
+          title: "Per-Request HttpClient Instantiation",
+          language: "csharp",
+        }),
+      ],
+      headers: { "x-total-count": "1" },
+    })
+
+    render(
+      <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0 }}>
+        <ChallengeCatalog />
+      </SWRConfig>
+    )
+
+    expect(
+      await screen.findByText("Per-Request HttpClient Instantiation")
+    ).toBeInTheDocument()
+    expect(getSpy).toHaveBeenCalledWith(
+      "/api/challenges?language=csharp&limit=12&offset=0"
+    )
+  })
 })

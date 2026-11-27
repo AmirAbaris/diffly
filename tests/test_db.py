@@ -817,6 +817,7 @@ def test_alembic_postgres_offline_sql_generation_and_percent_url():
     assert "ck_challenges_single_owner" in up_sql
     assert "ck_submissions_single_owner" in up_sql
     assert "JAVA" in up_sql
+    assert "ALTER TYPE language ADD VALUE IF NOT EXISTS 'CSHARP'" in up_sql
     assert "ix_users_email_lower" in up_sql
     assert "ix_users_username_lower" in up_sql
     assert "content_hash" in up_sql

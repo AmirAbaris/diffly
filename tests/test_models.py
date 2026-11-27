@@ -135,6 +135,12 @@ def test_challenge_enums_case_insensitivity():
     assert Language("TYPESCRIPT") == Language.TYPESCRIPT
     assert Language("java") == Language.JAVA
     assert Language("JAVA") == Language.JAVA
+    assert Language("csharp") == Language.CSHARP
+    assert Language("CSHARP") == Language.CSHARP
+    assert Language("c#") == Language.CSHARP
+    assert Language("cs") == Language.CSHARP
+    assert Language("c-sharp") == Language.CSHARP
+    assert Language("dotnet") == Language.CSHARP
 
 
 def test_defect_criterion_guards_against_none_values():

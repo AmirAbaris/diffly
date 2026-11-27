@@ -1,0 +1,77 @@
+order: 35
+slug: csharp-deferred-linq-disposed-context
+title: Returning Deferred IEnumerable After Using-Block Context Disposal
+difficulty: Medium
+category: Logic Flaws
+language: csharp
+estimated_minutes: 6
+defect_target: Find 1 High-Severity Deferred Execution Bug in Billing Export Service
+expected_issues:
+  - id: logic-csharp-deferred-linq-disposed-context
+    title: Deferred LINQ Query Returned After DbContext Disposal
+    severity: high
+    matched_lines:
+      - 25
+      - 27
+      - 39
+    matched_keywords:
+      - deferred execution
+      - IEnumerable
+      - IQueryable
+      - ObjectDisposedException
+      - using
+      - ToListAsync
+      - materialize
+      - disposed
+    keyword_polarity:
+      deferred execution: hazard
+      ObjectDisposedException: hazard
+      disposed: hazard
+      ToListAsync: safeguard
+      materialize: safeguard
+    line_score: 0.6
+    concept_score: 0.4
+    explanation: Returning an unmaterialized LINQ query (`IEnumerable<InvoiceExportRow>`) from a method with `await using BillingDbContext db` disposes `db` as soon as the method returns (CWE-672). When the caller enumerates the result, EF Core throws `ObjectDisposedException`. Materialize the query inside the `await using` scope with `await ...ToListAsync(cancellationToken)` and return `IReadOnlyList<InvoiceExportRow>`.
+hints:
+  - tier: 1
+    title: Contextual Clue
+    hint: Compare the lifetime of `db` with the moment `pendingRows` is actually executed against the database.
+  - tier: 2
+    title: Vulnerability Class
+    hint: LINQ queries use deferred execution; returning an unmaterialized query after an `await using` scope exits causes use-after-disposal (`ObjectDisposedException` / CWE-672) when the caller iterates it.
+  - tier: 3
+    title: Line Pointer & Guidance
+    hint: Look at lines 25, 27, and 39. Change the return type to `Task<IReadOnlyList<InvoiceExportRow>>` and materialize `pendingRows` with `await ...ToListAsync(cancellationToken)` before returning.
+canonical_review: |-
+  Senior Staff Engineer Review Critique:
+  `GetPendingInvoicesAsync` opens `BillingDbContext` with `await using` and returns an unmaterialized LINQ `IQueryable` typed as `IEnumerable<InvoiceExportRow>`. Because LINQ uses deferred execution, no SQL query executes inside `GetPendingInvoicesAsync`.
+
+  When the method returns, `db` is disposed immediately (CWE-672). The moment the caller iterates `pendingRows` (for example in a `foreach` loop or JSON serializer), EF Core throws `ObjectDisposedException: Cannot access a disposed context instance`.
+
+  Recommendation:
+  Materialize the query before leaving the `await using` scope by calling `await ...ToListAsync(cancellationToken)` and update the method signature to return `Task<IReadOnlyList<InvoiceExportRow>>` so callers know the data is already materialized. (If streaming large exports is truly needed, return `IAsyncEnumerable<InvoiceExportRow>` with an `async` iterator that yields rows while keeping `db` alive.)
+recommended_fix_diff: |
+  --- a/Services/Billing/BillingExportService.cs
+  +++ b/Services/Billing/BillingExportService.cs
+  @@ -15,3 +15,3 @@
+  -    public async Task<IEnumerable<InvoiceExportRow>> GetPendingInvoicesAsync(
+  +    public async Task<IReadOnlyList<InvoiceExportRow>> GetPendingInvoicesAsync(
+           string customerCode,
+           DateTimeOffset cutoffDate,
+  @@ -27,13 +27,14 @@
+  -        IEnumerable<InvoiceExportRow> pendingRows = db.Invoices
+  +        List<InvoiceExportRow> pendingRows = await db.Invoices
+               .AsNoTracking()
+               .Where(inv => inv.CustomerCode == customerCode
+                   && inv.Status == "Pending"
+                   && inv.DueDate <= cutoffDate)
+               .OrderBy(inv => inv.DueDate)
+               .Select(inv => new InvoiceExportRow(
+                   inv.Id,
+                   inv.CustomerCode,
+                   inv.AmountDue,
+  -                inv.DueDate));
+  +                inv.DueDate))
+  +            .ToListAsync(cancellationToken);
+   
+           return pendingRows;

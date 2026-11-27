@@ -1,0 +1,68 @@
+order: 36
+slug: csharp-agent-typenamehandling-deserialization
+title: Unsafe TypeNameHandling Deserialization in Agent Memory Store
+difficulty: Hard
+category: Agent Antipaths
+language: csharp
+estimated_minutes: 8
+defect_target: Find 1 Critical Unsafe Deserialization Vulnerability in Agent Checkpoint Serializer
+expected_issues:
+  - id: crit-csharp-agent-typenamehandling-deserialization
+    title: Unsafe Newtonsoft.Json TypeNameHandling Deserialization Enabling RCE
+    severity: critical
+    matched_lines:
+      - 16
+      - 18
+      - 19
+      - 41
+    matched_keywords:
+      - TypeNameHandling
+      - ISerializationBinder
+      - SerializationBinder
+      - deserialization
+      - $type
+      - allowlist
+      - rce
+      - cwe-502
+    keyword_polarity:
+      TypeNameHandling: hazard
+      deserialization: hazard
+      $type: hazard
+      rce: hazard
+      cwe-502: hazard
+      ISerializationBinder: safeguard
+      SerializationBinder: safeguard
+      allowlist: safeguard
+    line_score: 0.6
+    concept_score: 0.4
+    explanation: Configuring `Newtonsoft.Json` with `TypeNameHandling = TypeNameHandling.Auto` (and `MetadataPropertyHandling.ReadAhead`) without an allowlisting `ISerializationBinder` permits untrusted `$type` annotations in `ToolOutputEntry.Payload` to instantiate arbitrary .NET gadget types during deserialization, leading to Remote Code Execution (CWE-502). Set `TypeNameHandling = TypeNameHandling.None` (or migrate to `System.Text.Json` with closed `[JsonDerivedType]` contracts / enforce an explicit `ISerializationBinder` allowlist).
+hints:
+  - tier: 1
+    title: Contextual Clue
+    hint: Examine `SerializerSettings` and how polymorphic `object? Payload` values are reconstructed during `Deserialize`.
+  - tier: 2
+    title: Vulnerability Class
+    hint: Unsafe deserialization (CWE-502) occurs when `Newtonsoft.Json` honors `$type` metadata via `TypeNameHandling` without a strict `ISerializationBinder` allowlist, enabling arbitrary gadget instantiation and RCE.
+  - tier: 3
+    title: Line Pointer & Guidance
+    hint: Look at lines 16-19 and 41. Set `TypeNameHandling = TypeNameHandling.None` and `MetadataPropertyHandling = MetadataPropertyHandling.Ignore` (or use `System.Text.Json` with explicit `[JsonDerivedType]` polymorphism / a strict `ISerializationBinder` allowlist).
+canonical_review: |-
+  Senior Staff Engineer Review Critique:
+  Enabling `TypeNameHandling = TypeNameHandling.Auto` on `Newtonsoft.Json`—especially when paired with `object? Payload` and `MetadataPropertyHandling.ReadAhead`—exposes the agent runtime to critical unsafe deserialization and Remote Code Execution (CWE-502).
+
+  Neither `MaxPayloadBytes` nor `MaxDepth = 32` mitigates this risk: a compact JSON payload containing a malicious `$type` directive (such as `ObjectDataProvider` or `WindowsIdentity` gadget chains) triggers arbitrary type instantiation and code execution inside `JsonConvert.DeserializeObject<AgentCheckpoint>` before the method ever returns.
+
+  Recommendation:
+  Disable polymorphic type names by setting `TypeNameHandling = TypeNameHandling.None` and `MetadataPropertyHandling = MetadataPropertyHandling.Ignore` (representing tool payloads as `JsonElement` / `JToken` or explicit DTOs). If polymorphism is strictly required, migrate to `System.Text.Json` with a closed set of `[JsonDerivedType]` attributes or enforce a strict `ISerializationBinder` allowlist containing only known safe DTO types.
+recommended_fix_diff: |
+  --- a/Agents/Memory/AgentCheckpointSerializer.cs
+  +++ b/Agents/Memory/AgentCheckpointSerializer.cs
+  @@ -16,6 +16,6 @@
+       private static readonly JsonSerializerSettings SerializerSettings = new()
+       {
+  -        TypeNameHandling = TypeNameHandling.Auto,
+  -        MetadataPropertyHandling = MetadataPropertyHandling.ReadAhead,
+  +        TypeNameHandling = TypeNameHandling.None,
+  +        MetadataPropertyHandling = MetadataPropertyHandling.Ignore,
+           MaxDepth = 32,
+       };

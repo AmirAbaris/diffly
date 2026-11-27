@@ -1,0 +1,75 @@
+order: 32
+slug: csharp-httpclient-socket-exhaustion
+title: Per-Request HttpClient Instantiation Causing Socket Exhaustion
+difficulty: Easy
+category: Performance
+language: csharp
+estimated_minutes: 5
+defect_target: Find 1 High-Severity Socket Exhaustion Bug in FX Pricing Service
+expected_issues:
+  - id: perf-csharp-httpclient-socket-exhaustion
+    title: Per-Request HttpClient Instantiation Causing Socket Exhaustion
+    severity: high
+    matched_lines:
+      - 25
+      - 26
+      - 27
+      - 28
+    matched_keywords:
+      - HttpClient
+      - IHttpClientFactory
+      - socket exhaustion
+      - TIME_WAIT
+      - SocketsHttpHandler
+      - PooledConnectionLifetime
+      - connection pool
+      - cwe-400
+    keyword_polarity:
+      HttpClient: hazard
+      socket exhaustion: hazard
+      TIME_WAIT: hazard
+      cwe-400: hazard
+      IHttpClientFactory: safeguard
+      SocketsHttpHandler: safeguard
+      PooledConnectionLifetime: safeguard
+      connection pool: safeguard
+    line_score: 0.6
+    concept_score: 0.4
+    explanation: Instantiating and disposing `new HttpClient()` on every request prevents TCP connection reuse and leaves underlying sockets in `TIME_WAIT`, leading to ephemeral port exhaustion (`SocketException`) under load (CWE-400). Inject `IHttpClientFactory` (or a singleton `HttpClient` backed by `SocketsHttpHandler` with `PooledConnectionLifetime`) so connections are pooled and DNS changes are respected.
+hints:
+  - tier: 1
+    title: Contextual Clue
+    hint: Inspect how outbound HTTP connections are created and disposed inside `FetchSpotRateAsync`.
+  - tier: 2
+    title: Vulnerability Class
+    hint: Disposing a new `HttpClient` per call causes TCP `TIME_WAIT` socket exhaustion (CWE-400) because the OS keeps closed sockets reserved while bypassing connection pooling.
+  - tier: 3
+    title: Line Pointer & Guidance
+    hint: Look at lines 25-28. Inject `IHttpClientFactory` into `FxRateService` and obtain a pooled client via `httpClientFactory.CreateClient("FxProvider")` instead of `using var client = new HttpClient`.
+canonical_review: |-
+  Senior Staff Engineer Review Critique:
+  Creating `using var client = new HttpClient { ... }` inside `FetchSpotRateAsync` allocates a new `HttpMessageHandler` and TCP connection pool for every FX lookup. Even though `HttpClient` implements `IDisposable`, disposing it does not immediately free the OS socket—the TCP connection transitions to `TIME_WAIT` (typically 60–240 seconds).
+
+  Under sustained checkout traffic, this pattern exhausts available ephemeral ports and causes cascading `SocketException` outages across the entire service (CWE-400). Conversely, naively hoisting `HttpClient` to a static field without handler rotation can pin stale DNS records.
+
+  Recommendation:
+  Inject `IHttpClientFactory` into `FxRateService` (or use a typed client registered with `AddHttpClient<FxRateService>`) and call `httpClientFactory.CreateClient("FxProvider")` without wrapping the factory-managed handler in a per-request `new HttpClient()`. Alternatively, share a singleton `SocketsHttpHandler` configured with `PooledConnectionLifetime`.
+recommended_fix_diff: |
+  --- a/Services/Pricing/FxRateService.cs
+  +++ b/Services/Pricing/FxRateService.cs
+  @@ -8,4 +8,4 @@
+  -public sealed class FxRateService(Uri providerBaseUri, ILogger<FxRateService> logger)
+  +public sealed class FxRateService(IHttpClientFactory httpClientFactory, Uri providerBaseUri, ILogger<FxRateService> logger)
+   {
+       private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(5);
+   
+  @@ -24,7 +24,5 @@
+   
+  -        using var client = new HttpClient
+  -        {
+  -            Timeout = RequestTimeout,
+  -        };
+  +        HttpClient client = httpClientFactory.CreateClient("FxProvider");
+  +        client.Timeout = RequestTimeout;
+   
+           using HttpResponseMessage response = await client.GetAsync(endpoint, cancellationToken);

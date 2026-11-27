@@ -12,6 +12,7 @@ import {
   parseInlineTokens,
   parseMarkdownBlocks,
 } from "@/components/review/markdown-parser"
+import { normalizeCodeLanguage } from "@/lib/languages/registry"
 import { Prism } from "@/lib/prism-languages"
 import { cn } from "@/lib/utils"
 
@@ -33,7 +34,10 @@ function CodeBlockRenderer({
   const { resolvedTheme } = useTheme()
   const currentTheme =
     resolvedTheme === "light" ? themes.vsLight : themes.vsDark
-  const normalizedLang = language.toLowerCase().trim() || "text"
+  const normalizedLang = normalizeCodeLanguage(language, {
+    fallback: "text",
+    preserveUnknown: true,
+  })
 
   return (
     <div className="my-2 overflow-hidden rounded-md border border-border bg-muted/40 font-mono text-xs">

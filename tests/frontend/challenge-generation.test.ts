@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest"
 import {
   buildChallengeGenerationPrompt,
   type GeneratedChallenge,
+  parseGenerateChallengePayload,
   validateGeneratedChallengeQuality,
 } from "@/lib/ai/challenge-generation"
 
@@ -265,5 +266,38 @@ describe("buildChallengeGenerationPrompt", () => {
     expect(prompt).toContain(
       "- code_snippet must not contain spoiler comments."
     )
+  })
+})
+
+describe("parseGenerateChallengePayload", () => {
+  it("accepts csharp as a valid challenge language", () => {
+    const parsed = parseGenerateChallengePayload({
+      topic: "EF Core FromSqlRaw interpolation",
+      language: "csharp",
+      difficulty: "Medium",
+    })
+
+    expect(parsed).toEqual({
+      ok: true,
+      value: {
+        topic: "EF Core FromSqlRaw interpolation",
+        language: "csharp",
+        difficulty: "Medium",
+      },
+    })
+  })
+
+  it("lists all supported languages including csharp when rejecting an invalid language", () => {
+    const parsed = parseGenerateChallengePayload({
+      topic: "EF Core FromSqlRaw interpolation",
+      language: "ruby",
+      difficulty: "Medium",
+    })
+
+    expect(parsed).toEqual({
+      ok: false,
+      message:
+        "Language must be python, typescript, go, rust, java, or csharp.",
+    })
   })
 })
