@@ -2,7 +2,13 @@
 
 from sqlmodel import Session, select
 
-from backend.models.challenge import Category, Challenge, Difficulty, Language
+from backend.models.challenge import (
+    SUPPORTED_CHALLENGE_EXTENSIONS,
+    Category,
+    Challenge,
+    Difficulty,
+    Language,
+)
 from backend.seed.challenges import CHALLENGES_DATA
 from backend.seed.seed_data import seed_challenges, seed_challenges_if_empty
 
@@ -288,7 +294,7 @@ def test_content_as_code_bundle_structure():
                 f
                 for f in bundle_path.iterdir()
                 if f.name.startswith("snippet.")
-                and f.suffix in [".py", ".ts", ".go", ".rs", ".java"]
+                and f.suffix in SUPPORTED_CHALLENGE_EXTENSIONS
             ]
             assert len(snippets) == 1, f"Expected 1 native snippet file in {slug}"
             snippet_lines = snippets[0].read_text(encoding="utf-8").splitlines()
@@ -880,6 +886,11 @@ def test_curated_recommended_fix_diffs_match_snippets():
         "java-xxe-document-builder",
         "java-concurrenthashmap-check-then-act",
         "java-boxed-id-reference-equality",
+        "csharp-httpclient-socket-exhaustion",
+        "csharp-efcore-fromsqlraw-interpolation",
+        "csharp-shared-dbcontext-task-whenall",
+        "csharp-deferred-linq-disposed-context",
+        "csharp-agent-typenamehandling-deserialization",
     }
     by_slug = {ch["slug"]: ch for ch in CHALLENGES_DATA}
     assert verified_slugs.issubset(by_slug.keys())

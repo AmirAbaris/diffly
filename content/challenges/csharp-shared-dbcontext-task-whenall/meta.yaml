@@ -1,0 +1,89 @@
+order: 34
+slug: csharp-shared-dbcontext-task-whenall
+title: Concurrent EF Core DbContext Access Across Task.WhenAll
+difficulty: Medium
+category: Concurrency
+language: csharp
+estimated_minutes: 7
+defect_target: Find 1 High-Severity Concurrency Bug in EF Core Dashboard Service
+expected_issues:
+  - id: conc-csharp-shared-dbcontext-task-whenall
+    title: Non-Thread-Safe Scoped DbContext Shared Across Task.WhenAll
+    severity: high
+    matched_lines:
+      - 18
+      - 24
+      - 25
+      - 27
+    matched_keywords:
+      - DbContext
+      - thread-safe
+      - Task.WhenAll
+      - IDbContextFactory
+      - InvalidOperationException
+      - concurrency
+      - scoped
+      - cwe-362
+    keyword_polarity:
+      Task.WhenAll: hazard
+      InvalidOperationException: hazard
+      concurrency: hazard
+      cwe-362: hazard
+      IDbContextFactory: safeguard
+      thread-safe: safeguard
+    line_score: 0.6
+    concept_score: 0.4
+    explanation: EF Core `DbContext` instances are not thread-safe. Sharing a single request-scoped `AppDbContext` across `Task.WhenAll` starts overlapping async database operations on one context instance, causing `InvalidOperationException` and race conditions (CWE-362). Inject `IDbContextFactory<AppDbContext>` and create an isolated `await using` context per concurrent task (or await the queries sequentially).
+hints:
+  - tier: 1
+    title: Contextual Clue
+    hint: Trace how `dbContext` is accessed by `LoadRecentInvoicesAsync` and `LoadRecentAuditEventsAsync` during `GetDashboardAsync`.
+  - tier: 2
+    title: Vulnerability Class
+    hint: EF Core's `DbContext` is not thread-safe; concurrent operations on the same scoped instance trigger a race condition (CWE-362) and throw `InvalidOperationException`.
+  - tier: 3
+    title: Line Pointer & Guidance
+    hint: Look at lines 18 and 24-27. Inject `IDbContextFactory<AppDbContext>` instead of `AppDbContext` and create a separate `await using var db = await dbFactory.CreateDbContextAsync(ct)` inside each helper method.
+canonical_review: |-
+  Senior Staff Engineer Review Critique:
+  `CustomerDashboardService` injects a single request-scoped `AppDbContext` and runs `LoadRecentInvoicesAsync` and `LoadRecentAuditEventsAsync` concurrently via `Task.WhenAll`. EF Core's `DbContext` is explicitly not thread-safe—even with `.AsNoTracking()`, both tasks share the same `DbContext` instance and underlying connection state.
+
+  At runtime, this triggers `InvalidOperationException: A second operation was started on this context instance before a previous operation completed` (CWE-362), breaking dashboard loads whenever both queries overlap.
+
+  Recommendation:
+  To keep parallel execution safely, inject `IDbContextFactory<AppDbContext>` (registered via `AddDbContextFactory`) and create a dedicated `await using AppDbContext db = await dbFactory.CreateDbContextAsync(ct)` inside each concurrent helper method. Alternatively, if parallel latency isn't required, `await` the two queries sequentially on the scoped context.
+recommended_fix_diff: |
+  --- a/Services/Dashboard/CustomerDashboardService.cs
+  +++ b/Services/Dashboard/CustomerDashboardService.cs
+  @@ -18,3 +18,3 @@
+  -public sealed class CustomerDashboardService(AppDbContext dbContext)
+  +public sealed class CustomerDashboardService(IDbContextFactory<AppDbContext> dbFactory)
+   {
+       public async Task<CustomerDashboardDto> GetDashboardAsync(
+  @@ -35,16 +35,22 @@
+  -    private Task<List<InvoiceItem>> LoadRecentInvoicesAsync(Guid customerId, CancellationToken ct) =>
+  -        dbContext.Invoices
+  +    private async Task<List<InvoiceItem>> LoadRecentInvoicesAsync(Guid customerId, CancellationToken ct)
+  +    {
+  +        await using AppDbContext db = await dbFactory.CreateDbContextAsync(ct);
+  +        return await db.Invoices
+               .AsNoTracking()
+               .Where(i => i.CustomerId == customerId)
+               .OrderByDescending(i => i.IssuedAt)
+               .Take(10)
+               .ToListAsync(ct);
+  +    }
+   
+  -    private Task<List<AuditEvent>> LoadRecentAuditEventsAsync(Guid customerId, CancellationToken ct) =>
+  -        dbContext.AuditEvents
+  +    private async Task<List<AuditEvent>> LoadRecentAuditEventsAsync(Guid customerId, CancellationToken ct)
+  +    {
+  +        await using AppDbContext db = await dbFactory.CreateDbContextAsync(ct);
+  +        return await db.AuditEvents
+               .AsNoTracking()
+               .Where(e => e.CustomerId == customerId)
+               .OrderByDescending(e => e.OccurredAt)
+               .Take(20)
+               .ToListAsync(ct);
+  +    }
+   }

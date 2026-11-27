@@ -1,0 +1,80 @@
+order: 33
+slug: csharp-efcore-fromsqlraw-interpolation
+title: SQL Injection via Interpolated String in EF Core FromSqlRaw
+difficulty: Medium
+category: Security
+language: csharp
+estimated_minutes: 6
+defect_target: Find 1 Critical SQL Injection Vulnerability in EF Core Invoice Search
+expected_issues:
+  - id: crit-csharp-efcore-fromsqlraw-interpolation
+    title: SQL Injection via Interpolated String Passed to EF Core FromSqlRaw
+    severity: critical
+    matched_lines:
+      - 30
+      - 31
+      - 32
+      - 33
+      - 34
+      - 37
+    matched_keywords:
+      - FromSqlRaw
+      - FromSql
+      - FromSqlInterpolated
+      - FormattableString
+      - sql injection
+      - parameterized
+      - string interpolation
+      - cwe-89
+    keyword_polarity:
+      FromSqlRaw: hazard
+      sql injection: hazard
+      string interpolation: hazard
+      cwe-89: hazard
+      FromSql: safeguard
+      FromSqlInterpolated: safeguard
+      FormattableString: safeguard
+      parameterized: safeguard
+    line_score: 0.6
+    concept_score: 0.4
+    explanation: Passing a C# interpolated string (`$"..."`) to EF Core's `FromSqlRaw(string)` formats user input directly into raw SQL before EF Core receives it, enabling SQL injection and cross-tenant data exfiltration (CWE-89). Use `FromSql($"...")` / `FromSqlInterpolated($"...")` so EF Core binds `FormattableString` arguments as database parameters, or use a standard EF Core LINQ query.
+hints:
+  - tier: 1
+    title: Contextual Clue
+    hint: Check how `query` is constructed and which EF Core raw-SQL API executes it in `SearchByStatusAsync`.
+  - tier: 2
+    title: Vulnerability Class
+    hint: SQL Injection (CWE-89) occurs here because `FromSqlRaw` takes a `string`, so C# string interpolation concatenates untrusted input into the SQL text instead of creating parameterized `FormattableString` bindings.
+  - tier: 3
+    title: Line Pointer & Guidance
+    hint: Look at lines 30-37. Replace `FromSqlRaw(query)` with `FromSql($"""...""")` (or `FromSqlInterpolated($"...")`) passing `tenantId` and `statusPattern` directly as interpolation holes without single quotes, or rewrite using LINQ `.Where(...)`.
+canonical_review: |-
+  Senior Staff Engineer Review Critique:
+  Assigning an interpolated string to `string query` and passing it to `dbContext.Invoices.FromSqlRaw(query)` introduces a critical SQL injection vulnerability (CWE-89). Because `FromSqlRaw` accepts a `string` parameter, C# evaluates `$"..."` into a concatenated SQL string before EF Core sees it.
+
+  A malicious `statusFilter` such as `' OR 1=1 --` breaks out of the `LIKE` literal, bypasses the `TenantId` filter, and exposes invoices across all tenants. Calling `Trim()` and clamping `pageSize` provide no protection against SQL injection.
+
+  Recommendation:
+  Pass an interpolated `FormattableString` directly to `.FromSql($"""...""")` (or `.FromSqlInterpolated($"...")`) with unquoted holes (`WHERE TenantId = {tenantId} AND Status LIKE {statusPattern}`), so EF Core converts each placeholder into a bound SQL parameter (`@p0`, `@p1`). Alternatively, express the filter with strongly typed EF Core LINQ (`Where` + `EF.Functions.Like`).
+recommended_fix_diff: |
+  --- a/Data/Repositories/InvoiceSearchRepository.cs
+  +++ b/Data/Repositories/InvoiceSearchRepository.cs
+  @@ -28,11 +28,11 @@
+           string normalizedStatus = statusFilter?.Trim() ?? string.Empty;
+  +        string statusPattern = $"%{normalizedStatus}%";
+   
+  -        string query =
+  -            $"SELECT Id, TenantId, Status, TotalAmount " +
+  -            $"FROM Invoices " +
+  -            $"WHERE TenantId = '{tenantId}' AND Status LIKE '%{normalizedStatus}%' " +
+  -            $"ORDER BY TotalAmount DESC";
+  -
+           return await dbContext.Invoices
+  -            .FromSqlRaw(query)
+  +            .FromSql($"""
+  +                SELECT Id, TenantId, Status, TotalAmount
+  +                FROM Invoices
+  +                WHERE TenantId = {tenantId} AND Status LIKE {statusPattern}
+  +                ORDER BY TotalAmount DESC
+  +                """)
+               .AsNoTracking()
