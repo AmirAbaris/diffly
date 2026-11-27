@@ -33,6 +33,7 @@ class User(UserBase, table=True):
     hashed_password: str | None = Field(default=None)
     github_id: str | None = Field(default=None, unique=True, index=True)
     github_login: str | None = Field(default=None)
+    leaderboard_opt_out: bool = Field(default=False, nullable=False)
     created_at: datetime = Field(default_factory=get_utc_now)
     updated_at: datetime = Field(default_factory=get_utc_now)
 

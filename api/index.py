@@ -11,6 +11,7 @@ from sqlmodel import Session, func, select
 
 from api.routes.auth import router as auth_router
 from api.routes.challenges import router as challenges_router
+from api.routes.leaderboard import router as leaderboard_router
 from api.routes.submissions import router as submissions_router
 from api.routes.user import router as user_router
 from backend.core.config import settings
@@ -47,6 +48,7 @@ app.include_router(challenges_router)
 app.include_router(submissions_router)
 app.include_router(user_router)
 app.include_router(auth_router)
+app.include_router(leaderboard_router)
 
 
 cors_kwargs: dict[str, Any] = {

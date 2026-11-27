@@ -379,6 +379,30 @@ MATRIX: dict[tuple[str, str], dict[str, dict[str, int]]] = {
             "inactive": 401,
         },
     },
+    ("GET", "/api/leaderboard"): {
+        "public_leaderboard": {
+            "anonymous": 200,
+            "guest_a": 200,
+            "guest_b": 200,
+            "guest_forged": 200,
+            "guest_tampered": 200,
+            "user_a": 200,
+            "user_b": 200,
+            "inactive": 200,
+        },
+    },
+    ("PUT", "/api/leaderboard/me/visibility"): {
+        "own_visibility": {
+            "anonymous": 401,
+            "guest_a": 401,
+            "guest_b": 401,
+            "guest_forged": 401,
+            "guest_tampered": 401,
+            "user_a": 200,
+            "user_b": 200,
+            "inactive": 401,
+        },
+    },
     ("GET", "/api/user/coach-threads"): {
         "own_list": {
             "anonymous": 200,
@@ -1194,6 +1218,85 @@ def test_authorization_matrix_enforcement(
                 ).status_code
                 == 204
             )
+
+    # 12b. GET /api/leaderboard & PUT /api/leaderboard/me/visibility
+    pii_forbidden_keys = {
+        "email",
+        "avatar_url",
+        "user_id",
+        "github_id",
+        "github_login",
+        "session_id",
+        "hashed_password",
+    }
+    for actor_name, expected in MATRIX[("GET", "/api/leaderboard")][
+        "public_leaderboard"
+    ].items():
+        ac, headers = actors[actor_name]
+        res = ac.get("/api/leaderboard", headers=headers)
+        assert res.status_code == expected, actor_name
+        assert res.headers.get("Cache-Control") == "private, no-store"
+        assert "Cookie" in {v.strip() for v in res.headers.get("Vary", "").split(",")}
+        lb_data = res.json()
+        assert res.headers.get("X-Total-Count") == str(lb_data["total_entries"])
+        assert not (pii_forbidden_keys & set(lb_data.keys()))
+        assert [e["username"] for e in lb_data["entries"]] == [
+            meta["user_a"]["username"]
+        ]
+        assert lb_data["entries"][0]["points"] == 90
+        for entry in lb_data["entries"]:
+            assert not (pii_forbidden_keys & set(entry.keys()))
+        if actor_name == "user_a":
+            assert lb_data["entries"][0]["is_current_user"] is True
+            assert lb_data["current_user"] is not None
+            assert lb_data["current_user"]["username"] == meta["user_a"]["username"]
+            assert lb_data["current_user"]["rank"] == 1
+            assert lb_data["current_user"]["hidden"] is False
+            assert not (pii_forbidden_keys & set(lb_data["current_user"].keys()))
+        elif actor_name == "user_b":
+            assert lb_data["entries"][0]["is_current_user"] is False
+            assert lb_data["current_user"] is not None
+            assert lb_data["current_user"]["username"] == meta["user_b"]["username"]
+            assert lb_data["current_user"]["rank"] is None
+            assert lb_data["current_user"]["hidden"] is False
+            assert not (pii_forbidden_keys & set(lb_data["current_user"].keys()))
+        else:
+            assert lb_data["entries"][0]["is_current_user"] is False
+            assert lb_data["current_user"] is None
+
+    for actor_name, expected in MATRIX[("PUT", "/api/leaderboard/me/visibility")][
+        "own_visibility"
+    ].items():
+        ac, headers = actors[actor_name]
+        res = ac.put(
+            "/api/leaderboard/me/visibility",
+            json={"visible": False},
+            headers=headers,
+        )
+        assert res.status_code == expected, f"visibility <- {actor_name}"
+        if expected == 200:
+            assert res.headers.get("Cache-Control") == "private, no-store"
+            assert res.json() == {"visible": False}
+
+    hidden_view_b = actors["user_b"][0].get("/api/leaderboard").json()
+    assert hidden_view_b["entries"] == []
+    assert hidden_view_b["total_entries"] == 0
+    hidden_view_a = actors["user_a"][0].get("/api/leaderboard").json()
+    assert hidden_view_a["current_user"]["hidden"] is True
+    assert hidden_view_a["current_user"]["rank"] is None
+
+    assert (
+        actors["user_a"][0]
+        .put("/api/leaderboard/me/visibility", json={"visible": True})
+        .status_code
+        == 200
+    )
+    assert (
+        actors["user_b"][0]
+        .put("/api/leaderboard/me/visibility", json={"visible": True})
+        .status_code
+        == 200
+    )
 
     # 13. POST /api/user/claim-session and post-claim old-session isolation
     for actor_name, expected in MATRIX[("POST", "/api/user/claim-session")][
