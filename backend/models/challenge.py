@@ -25,6 +25,16 @@ from pydantic import (
 from sqlalchemy import CheckConstraint, Index
 from sqlmodel import Field, Relationship, SQLModel
 
+from backend.models.languages import (
+    CHALLENGE_LANGUAGE_SPECS,
+    EXTENSION_LANGUAGE_MAP,
+    assert_language_enum_parity,
+    resolve_language_alias,
+)
+from backend.models.languages import (
+    SUPPORTED_CHALLENGE_EXTENSIONS as SUPPORTED_CHALLENGE_EXTENSIONS,
+)
+
 
 if TYPE_CHECKING:
     from backend.models.submission import Submission
@@ -106,31 +116,19 @@ class Language(StrEnum):
     GO = "go"
     RUST = "rust"
     JAVA = "java"
+    CSHARP = "csharp"
 
     @classmethod
     def _missing_(cls, value: object):
-        if isinstance(value, str):
-            for member in cls:
-                if member.value.lower() == value.lower():
-                    return member
+        canonical = resolve_language_alias(value)
+        if canonical is not None:
+            return cls(canonical)
         return None
 
 
-_EXTENSION_LANGUAGE_MAP: dict[str, str] = {
-    ".py": "python",
-    ".pyw": "python",
-    ".ts": "typescript",
-    ".tsx": "tsx",
-    ".js": "javascript",
-    ".jsx": "jsx",
-    ".go": "go",
-    ".rs": "rust",
-    ".java": "java",
-    ".sql": "sql",
-    ".yaml": "yaml",
-    ".yml": "yaml",
-    ".json": "json",
-}
+assert_language_enum_parity({member.value for member in Language})
+
+_EXTENSION_LANGUAGE_MAP: dict[str, str] = EXTENSION_LANGUAGE_MAP
 
 _DIFF_HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 
@@ -138,7 +136,7 @@ _DIFF_HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 def infer_language_from_path(file_path: str, fallback: str = "python") -> str:
     """Infer syntax highlighting language identifier from a file path."""
     suffix = Path(file_path).suffix.lower()
-    return _EXTENSION_LANGUAGE_MAP.get(suffix, fallback)
+    return EXTENSION_LANGUAGE_MAP.get(suffix, fallback)
 
 
 def extract_patch_line_numbers(patch: str) -> tuple[set[int], int]:
@@ -939,7 +937,10 @@ class GenerateCustomChallengeRequest(BaseModel):
     )
     language: Language = Field(
         default=Language.PYTHON,
-        description="Programming language: python, typescript, go, rust, java",
+        description=(
+            "Programming language: "
+            f"{', '.join(spec.id for spec in CHALLENGE_LANGUAGE_SPECS)}"
+        ),
     )
     difficulty: Difficulty = Field(
         default=Difficulty.MEDIUM,

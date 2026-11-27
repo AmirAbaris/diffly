@@ -1,0 +1,116 @@
+{
+  "challengeLanguages": [
+    {
+      "id": "python",
+      "label": "Python",
+      "runtime": "Python 3.12",
+      "defaultFileName": "solution.py",
+      "prismLanguage": "python",
+      "extensions": [".py", ".pyw"],
+      "aliases": ["py"]
+    },
+    {
+      "id": "typescript",
+      "label": "TypeScript",
+      "runtime": "Node.js 22",
+      "defaultFileName": "solution.ts",
+      "prismLanguage": "typescript",
+      "extensions": [".ts"],
+      "aliases": ["ts"]
+    },
+    {
+      "id": "go",
+      "label": "Go",
+      "runtime": "Go 1.23",
+      "defaultFileName": "solution.go",
+      "prismLanguage": "go",
+      "extensions": [".go"],
+      "aliases": ["golang"]
+    },
+    {
+      "id": "rust",
+      "label": "Rust",
+      "runtime": "Rust 1.82",
+      "defaultFileName": "solution.rs",
+      "prismLanguage": "rust",
+      "extensions": [".rs"],
+      "aliases": ["rs"]
+    },
+    {
+      "id": "java",
+      "label": "Java",
+      "runtime": "Java 21",
+      "defaultFileName": "Solution.java",
+      "prismLanguage": "java",
+      "extensions": [".java"],
+      "aliases": []
+    },
+    {
+      "id": "csharp",
+      "label": "C#",
+      "runtime": ".NET 8 / C# 12",
+      "defaultFileName": "Solution.cs",
+      "prismLanguage": "csharp",
+      "extensions": [".cs"],
+      "aliases": ["c#", "c-sharp", "cs", "dotnet"]
+    }
+  ],
+  "auxiliaryLanguages": [
+    {
+      "id": "javascript",
+      "label": "JavaScript",
+      "defaultFileName": "solution.js",
+      "prismLanguage": "javascript",
+      "extensions": [".js"],
+      "aliases": ["js"]
+    },
+    {
+      "id": "tsx",
+      "label": "TSX",
+      "defaultFileName": "solution.tsx",
+      "prismLanguage": "tsx",
+      "extensions": [".tsx"],
+      "aliases": []
+    },
+    {
+      "id": "jsx",
+      "label": "JSX",
+      "defaultFileName": "solution.jsx",
+      "prismLanguage": "jsx",
+      "extensions": [".jsx"],
+      "aliases": []
+    },
+    {
+      "id": "sql",
+      "label": "SQL",
+      "defaultFileName": "query.sql",
+      "prismLanguage": "sql",
+      "extensions": [".sql"],
+      "aliases": []
+    },
+    {
+      "id": "yaml",
+      "label": "YAML",
+      "defaultFileName": "config.yaml",
+      "prismLanguage": "yaml",
+      "extensions": [".yaml", ".yml"],
+      "aliases": ["yml"]
+    },
+    {
+      "id": "json",
+      "label": "JSON",
+      "defaultFileName": "config.json",
+      "prismLanguage": "json",
+      "extensions": [".json"],
+      "aliases": []
+    },
+    {
+      "id": "bash",
+      "label": "Bash",
+      "defaultFileName": "script.sh",
+      "prismLanguage": "bash",
+      "extensions": [".sh", ".bash"],
+      "aliases": ["sh", "shell"]
+    }
+  ]
+}
